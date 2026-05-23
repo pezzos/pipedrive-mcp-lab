@@ -3,7 +3,7 @@
 Small local MCP server used for a Project Pezzos article draft about connecting
 Claude/Codex to Pipedrive.
 
-Status: local lab, not a production connector. The current evidence proves that the MCP
+Status: public lab, not a production connector. The current evidence proves that the MCP
 server starts over stdio, lists tools, runs mocked Pipedrive client tests, and keeps the
 first write tool behind `PIPEDRIVE_ENABLE_WRITES` with `dry_run` enabled by default. It
 does not prove live behavior against a real Pipedrive account yet.
@@ -51,3 +51,8 @@ with a sandbox or trial account and disposable records.
 - Real pagination and rate-limit headers.
 - Real activity creation against a disposable record.
 - OAuth or remote MCP hosting.
+
+## Related Article
+
+The Project Pezzos article is still a draft, so there is no stable public article URL
+yet. Add the backlink here once the article is published.

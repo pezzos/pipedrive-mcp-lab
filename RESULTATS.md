@@ -4,8 +4,8 @@
 
 - Lab question: can a small local MCP expose a narrow Pipedrive surface for Claude/Codex
   without making broad CRM writes the default?
-- Lab repo state: local repository only.
-- Intended future public repo: `pezzos/pipedrive-mcp-lab`, pending explicit approval.
+- Lab repo state: public GitHub repository.
+- Public repo: <https://github.com/pezzos/pipedrive-mcp-lab>
 - Real Pipedrive account: not used.
 - CRM data: no real CRM data used.
 
@@ -38,6 +38,7 @@
 | Live Pipedrive sandbox read | not-run | No sandbox/trial token supplied. |
 | Live dry-run-to-real activity creation | not-run | Requires disposable CRM record and explicit approval. |
 | Public repo secret scan | done | Local pre-publish `rg` scan passed on 2026-05-23; GitHub secret scanning is expected to run after public push. |
+| Public GitHub repo creation | done | `pezzos/pipedrive-mcp-lab` was created public and pushed on 2026-05-23. |
 
 ## Current Allowed Conclusion
 
@@ -67,6 +68,13 @@ or is ready to use on customer CRM data.
   - `.gitignore` excludes `node_modules/`, `dist/`, `.env`, `.env.*`, and npm debug
     logs.
   - `gh api user --jq .login` returned `pezzos`.
+- Public repo creation:
+  - `gh repo create pezzos/pipedrive-mcp-lab --public --source=. --remote=origin --push`
+    created and pushed <https://github.com/pezzos/pipedrive-mcp-lab>.
+  - `gh repo view pezzos/pipedrive-mcp-lab --json name,visibility,url` returned
+    `visibility: PUBLIC`.
+  - `curl -s -o /dev/null -w '%{http_code}' https://github.com/pezzos/pipedrive-mcp-lab`
+    returned `200`.
 
 ## Final Status
 
@@ -76,4 +84,4 @@ or is ready to use on customer CRM data.
 - not completed:
   - Live Pipedrive sandbox/trial read.
   - Real disposable `create_activity` write.
-  - Public GitHub repo creation and backlink.
+  - Project Pezzos article publication and backlink.
