@@ -5,8 +5,9 @@ Claude/Codex to Pipedrive.
 
 Status: public lab, not a production connector. The current evidence proves that the MCP
 server starts over stdio, lists tools, runs mocked Pipedrive client tests, and keeps the
-first write tool behind `PIPEDRIVE_ENABLE_WRITES` with `dry_run` enabled by default. It
-does not prove live behavior against a real Pipedrive account yet.
+first write tool behind `PIPEDRIVE_ENABLE_WRITES` with `dry_run` enabled by default. A
+read-only live validation against a configured Pipedrive account also succeeded on
+pipelines, deals, and activities without printing CRM records or enabling writes.
 
 ## What It Contains
 
@@ -47,7 +48,6 @@ with a sandbox or trial account and disposable records.
 
 ## Not Tested Yet
 
-- Live Pipedrive sandbox or trial account.
 - Real pagination and rate-limit headers.
 - Real activity creation against a disposable record.
 - OAuth or remote MCP hosting.
