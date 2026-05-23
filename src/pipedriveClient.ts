@@ -11,18 +11,22 @@ export class PipedriveClient {
     this.fetchImpl = fetchImpl;
   }
 
-  async get(path: string, params: Record<string, string | number | undefined> = {}) {
+  async get(path: string, params: Record<string, string | number | boolean | undefined> = {}) {
     return this.request("GET", path, params);
   }
 
-  async post(path: string, body: unknown, params: Record<string, string | number | undefined> = {}) {
+  async post(
+    path: string,
+    body: unknown,
+    params: Record<string, string | number | boolean | undefined> = {},
+  ) {
     return this.request("POST", path, params, body);
   }
 
   private async request(
     method: "GET" | "POST",
     path: string,
-    params: Record<string, string | number | undefined>,
+    params: Record<string, string | number | boolean | undefined>,
     body?: unknown,
   ) {
     requireConfigured(this.config);
@@ -59,7 +63,7 @@ export class PipedriveClient {
     return data;
   }
 
-  private url(path: string, params: Record<string, string | number | undefined>) {
+  private url(path: string, params: Record<string, string | number | boolean | undefined>) {
     const base = this.config.baseUrl.replace(/\/$/, "");
     const url = new URL(path, `${base}/`);
     for (const [key, value] of Object.entries(params)) {
@@ -75,7 +79,7 @@ function safeJsonParse(text: string): unknown {
   try {
     return JSON.parse(text);
   } catch {
-    return { raw: text.slice(0, 300) };
+    return { raw: text.slice(0, 1000) };
   }
 }
 

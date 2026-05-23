@@ -6,6 +6,7 @@
   without making broad CRM writes the default?
 - Lab repo state: public GitHub repository.
 - Public repo: <https://github.com/pezzos/pipedrive-mcp-lab>
+- Current MCP surface: 25 tools, with 24 read-only tools and one guarded activity write.
 - Real Pipedrive account: read-only validation run on 2026-05-23 with credentials loaded
   from local `.env`.
 - Account type: not independently verified by Codex; treated as a live configured
@@ -37,10 +38,14 @@
 | TypeScript build | done | `npm run check` passed on 2026-05-23. |
 | Unit config tests | done | `npm run check` passed on 2026-05-23. |
 | Mocked Pipedrive client tests | done | `npm run check` passed on 2026-05-23. |
-| MCP stdio tools/list and dry-run call | done | `npm run check` passed on 2026-05-23. |
+| MCP stdio tools/list and dry-run call for the original 7-tool core | done | `npm run check` passed on 2026-05-23. |
 | Write-gate behavior without token | done | Dry-run succeeds without a token; non-dry-run with writes enabled returns a clear `PIPEDRIVE_API_TOKEN` error. |
 | Read-tool MCP call against mocked HTTP API | done | `pipedrive_list_deals` calls a local mock server over stdio and sends token via `x-api-token` header, not URL query. |
-| Live Pipedrive read | done | On 2026-05-23, an MCP stdio client called live `pipedrive_list_pipelines`, `pipedrive_list_deals`, and `pipedrive_list_activities` with writes forced off. All returned `success: true`; the captured output recorded only counts and success flags. |
+| Limited live Pipedrive read on configured account | done | On 2026-05-23, an MCP stdio client called live `pipedrive_list_pipelines`, `pipedrive_list_deals`, and `pipedrive_list_activities` with writes forced off. All returned `success: true`; the captured output recorded only counts and success flags. This is informational evidence, not counted sign-off for the expanded read-only surface because sandbox or trial status was not independently verified. The activities tool later moved from the earlier v1 path to `/api/v2/activities`, so the previous live activities result covers the old endpoint path, not the new v2 response shape. |
+| Mocked coverage for `search_items`, persons list/get, organizations list/get, stages list, leads list/get, activity types list, users current/list, notes list/get, and deal/person/organization field discovery | done | `npm run check` passed on 2026-05-23 with 9 tests. The expanded MCP stdio test called each added read-only tool against a local mock API and asserted endpoint paths, filters, pagination parameters, `x-api-token` header usage, and absence of token values in URLs. |
+| MCP stdio tools/list for the expanded read-only surface | done | A one-off inventory listed 25 tools after implementation; the test suite asserts the added tools are present and read-only where applicable. |
+| Live smoke for the expanded read-only surface on a verified sandbox or trial account, or with explicit approval | not-run | This is the acceptance bar for counting the expansion as live-validated. The current configured-account read does not satisfy it on its own. |
+| Live pagination and rate-limit headers across the expanded read-only surface | not-run | Still pending. |
 | Live dry-run-to-real activity creation | not-run | Requires disposable CRM record and explicit approval. |
 | Public repo secret scan | done | Local pre-publish `rg` scan passed on 2026-05-23; GitHub secret scanning is expected to run after public push. |
 | Public GitHub repo creation | done | `pezzos/pipedrive-mcp-lab` was created public and pushed on 2026-05-23. |
@@ -48,13 +53,13 @@
 ## Current Allowed Conclusion
 
 The current lab may support this conclusion after tests pass: the local MCP server is
-structurally runnable over stdio, exposes a narrow read-first tool list, keeps the write
-path gated, can be tested without real CRM data, and can perform basic read-only calls
-against a configured Pipedrive account.
+structurally runnable over stdio, exposes an expanded 25-tool read-first surface, keeps
+the write path gated, can be tested without real CRM data, and can perform basic
+read-only calls against a configured Pipedrive account for the earlier core tools.
 
-It must not support this conclusion yet: the MCP is production-ready, safe to use on
-customer CRM data, or validated for real writes, pagination, rate limits, OAuth, or
-remote hosting.
+It must not support this conclusion yet: the expanded read-only surface is
+live-validated, the MCP is production-ready, it is safe to use on customer CRM data, or
+it is validated for real writes, pagination, rate limits, OAuth, or remote hosting.
 
 ## Commands Run
 
@@ -104,13 +109,24 @@ remote hosting.
   - `pipedrive_create_activity` was called with `dry_run=true` while writes were forced
     off. No real activity write was attempted. Both gates were active simultaneously;
     `dry_run=true` behavior while writes are enabled remains untested.
+- Expanded read-only implementation on 2026-05-23:
+  - Added read-only tools for global item search, persons list/get, organizations
+    list/get, leads list/get, pipeline get, stages list, activities get, activity types,
+    current/list users, notes list/get, and deal/person/organization field discovery.
+  - Kept `pipedrive_create_activity` as the only write-like tool.
+  - `npm run check` passed with 9 tests.
+  - A one-off MCP stdio inventory listed 25 tools.
+  - Expanded mock MCP coverage asserted endpoint paths, filters, cursor/start
+    pagination parameters, token header usage, and no token value in URLs.
 
 ## Final Status
 
 - completion status: partial
-- protocol article impact: draft update possible with read-only live evidence, but not
-  production or write evidence.
+- protocol article impact: draft update possible with an expanded read-only MCP surface,
+  but not production or write evidence.
 - not completed:
+  - Counted live smoke for the expanded read-only surface on a verified sandbox or trial
+    account, or with explicit approval.
   - Real disposable `create_activity` write.
   - Real pagination and rate-limit header validation.
   - OAuth or remote MCP hosting.
