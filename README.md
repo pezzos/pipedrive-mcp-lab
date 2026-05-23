@@ -3,22 +3,25 @@
 Small local MCP server used for a Project Pezzos article draft about connecting
 Claude/Codex to Pipedrive.
 
-Status: public lab, not a production connector. The MCP now exposes a 25-tool surface:
-24 read-only tools plus one guarded activity write. The current evidence proves that the
-server starts over stdio, lists the expanded tools, forwards mocked Pipedrive requests
-without putting the token in URLs, and keeps the only write path behind
-`PIPEDRIVE_ENABLE_WRITES` with `dry_run` enabled by default. A limited read-only live
-check also ran against a configured account on the earlier core tools without printing
-CRM records or enabling writes, but the expanded surface is not live-validated unless
-sandbox or trial status is verified, or explicit approval is recorded.
+Status: public lab, not a production connector. The MCP now exposes a 44-tool surface:
+read tools plus a guarded commercial workflow pack. The current evidence proves that the
+server starts over stdio, lists the tools, forwards mocked Pipedrive requests without
+putting the token in URLs, blocks non-Pipedrive base URLs by default, and keeps every
+write behind `PIPEDRIVE_ENABLE_WRITES`, `dry_run`, and a per-call confirmation string.
+A limited read-only live check also ran against a configured account on the earlier core
+tools without printing CRM records or enabling writes, but the expanded surface and
+write pack are not live-validated unless sandbox or trial status is verified, or
+explicit approval is recorded.
 
 ## What It Contains
 
 - TypeScript MCP server using `@modelcontextprotocol/sdk`.
-- Read-first tools for local health, search, deals, persons, organizations, leads,
+- Read-first tools for local health, search, deal finding, deals, persons, organizations, leads,
   pipelines, stages, activities, activity types, users, notes, and custom-field schema
   discovery.
-- One guarded write tool: `pipedrive_create_activity`.
+- Guarded commercial workflow tools for creating/updating deals, contacts,
+  organizations, leads, notes and activities, moving/closing deals, converting leads,
+  marking/rescheduling activities, and logging a call plus a follow-up.
 - Tests with mocked HTTP responses and an MCP stdio client.
 - `RESULTATS.md` with factual run evidence.
 
@@ -35,6 +38,7 @@ For local manual runs, export variables in your shell:
 export PIPEDRIVE_COMPANY_DOMAIN="your-sandbox-company"
 export PIPEDRIVE_API_TOKEN="your-sandbox-token"
 export PIPEDRIVE_ENABLE_WRITES="false"
+export PIPEDRIVE_WRITE_CONFIRMATION="CONFIRM_WRITE"
 npm run build
 node dist/server.js
 ```
@@ -47,9 +51,12 @@ with a sandbox or trial account and disposable records.
 - No deletes, merges, bulk operations, file uploads or downloads, webhooks, admin
   mutations, or other broad CRM writes.
 - Writes are disabled unless `PIPEDRIVE_ENABLE_WRITES=true`.
-- `pipedrive_create_activity` defaults to `dry_run=true`.
-- Live smoke for the expanded read-only surface only counts with a verified sandbox or
+- Every write tool defaults to `dry_run=true`.
+- A real write also requires `confirmation` to match `PIPEDRIVE_WRITE_CONFIRMATION`.
+- Live smoke for the expanded read/write surface only counts with a verified sandbox or
   trial account, or explicit approval on another account.
+- `PIPEDRIVE_BASE_URL` must be `https://*.pipedrive.com` unless
+  `PIPEDRIVE_ALLOW_MOCK_BASE_URL=true` is set for loopback mocked tests.
 - API token values are sent with the official `x-api-token` header, not query
   parameters, and are not included in thrown error messages.
 - `.env` files are ignored by git.
@@ -57,9 +64,11 @@ with a sandbox or trial account and disposable records.
 ## Not Tested Yet
 
 - Real pagination and rate-limit headers.
-- Real activity creation against a disposable record.
-- Counted live smoke for that expanded surface on a verified sandbox or trial account,
-  or with explicit approval.
+- Counted live smoke for the expanded read/write surface on a verified sandbox or trial
+  account, or with explicit approval.
+- Real write execution against disposable records.
+- Email send/sync, file upload/download, product line items, participants, followers,
+  reports, automations and webhooks.
 - OAuth or remote MCP hosting.
 
 ## Related Article

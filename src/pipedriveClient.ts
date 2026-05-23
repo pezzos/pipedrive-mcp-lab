@@ -23,8 +23,24 @@ export class PipedriveClient {
     return this.request("POST", path, params, body);
   }
 
+  async patch(
+    path: string,
+    body: unknown,
+    params: Record<string, string | number | boolean | undefined> = {},
+  ) {
+    return this.request("PATCH", path, params, body);
+  }
+
+  async put(
+    path: string,
+    body: unknown,
+    params: Record<string, string | number | boolean | undefined> = {},
+  ) {
+    return this.request("PUT", path, params, body);
+  }
+
   private async request(
-    method: "GET" | "POST",
+    method: "GET" | "POST" | "PATCH" | "PUT",
     path: string,
     params: Record<string, string | number | boolean | undefined>,
     body?: unknown,
