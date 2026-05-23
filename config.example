@@ -1,0 +1,3 @@
+PIPEDRIVE_COMPANY_DOMAIN=example-company
+PIPEDRIVE_API_TOKEN=replace-with-a-sandbox-token
+PIPEDRIVE_ENABLE_WRITES=false
