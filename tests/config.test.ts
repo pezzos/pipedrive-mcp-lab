@@ -9,6 +9,8 @@ test("loads safe defaults without a token", () => {
   assert.equal(config.baseUrl, "");
   assert.equal(config.allowMockBaseUrl, false);
   assert.equal(config.enableWrites, false);
+  assert.equal(config.requireLabPrefix, true);
+  assert.equal(config.labPrefix, "MCP LAB -");
   assert.equal(config.writeConfirmation, "CONFIRM_WRITE");
   assert.equal(config.requestTimeoutMs, 10000);
 });

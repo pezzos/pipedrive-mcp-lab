@@ -44,11 +44,22 @@ test("starts over stdio, lists tools, and dry-runs the write tool", async () => 
       "pipedrive_list_deal_fields",
       "pipedrive_list_person_fields",
       "pipedrive_list_organization_fields",
+      "pipedrive_list_products",
+      "pipedrive_get_product",
+      "pipedrive_search_products",
+      "pipedrive_list_deal_products",
+      "pipedrive_list_deal_participants",
+      "pipedrive_list_deal_followers",
+      "pipedrive_list_deal_files",
+      "pipedrive_list_deal_mail_messages",
       "pipedrive_create_deal",
       "pipedrive_update_deal",
       "pipedrive_move_deal_stage",
       "pipedrive_mark_deal_won",
       "pipedrive_mark_deal_lost",
+      "pipedrive_add_product_to_deal",
+      "pipedrive_add_deal_participant",
+      "pipedrive_add_deal_follower",
       "pipedrive_create_person",
       "pipedrive_update_person",
       "pipedrive_create_organization",
@@ -128,7 +139,7 @@ test("dry-run works without token and live write fails clearly without token", a
     const confirmedAttempt = await client.callTool({
       name: "pipedrive_create_activity",
       arguments: {
-        subject: "Follow up",
+        subject: "MCP LAB - Follow up",
         dry_run: false,
         confirmation: "CONFIRM_WRITE",
       },
@@ -277,6 +288,14 @@ test("expanded read-only tools call expected Pipedrive endpoints and forward fil
       { name: "pipedrive_list_deal_fields", arguments: { limit: 9, cursor: "df1" } },
       { name: "pipedrive_list_person_fields", arguments: { limit: 10, cursor: "pf1" } },
       { name: "pipedrive_list_organization_fields", arguments: { limit: 11, cursor: "of1" } },
+      { name: "pipedrive_list_products", arguments: { limit: 12, cursor: "prod1" } },
+      { name: "pipedrive_get_product", arguments: { product_id: 40 } },
+      { name: "pipedrive_search_products", arguments: { term: "service", exact_match: true, limit: 13, cursor: "ps1" } },
+      { name: "pipedrive_list_deal_products", arguments: { deal_id: 123, limit: 14, cursor: "dp1" } },
+      { name: "pipedrive_list_deal_participants", arguments: { deal_id: 123, limit: 15, start: 1 } },
+      { name: "pipedrive_list_deal_followers", arguments: { deal_id: 123, limit: 16, cursor: "fol1" } },
+      { name: "pipedrive_list_deal_files", arguments: { deal_id: 123, limit: 17, start: 2 } },
+      { name: "pipedrive_list_deal_mail_messages", arguments: { deal_id: 123, limit: 18, start: 3 } },
     ];
 
     for (const call of calls) {
@@ -321,6 +340,14 @@ test("expanded read-only tools call expected Pipedrive endpoints and forward fil
     assert.ok(urls.includes("/api/v2/dealFields?limit=9&cursor=df1"));
     assert.ok(urls.includes("/api/v2/personFields?limit=10&cursor=pf1"));
     assert.ok(urls.includes("/api/v2/organizationFields?limit=11&cursor=of1"));
+    assert.ok(urls.includes("/api/v2/products?limit=12&cursor=prod1"));
+    assert.ok(urls.includes("/api/v2/products/40"));
+    assert.ok(urls.includes("/api/v2/products/search?term=service&exact_match=true&limit=13&cursor=ps1"));
+    assert.ok(urls.includes("/api/v2/deals/123/products?limit=14&cursor=dp1"));
+    assert.ok(urls.includes("/api/v1/deals/123/participants?limit=15&start=1"));
+    assert.ok(urls.includes("/api/v2/deals/123/followers?limit=16&cursor=fol1"));
+    assert.ok(urls.includes("/api/v1/deals/123/files?limit=17&start=2"));
+    assert.ok(urls.includes("/api/v1/deals/123/mailMessages?limit=18&start=3"));
     assert.equal(requested.every((entry) => entry.token === "test-token"), true);
     assert.equal(requested.every((entry) => !entry.url.includes("test-token")), true);
   } finally {
@@ -360,6 +387,7 @@ test("commercial write tools require confirmation and send expected methods when
       PIPEDRIVE_API_TOKEN: "test-token",
       PIPEDRIVE_ENABLE_WRITES: "true",
       PIPEDRIVE_WRITE_CONFIRMATION: "YES_WRITE",
+      PIPEDRIVE_REQUIRE_LAB_PREFIX: "false",
     },
     stderr: "pipe",
   });
@@ -427,6 +455,25 @@ test("commercial write tools require confirmation and send expected methods when
       {
         name: "pipedrive_mark_deal_lost",
         arguments: { deal_id: 126, lost_reason: "No budget", dry_run: false, confirmation: "YES_WRITE" },
+      },
+      {
+        name: "pipedrive_add_product_to_deal",
+        arguments: {
+          deal_id: 127,
+          product_id: 40,
+          item_price: 250,
+          quantity: 2,
+          dry_run: false,
+          confirmation: "YES_WRITE",
+        },
+      },
+      {
+        name: "pipedrive_add_deal_participant",
+        arguments: { deal_id: 128, person_id: 11, dry_run: false, confirmation: "YES_WRITE" },
+      },
+      {
+        name: "pipedrive_add_deal_follower",
+        arguments: { deal_id: 129, user_id: 7, dry_run: false, confirmation: "YES_WRITE" },
       },
       {
         name: "pipedrive_create_person",
@@ -508,6 +555,9 @@ test("commercial write tools require confirmation and send expected methods when
         "PATCH /api/v2/deals/124",
         "PATCH /api/v2/deals/125",
         "PATCH /api/v2/deals/126",
+        "POST /api/v2/deals/127/products",
+        "POST /api/v1/deals/128/participants",
+        "POST /api/v2/deals/129/followers",
         "POST /api/v2/persons",
         "PATCH /api/v2/persons/11",
         "POST /api/v2/organizations",
@@ -528,14 +578,146 @@ test("commercial write tools require confirmation and send expected methods when
     assert.equal(requested.every((entry) => !entry.url.includes("test-token")), true);
     assert.deepEqual(requested[2]?.body, { stage_id: 5 });
     assert.deepEqual(requested[4]?.body, { status: "won" });
-    assert.deepEqual(requested[10]?.body, { title: "Qualified lead", person_id: 11 });
-    assert.deepEqual(requested[12]?.body, { content: "Discovery note", deal_id: 123 });
-    assert.deepEqual(requested[13]?.body, { content: "Updated note" });
-    assert.deepEqual(requested[14]?.body, { stage_id: 5 });
-    assert.equal((requested[16]?.body as { done?: boolean }).done, true);
-    assert.equal((requested[17]?.body as { due_date?: string }).due_date, "2026-05-25");
-    assert.equal((requested[18]?.body as { done?: boolean }).done, true);
-    assert.equal((requested[19]?.body as { due_date?: string }).due_date, "2026-05-24");
+    assert.deepEqual(requested[6]?.body, { product_id: 40, item_price: 250, quantity: 2 });
+    assert.deepEqual(requested[7]?.body, { person_id: 11 });
+    assert.deepEqual(requested[8]?.body, { user_id: 7 });
+    assert.deepEqual(requested[13]?.body, { title: "Qualified lead", person_id: 11 });
+    assert.deepEqual(requested[15]?.body, { content: "Discovery note", deal_id: 123 });
+    assert.deepEqual(requested[16]?.body, { content: "Updated note" });
+    assert.deepEqual(requested[17]?.body, { stage_id: 5 });
+    assert.equal((requested[19]?.body as { done?: boolean }).done, true);
+    assert.equal((requested[20]?.body as { due_date?: string }).due_date, "2026-05-25");
+    assert.equal((requested[21]?.body as { done?: boolean }).done, true);
+    assert.equal((requested[22]?.body as { due_date?: string }).due_date, "2026-05-24");
+  } finally {
+    await client.close();
+    await new Promise<void>((resolve) => api.close(() => resolve()));
+  }
+});
+
+test("real writes require lab-scoped targets and dry-run can validate linked records", async () => {
+  const requested: Array<{ method: string; url: string; body: unknown; token: string }> = [];
+  const api = createServer(async (request, response) => {
+    let text = "";
+    for await (const chunk of request) {
+      text += chunk.toString();
+    }
+    requested.push({
+      method: request.method ?? "",
+      url: request.url ?? "",
+      body: text ? JSON.parse(text) : null,
+      token: request.headers["x-api-token"]?.toString() ?? "",
+    });
+
+    const url = request.url ?? "";
+    if (request.method === "GET" && url === "/api/v2/persons/11") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ success: true, data: { id: 11, name: "MCP LAB - Ada" } }));
+      return;
+    }
+    if (request.method === "GET" && url === "/api/v2/deals/123") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ success: true, data: { id: 123, title: "Real customer deal" } }));
+      return;
+    }
+    if (request.method === "GET" && url === "/api/v2/deals/124") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ success: true, data: { id: 124, title: "MCP LAB - Safe deal" } }));
+      return;
+    }
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ success: true, data: { id: 999 } }));
+  });
+  await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
+  const { port } = api.address() as AddressInfo;
+
+  const client = new Client({ name: "pipedrive-mcp-lab-test", version: "0.1.0" });
+  const transport = new StdioClientTransport({
+    command: "node",
+    args: ["dist/server.js"],
+    cwd: process.cwd(),
+    env: {
+      PATH: process.env.PATH ?? "",
+      PIPEDRIVE_BASE_URL: `http://127.0.0.1:${port}`,
+      PIPEDRIVE_ALLOW_MOCK_BASE_URL: "true",
+      PIPEDRIVE_API_TOKEN: "test-token",
+      PIPEDRIVE_ENABLE_WRITES: "true",
+      PIPEDRIVE_WRITE_CONFIRMATION: "YES_WRITE",
+    },
+    stderr: "pipe",
+  });
+
+  await client.connect(transport);
+  try {
+    const dryRun = await client.callTool({
+      name: "pipedrive_create_person",
+      arguments: {
+        name: "MCP LAB - Ada",
+        email: "ada@example.com",
+        phone: "+33123456789",
+        dry_run: true,
+      },
+    });
+    const dryRunText = (dryRun.content as Array<{ text?: string }>)[0]?.text ?? "";
+    assert.match(dryRunText, /"email": "\[redacted\]"/);
+    assert.match(dryRunText, /"phone": "\[redacted\]"/);
+    assert.equal(requested.length, 0);
+
+    const validatedDryRun = await client.callTool({
+      name: "pipedrive_create_deal",
+      arguments: {
+        title: "MCP LAB - Validated dry run",
+        person_id: 11,
+        validate_links: true,
+        dry_run: true,
+      },
+    });
+    assert.equal(validatedDryRun.isError, undefined);
+    assert.match((validatedDryRun.content as Array<{ text?: string }>)[0]?.text ?? "", /"validated_links": \[\s*"person:11"/);
+    assert.deepEqual(
+      requested.map((entry) => `${entry.method} ${entry.url}`),
+      ["GET /api/v2/persons/11"],
+    );
+
+    const unsafeCreate = await client.callTool({
+      name: "pipedrive_create_deal",
+      arguments: {
+        title: "Real customer deal",
+        dry_run: false,
+        confirmation: "YES_WRITE",
+      },
+    });
+    assert.equal(unsafeCreate.isError, true);
+    assert.match((unsafeCreate.content as Array<{ text?: string }>)[0]?.text ?? "", /MCP LAB -/);
+    assert.equal(requested.length, 1);
+
+    const unsafeUpdate = await client.callTool({
+      name: "pipedrive_update_deal",
+      arguments: {
+        deal_id: 123,
+        stage_id: 5,
+        dry_run: false,
+        confirmation: "YES_WRITE",
+      },
+    });
+    assert.equal(unsafeUpdate.isError, true);
+    assert.equal(requested.at(-1)?.url, "/api/v2/deals/123");
+
+    const safeUpdate = await client.callTool({
+      name: "pipedrive_update_deal",
+      arguments: {
+        deal_id: 124,
+        stage_id: 6,
+        dry_run: false,
+        confirmation: "YES_WRITE",
+      },
+    });
+    assert.equal(safeUpdate.isError, undefined);
+    assert.deepEqual(
+      requested.slice(-2).map((entry) => `${entry.method} ${entry.url}`),
+      ["GET /api/v2/deals/124", "PATCH /api/v2/deals/124"],
+    );
+    assert.deepEqual(requested.at(-1)?.body, { stage_id: 6 });
   } finally {
     await client.close();
     await new Promise<void>((resolve) => api.close(() => resolve()));

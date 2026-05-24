@@ -3,7 +3,7 @@
 Small local MCP server used for a Project Pezzos article draft about connecting
 Claude/Codex to Pipedrive.
 
-Status: public lab, not a production connector. The MCP now exposes a 44-tool surface:
+Status: public lab, not a production connector. The MCP now exposes a 55-tool surface:
 read tools plus a guarded commercial workflow pack. The current evidence proves that the
 server starts over stdio, lists the tools, forwards mocked Pipedrive requests without
 putting the token in URLs, blocks non-Pipedrive base URLs by default, and keeps every
@@ -17,11 +17,13 @@ explicit approval is recorded.
 
 - TypeScript MCP server using `@modelcontextprotocol/sdk`.
 - Read-first tools for local health, search, deal finding, deals, persons, organizations, leads,
-  pipelines, stages, activities, activity types, users, notes, and custom-field schema
-  discovery.
+  pipelines, stages, activities, activity types, users, notes, products, deal products,
+  deal participants, deal followers, deal files, deal mail messages, and custom-field
+  schema discovery.
 - Guarded commercial workflow tools for creating/updating deals, contacts,
   organizations, leads, notes and activities, moving/closing deals, converting leads,
-  marking/rescheduling activities, and logging a call plus a follow-up.
+  marking/rescheduling activities, adding products/participants/followers to deals,
+  and logging a call plus a follow-up.
 - Tests with mocked HTTP responses and an MCP stdio client.
 - `RESULTATS.md` with factual run evidence.
 
@@ -39,6 +41,8 @@ export PIPEDRIVE_COMPANY_DOMAIN="your-sandbox-company"
 export PIPEDRIVE_API_TOKEN="your-sandbox-token"
 export PIPEDRIVE_ENABLE_WRITES="false"
 export PIPEDRIVE_WRITE_CONFIRMATION="CONFIRM_WRITE"
+export PIPEDRIVE_REQUIRE_LAB_PREFIX="true"
+export PIPEDRIVE_LAB_PREFIX="MCP LAB -"
 npm run build
 node dist/server.js
 ```
@@ -53,6 +57,15 @@ with a sandbox or trial account and disposable records.
 - Writes are disabled unless `PIPEDRIVE_ENABLE_WRITES=true`.
 - Every write tool defaults to `dry_run=true`.
 - A real write also requires `confirmation` to match `PIPEDRIVE_WRITE_CONFIRMATION`.
+- Real writes require lab-scoped records by default: new labels must start with
+  `PIPEDRIVE_LAB_PREFIX`, and updates first read the target record and block if its
+  label is not lab-prefixed. Set `PIPEDRIVE_REQUIRE_LAB_PREFIX=false` only outside this
+  lab protocol.
+- Dry-runs redact email, phone, notes, comments, note content and lost reasons in `would_send`.
+- Write tools accept `validate_links=true` to read linked deal/person/org/lead/product
+  IDs before returning the dry-run response.
+- Deal closing tools accept either a full ISO datetime with offset or a `YYYY-MM-DD`
+  date, which is normalized to midnight UTC.
 - Live smoke for the expanded read/write surface only counts with a verified sandbox or
   trial account, or explicit approval on another account.
 - `PIPEDRIVE_BASE_URL` must be `https://*.pipedrive.com` unless
@@ -67,8 +80,7 @@ with a sandbox or trial account and disposable records.
 - Counted live smoke for the expanded read/write surface on a verified sandbox or trial
   account, or with explicit approval.
 - Real write execution against disposable records.
-- Email send/sync, file upload/download, product line items, participants, followers,
-  reports, automations and webhooks.
+- Email send/sync, file upload/download, reports, automations and webhooks.
 - OAuth or remote MCP hosting.
 
 ## Related Article
