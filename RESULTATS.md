@@ -8,8 +8,8 @@
 - Public repo: <https://github.com/pezzos/pipedrive-mcp-lab>
 - Current MCP surface: 61 tools, with read tools plus guarded commercial workflow
   writes for common seller actions.
-- Real Pipedrive account: read-only validation run on 2026-05-23 with credentials loaded
-  from local `.env`.
+- Real Pipedrive account: read-only validation run on 2026-05-23, followed by guarded
+  disposable write validation on 2026-05-24 with credentials loaded from local `.env`.
 - Account type: not independently verified by Codex; treated as a live configured
   Pipedrive account, not asserted as sandbox or trial.
 - CRM data: real CRM API responses were received from the configured Pipedrive account;
@@ -49,23 +49,24 @@
 | Lab write confirmation without shared secret | done | `npm run check` passed on 2026-05-24 with 12 tests. When writes and lab-prefix protection are enabled, `confirm_lab_write=true` authorizes lab-scoped writes without exposing `PIPEDRIVE_WRITE_CONFIRMATION`; non-lab targets are still blocked by the target read. |
 | Base URL allowlist | done | Config tests reject non-Pipedrive base URLs. `PIPEDRIVE_ALLOW_MOCK_BASE_URL=true` only permits loopback mock URLs, not arbitrary hosts. |
 | MCP stdio tools/list for the expanded surface | done | A one-off inventory listed 61 tools after implementation; the test suite asserts the added tools are present and read-only where applicable. |
-| Live smoke for the expanded read/write surface on a verified sandbox or trial account, or with explicit approval | not-run | This is the acceptance bar for counting the expansion as live-validated. The current configured-account read does not satisfy it on its own. |
+| Live smoke for the expanded read/write surface with explicit approval | done | Operator-provided live runs on 2026-05-24 validated reads plus real lab-prefixed writes using `dry_run=false` and `confirm_lab_write=true`. The final focused retest used run suffix `MCP LAB - 2026-05-24 - AP-RETEST-1423`; no `PIPEDRIVE_WRITE_CONFIRMATION` secret was shared with the test session. |
 | Live pagination and rate-limit headers across the expanded read-only surface | not-run | Still pending. |
-| Real write execution against disposable CRM records | not-run | Requires sandbox or trial verification, or explicit approval on the configured account. |
+| Real write execution against disposable CRM records | done | Across the 2026-05-24 live runs, disposable lab-prefixed organizations, persons, leads, deals, notes, activities, call/follow-up workflow activities, won/lost deals, participants, and followers were created or exercised where account state allowed it, then cleaned up. Final re-reads showed expected tombstones such as `is_deleted=true` or `active_flag=false`, or 404 for deleted leads. |
+| Live product line item write | skipped | `pipedrive_list_products` returned zero live products in the configured account, so adding a product line item to a deal could not be tested without first creating or importing a product. |
 | Public repo secret scan | done | Local pre-publish `rg` scan passed on 2026-05-23; GitHub secret scanning is expected to run after public push. |
 | Public GitHub repo creation | done | `pezzos/pipedrive-mcp-lab` was created public and pushed on 2026-05-23. |
 
 ## Current Allowed Conclusion
 
-The current lab may support this conclusion after tests pass: the local MCP server is
-structurally runnable over stdio, exposes an expanded 61-tool read/write lab surface,
-keeps real writes behind explicit gates, can be tested without real CRM data, and can
-perform basic read-only calls against a configured Pipedrive account for the earlier core
-tools.
+The current lab supports this conclusion: the local MCP server is structurally runnable
+over stdio, exposes an expanded 61-tool read/write lab surface, keeps real writes behind
+explicit gates, can be tested without real CRM data, and has been live-tested for the
+core CRM workflow on disposable lab-prefixed records with explicit operator approval.
 
-It must not support this conclusion yet: the expanded surface is live-validated, the MCP
-is production-ready, it is safe to use on customer CRM data without a separate
-permission model, or it is validated for real writes, pagination, rate limits, OAuth, or
+It must not support this conclusion: the MCP is production-ready, it fully replaces the
+Pipedrive UI, it is safe to use on customer CRM data without a separate permission
+model, or it is validated for product line items, email send/sync, file upload/download,
+reports, dashboards, automations, webhooks, real pagination, rate limits, OAuth, or
 remote hosting.
 
 ## Commands Run
@@ -194,17 +195,32 @@ remote hosting.
     token value.
   - Claude Code review was attempted again, but Claude returned the same 403
     organization-access error and no review content was usable.
+- Final focused live retest on 2026-05-24:
+  - Test session reported `pipedrive_health_check` with writes enabled, lab-prefix
+    protection enabled, and lab write confirmation available through
+    `confirm_lab_write=true`; `PIPEDRIVE_WRITE_CONFIRMATION` was not used.
+  - Run suffix was `MCP LAB - 2026-05-24 - AP-RETEST-1423`.
+  - Organization create/update/read/delete passed live without the removed `address`
+    field; final read showed `is_deleted=true`.
+  - Person create/update/read/delete passed live with email and phone accepted through
+    the MCP mappings; final read showed `is_deleted=true`.
+  - Activity create/update/mark-done/read/delete passed live with `person_id` mapped
+    through participants; final read showed `is_deleted=true`.
+  - Lead creation without a person or organization link was rejected as expected. Linked
+    lead create/update/read/delete passed live with value and currency; post-delete read
+    returned the expected 404.
+  - A product line item live write was skipped because `pipedrive_list_products`
+    returned zero products in the configured account.
+  - No remaining P0/P1/P2 issue was reported by the test session; remaining limits are
+    sandbox data and out-of-scope UI areas, not observed MCP mapping failures.
 
 ## Final Status
 
-- completion status: partial
-- protocol article impact: draft update possible with an expanded MCP surface and mocked
-  commercial write workflows, but not production or live write evidence.
+- completion status: live-core-validated-partial-ui
+- protocol article impact: draft update possible with an expanded MCP surface, mocked
+  commercial write coverage, and real disposable live writes for the core CRM workflow.
 - not completed:
-  - Counted live smoke for the expanded read/write surface on a verified sandbox or trial
-    account, or with explicit approval.
-  - Real disposable writes and cleanup for deals, contacts, leads, notes, activities,
-    product line items, participants and followers.
+  - Product line item live write, because the configured account had no products.
   - Real pagination and rate-limit header validation.
   - Email send/sync, file upload/download, reports, automations and webhooks.
   - OAuth or remote MCP hosting.

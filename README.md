@@ -9,10 +9,11 @@ server starts over stdio, lists the tools, forwards mocked Pipedrive requests wi
 putting the token in URLs, blocks non-Pipedrive base URLs by default, and keeps every
 write behind `PIPEDRIVE_ENABLE_WRITES`, `dry_run`, and either a per-call confirmation
 string or lab-only `confirm_lab_write=true`.
-A limited read-only live check also ran against a configured account on the earlier core
-tools without printing CRM records or enabling writes, but the expanded surface and
-write pack are not live-validated unless sandbox or trial status is verified, or
-explicit approval is recorded.
+Live validation also ran against a configured account with explicit approval:
+lab-prefixed disposable records were created, updated, reread, and deleted for the core
+CRM workflow without printing CRM payloads or sharing the write-confirmation secret with
+the test session. Product line items remain untested because the configured account had
+no products.
 
 ## What It Contains
 
@@ -86,10 +87,7 @@ with a sandbox or trial account and disposable records.
 ## Not Tested Yet
 
 - Real pagination and rate-limit headers.
-- Counted live smoke for the expanded read/write surface on a verified sandbox or trial
-  account, or with explicit approval.
-- Real write execution against disposable records after the latest lab-confirmation
-  changes.
+- Product line item live write, because the configured account had no products.
 - Email send/sync, file upload/download, reports, automations and webhooks.
 - OAuth or remote MCP hosting.
 
