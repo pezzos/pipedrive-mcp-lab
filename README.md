@@ -3,11 +3,12 @@
 Small local MCP server used for a Project Pezzos article draft about connecting
 Claude/Codex to Pipedrive.
 
-Status: public lab, not a production connector. The MCP now exposes a 55-tool surface:
+Status: public lab, not a production connector. The MCP now exposes a 61-tool surface:
 read tools plus a guarded commercial workflow pack. The current evidence proves that the
 server starts over stdio, lists the tools, forwards mocked Pipedrive requests without
 putting the token in URLs, blocks non-Pipedrive base URLs by default, and keeps every
-write behind `PIPEDRIVE_ENABLE_WRITES`, `dry_run`, and a per-call confirmation string.
+write behind `PIPEDRIVE_ENABLE_WRITES`, `dry_run`, and either a per-call confirmation
+string or lab-only `confirm_lab_write=true`.
 A limited read-only live check also ran against a configured account on the earlier core
 tools without printing CRM records or enabling writes, but the expanded surface and
 write pack are not live-validated unless sandbox or trial status is verified, or
@@ -20,12 +21,13 @@ explicit approval is recorded.
   pipelines, stages, activities, activity types, users, notes, products, deal products,
   deal participants, deal followers, deal files, deal mail messages, and custom-field
   schema discovery.
-- Guarded commercial workflow tools for creating/updating deals, contacts,
+- Guarded commercial workflow tools for creating/updating/deleting lab-scoped deals, contacts,
   organizations, leads, notes and activities, moving/closing deals, converting leads,
   marking/rescheduling activities, adding products/participants/followers to deals,
   and logging a call plus a follow-up.
 - Tests with mocked HTTP responses and an MCP stdio client.
 - `RESULTATS.md` with factual run evidence.
+- `TEST_PROMPT.md` with the latest live validation prompt.
 
 ## Quick Start
 
@@ -41,6 +43,7 @@ export PIPEDRIVE_COMPANY_DOMAIN="your-sandbox-company"
 export PIPEDRIVE_API_TOKEN="your-sandbox-token"
 export PIPEDRIVE_ENABLE_WRITES="false"
 export PIPEDRIVE_WRITE_CONFIRMATION="CONFIRM_WRITE"
+export PIPEDRIVE_ALLOW_LAB_WRITE_CONFIRMATION="true"
 export PIPEDRIVE_REQUIRE_LAB_PREFIX="true"
 export PIPEDRIVE_LAB_PREFIX="MCP LAB -"
 npm run build
@@ -52,11 +55,14 @@ with a sandbox or trial account and disposable records.
 
 ## Safety Defaults
 
-- No deletes, merges, bulk operations, file uploads or downloads, webhooks, admin
-  mutations, or other broad CRM writes.
+- No merges, bulk operations, file uploads or downloads, webhooks, admin mutations, or
+  other broad CRM writes. Delete tools exist only for lab-scoped cleanup and read the
+  target record before deletion.
 - Writes are disabled unless `PIPEDRIVE_ENABLE_WRITES=true`.
 - Every write tool defaults to `dry_run=true`.
 - A real write also requires `confirmation` to match `PIPEDRIVE_WRITE_CONFIRMATION`.
+- For lab tests, real writes can use `confirm_lab_write=true` instead of exposing the
+  confirmation string, but only while lab-prefix protection is enabled.
 - Real writes require lab-scoped records by default: new labels must start with
   `PIPEDRIVE_LAB_PREFIX`, and updates first read the target record and block if its
   label is not lab-prefixed. Set `PIPEDRIVE_REQUIRE_LAB_PREFIX=false` only outside this
@@ -79,7 +85,8 @@ with a sandbox or trial account and disposable records.
 - Real pagination and rate-limit headers.
 - Counted live smoke for the expanded read/write surface on a verified sandbox or trial
   account, or with explicit approval.
-- Real write execution against disposable records.
+- Real write execution against disposable records after the latest lab-confirmation
+  changes.
 - Email send/sync, file upload/download, reports, automations and webhooks.
 - OAuth or remote MCP hosting.
 

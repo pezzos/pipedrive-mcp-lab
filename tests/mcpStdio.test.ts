@@ -74,6 +74,12 @@ test("starts over stdio, lists tools, and dry-runs the write tool", async () => 
       "pipedrive_reschedule_activity",
       "pipedrive_log_call_and_schedule_follow_up",
       "pipedrive_create_activity",
+      "pipedrive_delete_activity",
+      "pipedrive_delete_deal",
+      "pipedrive_delete_lead",
+      "pipedrive_delete_note",
+      "pipedrive_delete_organization",
+      "pipedrive_delete_person",
     ]) {
       assert.ok(toolNames.includes(expected), `missing ${expected}`);
     }
@@ -539,6 +545,30 @@ test("commercial write tools require confirmation and send expected methods when
           confirmation: "YES_WRITE",
         },
       },
+      {
+        name: "pipedrive_delete_activity",
+        arguments: { activity_id: 20, dry_run: false, confirmation: "YES_WRITE" },
+      },
+      {
+        name: "pipedrive_delete_deal",
+        arguments: { deal_id: 123, dry_run: false, confirmation: "YES_WRITE" },
+      },
+      {
+        name: "pipedrive_delete_lead",
+        arguments: { lead_id: leadId, dry_run: false, confirmation: "YES_WRITE" },
+      },
+      {
+        name: "pipedrive_delete_note",
+        arguments: { note_id: 10, dry_run: false, confirmation: "YES_WRITE" },
+      },
+      {
+        name: "pipedrive_delete_organization",
+        arguments: { organization_id: 12, dry_run: false, confirmation: "YES_WRITE" },
+      },
+      {
+        name: "pipedrive_delete_person",
+        arguments: { person_id: 11, dry_run: false, confirmation: "YES_WRITE" },
+      },
     ];
 
     for (const call of realCalls) {
@@ -572,6 +602,12 @@ test("commercial write tools require confirmation and send expected methods when
         "PATCH /api/v2/activities/22",
         "POST /api/v2/activities",
         "POST /api/v2/activities",
+        "DELETE /api/v2/activities/20",
+        "DELETE /api/v2/deals/123",
+        `DELETE /api/v1/leads/${leadId}`,
+        "DELETE /api/v1/notes/10",
+        "DELETE /api/v2/organizations/12",
+        "DELETE /api/v2/persons/11",
       ],
     );
     assert.equal(requested.every((entry) => entry.token === "test-token"), true);
@@ -709,7 +745,7 @@ test("real writes require lab-scoped targets and dry-run can validate linked rec
         deal_id: 124,
         stage_id: 6,
         dry_run: false,
-        confirmation: "YES_WRITE",
+        confirm_lab_write: true,
       },
     });
     assert.equal(safeUpdate.isError, undefined);
@@ -718,6 +754,20 @@ test("real writes require lab-scoped targets and dry-run can validate linked rec
       ["GET /api/v2/deals/124", "PATCH /api/v2/deals/124"],
     );
     assert.deepEqual(requested.at(-1)?.body, { stage_id: 6 });
+
+    const safeDelete = await client.callTool({
+      name: "pipedrive_delete_deal",
+      arguments: {
+        deal_id: 124,
+        dry_run: false,
+        confirm_lab_write: true,
+      },
+    });
+    assert.equal(safeDelete.isError, undefined);
+    assert.deepEqual(
+      requested.slice(-2).map((entry) => `${entry.method} ${entry.url}`),
+      ["GET /api/v2/deals/124", "DELETE /api/v2/deals/124"],
+    );
   } finally {
     await client.close();
     await new Promise<void>((resolve) => api.close(() => resolve()));

@@ -39,8 +39,12 @@ export class PipedriveClient {
     return this.request("PUT", path, params, body);
   }
 
+  async delete(path: string, params: Record<string, string | number | boolean | undefined> = {}) {
+    return this.request("DELETE", path, params);
+  }
+
   private async request(
-    method: "GET" | "POST" | "PATCH" | "PUT",
+    method: "GET" | "POST" | "PATCH" | "PUT" | "DELETE",
     path: string,
     params: Record<string, string | number | boolean | undefined>,
     body?: unknown,

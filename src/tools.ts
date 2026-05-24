@@ -46,24 +46,33 @@ function commaList(values?: string[]) {
 const writeGuardSchema = {
   dry_run: z.boolean().default(true),
   validate_links: z.boolean().default(false),
+  confirm_lab_write: z.boolean().default(false),
   confirmation: z.string().optional(),
 };
 
-function assertWriteAllowed(config: PipedriveConfig, dryRun: boolean, confirmation?: string) {
+function assertWriteAllowed(
+  config: PipedriveConfig,
+  args: { dry_run?: boolean; confirmation?: string; confirm_lab_write?: boolean },
+) {
+  const dryRun = args.dry_run ?? true;
   if (dryRun) {
     return;
   }
   if (!config.enableWrites) {
     throw new Error("PIPEDRIVE_ENABLE_WRITES must be true for real write operations");
   }
-  if (confirmation !== config.writeConfirmation) {
+  if (args.confirmation !== config.writeConfirmation && !canUseLabConfirmation(config, args.confirm_lab_write)) {
     throw new Error("Write confirmation did not match PIPEDRIVE_WRITE_CONFIRMATION");
   }
 }
 
+function canUseLabConfirmation(config: PipedriveConfig, confirmLabWrite?: boolean) {
+  return Boolean(confirmLabWrite && config.allowLabWriteConfirmation && config.requireLabPrefix);
+}
+
 function guardedWriteResult(
   config: PipedriveConfig,
-  args: { dry_run?: boolean; confirmation?: string },
+  args: { dry_run?: boolean; confirmation?: string; confirm_lab_write?: boolean },
   body: unknown,
   extra: Record<string, unknown> = {},
 ) {
@@ -77,7 +86,7 @@ function guardedWriteResult(
       ...extra,
     });
   }
-  assertWriteAllowed(config, dryRun, args.confirmation);
+  assertWriteAllowed(config, args);
   return undefined;
 }
 
@@ -255,6 +264,7 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
         base_url_configured: Boolean(config.baseUrl),
         mock_base_url_allowed: config.allowMockBaseUrl,
         writes_enabled: config.enableWrites,
+        lab_write_confirmation_allowed: config.allowLabWriteConfirmation,
         lab_prefix_required: config.requireLabPrefix,
         lab_prefix: config.labPrefix,
         write_confirmation_configured: Boolean(config.writeConfirmation),
@@ -765,10 +775,10 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
         openWorldHint: true,
       },
     },
-    async ({ dry_run, validate_links, confirmation, ...body }) => {
+    async ({ dry_run, validate_links, confirm_lab_write, confirmation, ...body }) => {
       const refs = [dealRef(body.deal_id), personRef(body.person_id), organizationRef(body.org_id), leadRef(body.lead_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, body, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, body, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -796,11 +806,11 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ dry_run, validate_links, confirmation, custom_fields, ...body }) => {
+    async ({ dry_run, validate_links, confirm_lab_write, confirmation, custom_fields, ...body }) => {
       const payload = withCustomFields(body, custom_fields);
       const refs = [personRef(body.person_id), organizationRef(body.org_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, payload, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -829,11 +839,11 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ deal_id, dry_run, validate_links, confirmation, custom_fields, ...body }) => {
+    async ({ deal_id, dry_run, validate_links, confirm_lab_write, confirmation, custom_fields, ...body }) => {
       const payload = withCustomFields(body, custom_fields);
       const refs = [dealRef(deal_id), personRef(body.person_id), organizationRef(body.org_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, payload, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -853,11 +863,11 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ deal_id, stage_id, dry_run, validate_links, confirmation }) => {
+    async ({ deal_id, stage_id, dry_run, validate_links, confirm_lab_write, confirmation }) => {
       const payload = { stage_id };
       const refs = [dealRef(deal_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, payload, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -877,11 +887,11 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ deal_id, close_time, dry_run, validate_links, confirmation }) => {
+    async ({ deal_id, close_time, dry_run, validate_links, confirm_lab_write, confirmation }) => {
       const payload = { status: "won", close_time: normalizeCloseTime(close_time) };
       const refs = [dealRef(deal_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, payload, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -902,11 +912,11 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ deal_id, lost_reason, close_time, dry_run, validate_links, confirmation }) => {
+    async ({ deal_id, lost_reason, close_time, dry_run, validate_links, confirm_lab_write, confirmation }) => {
       const payload = { status: "lost", lost_reason, close_time: normalizeCloseTime(close_time) };
       const refs = [dealRef(deal_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, payload, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -938,11 +948,11 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ deal_id, product_id, dry_run, validate_links, confirmation, ...body }) => {
+    async ({ deal_id, product_id, dry_run, validate_links, confirm_lab_write, confirmation, ...body }) => {
       const payload = { product_id, ...body };
       const refs = [dealRef(deal_id), productRef(product_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, payload, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -962,11 +972,11 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ deal_id, person_id, dry_run, validate_links, confirmation }) => {
+    async ({ deal_id, person_id, dry_run, validate_links, confirm_lab_write, confirmation }) => {
       const payload = { person_id };
       const refs = [dealRef(deal_id), personRef(person_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, payload, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -986,11 +996,11 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ deal_id, user_id, dry_run, validate_links, confirmation }) => {
+    async ({ deal_id, user_id, dry_run, validate_links, confirm_lab_write, confirmation }) => {
       const payload = { user_id };
       const refs = [dealRef(deal_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, payload, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -1014,11 +1024,11 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ dry_run, validate_links, confirmation, custom_fields, ...body }) => {
+    async ({ dry_run, validate_links, confirm_lab_write, confirmation, custom_fields, ...body }) => {
       const payload = withCustomFields(body, custom_fields);
       const refs = [organizationRef(body.org_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, payload, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -1043,11 +1053,11 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ person_id, dry_run, validate_links, confirmation, custom_fields, ...body }) => {
+    async ({ person_id, dry_run, validate_links, confirm_lab_write, confirmation, custom_fields, ...body }) => {
       const payload = withCustomFields(body, custom_fields);
       const refs = [personRef(person_id), organizationRef(body.org_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, payload, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -1069,9 +1079,9 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ dry_run, validate_links, confirmation, custom_fields, ...body }) => {
+    async ({ dry_run, validate_links, confirm_lab_write, confirmation, custom_fields, ...body }) => {
       const payload = withCustomFields(body, custom_fields);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, payload);
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload);
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -1094,11 +1104,11 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ organization_id, dry_run, validate_links, confirmation, custom_fields, ...body }) => {
+    async ({ organization_id, dry_run, validate_links, confirm_lab_write, confirmation, custom_fields, ...body }) => {
       const payload = withCustomFields(body, custom_fields);
       const refs = [organizationRef(organization_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, payload, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -1124,12 +1134,12 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ dry_run, validate_links, confirmation, custom_fields, organization_id, person_id, ...body }) => {
+    async ({ dry_run, validate_links, confirm_lab_write, confirmation, custom_fields, organization_id, person_id, ...body }) => {
       requireLeadLink(person_id, organization_id);
       const payload = withCustomFields({ ...body, person_id, org_id: organization_id }, custom_fields);
       const refs = [personRef(person_id), organizationRef(organization_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, payload, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -1156,11 +1166,11 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ lead_id, dry_run, validate_links, confirmation, custom_fields, organization_id, person_id, ...body }) => {
+    async ({ lead_id, dry_run, validate_links, confirm_lab_write, confirmation, custom_fields, organization_id, person_id, ...body }) => {
       const payload = withCustomFields({ ...body, person_id, org_id: organization_id }, custom_fields);
       const refs = [leadRef(lead_id), personRef(person_id), organizationRef(organization_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, payload, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -1181,11 +1191,11 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ lead_id, dry_run, validate_links, confirmation, pipeline_id, stage_id }) => {
+    async ({ lead_id, dry_run, validate_links, confirm_lab_write, confirmation, pipeline_id, stage_id }) => {
       const payload = { pipeline_id, stage_id };
       const refs = [leadRef(lead_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, payload, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -1208,10 +1218,10 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ dry_run, validate_links, confirmation, ...body }) => {
+    async ({ dry_run, validate_links, confirm_lab_write, confirmation, ...body }) => {
       const refs = [dealRef(body.deal_id), personRef(body.person_id), organizationRef(body.org_id), leadRef(body.lead_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, body, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, body, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -1231,10 +1241,10 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ note_id, dry_run, validate_links, confirmation, ...body }) => {
+    async ({ note_id, dry_run, validate_links, confirm_lab_write, confirmation, ...body }) => {
       const refs = [noteRef(note_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, body, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, body, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -1265,7 +1275,7 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ activity_id, dry_run, validate_links, confirmation, ...body }) => {
+    async ({ activity_id, dry_run, validate_links, confirm_lab_write, confirmation, ...body }) => {
       const refs = [
         activityRef(activity_id),
         dealRef(body.deal_id),
@@ -1274,7 +1284,7 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
         leadRef(body.lead_id),
       ];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, body, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, body, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -1293,11 +1303,11 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ activity_id, dry_run, validate_links, confirmation }) => {
+    async ({ activity_id, dry_run, validate_links, confirm_lab_write, confirmation }) => {
       const payload = { done: true };
       const refs = [activityRef(activity_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, payload, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -1319,10 +1329,10 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
-    async ({ activity_id, dry_run, validate_links, confirmation, ...body }) => {
+    async ({ activity_id, dry_run, validate_links, confirm_lab_write, confirmation, ...body }) => {
       const refs = [activityRef(activity_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, body, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, body, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -1362,6 +1372,7 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       follow_up_due_time,
       dry_run,
       validate_links,
+      confirm_lab_write,
       confirmation,
       ...linkArgs
     }) => {
@@ -1389,7 +1400,7 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       };
       const payload = { call: callBody, follow_up: followUpBody };
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirmation }, payload, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
@@ -1398,6 +1409,168 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       const call = await client.post("/api/v2/activities", callBody);
       const followUp = await client.post("/api/v2/activities", followUpBody);
       return jsonResult({ call, follow_up: followUp });
+    },
+  );
+
+  server.registerTool(
+    "pipedrive_delete_activity",
+    {
+      description: "Delete a lab-scoped activity after reading the target first. Defaults to dry-run.",
+      inputSchema: {
+        activity_id: z.number().int().positive(),
+        ...writeGuardSchema,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ activity_id, dry_run, validate_links, confirm_lab_write, confirmation }) => {
+      const ref = activityRef(activity_id);
+      const validated_links = await validateLinksIfRequested(client, validate_links, [ref]);
+      const dryRunResult = guardedWriteResult(
+        config,
+        { dry_run, confirm_lab_write, confirmation },
+        { activity_id },
+        { validated_links },
+      );
+      if (dryRunResult) {
+        return dryRunResult;
+      }
+      await assertDisposableTarget(client, config, ref);
+      return jsonResult(await client.delete(`/api/v2/activities/${activity_id}`));
+    },
+  );
+
+  server.registerTool(
+    "pipedrive_delete_deal",
+    {
+      description: "Delete a lab-scoped deal after reading the target first. Defaults to dry-run.",
+      inputSchema: {
+        deal_id: z.number().int().positive(),
+        ...writeGuardSchema,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ deal_id, dry_run, validate_links, confirm_lab_write, confirmation }) => {
+      const ref = dealRef(deal_id);
+      const validated_links = await validateLinksIfRequested(client, validate_links, [ref]);
+      const dryRunResult = guardedWriteResult(
+        config,
+        { dry_run, confirm_lab_write, confirmation },
+        { deal_id },
+        { validated_links },
+      );
+      if (dryRunResult) {
+        return dryRunResult;
+      }
+      await assertDisposableTarget(client, config, ref);
+      return jsonResult(await client.delete(`/api/v2/deals/${deal_id}`));
+    },
+  );
+
+  server.registerTool(
+    "pipedrive_delete_lead",
+    {
+      description: "Delete a lab-scoped lead after reading the target first. Defaults to dry-run.",
+      inputSchema: {
+        lead_id: z.string().uuid(),
+        ...writeGuardSchema,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ lead_id, dry_run, validate_links, confirm_lab_write, confirmation }) => {
+      const ref = leadRef(lead_id);
+      const validated_links = await validateLinksIfRequested(client, validate_links, [ref]);
+      const dryRunResult = guardedWriteResult(
+        config,
+        { dry_run, confirm_lab_write, confirmation },
+        { lead_id },
+        { validated_links },
+      );
+      if (dryRunResult) {
+        return dryRunResult;
+      }
+      await assertDisposableTarget(client, config, ref);
+      return jsonResult(await client.delete(`/api/v1/leads/${lead_id}`));
+    },
+  );
+
+  server.registerTool(
+    "pipedrive_delete_note",
+    {
+      description: "Delete a lab-scoped note after reading the target first. Defaults to dry-run.",
+      inputSchema: {
+        note_id: z.number().int().positive(),
+        ...writeGuardSchema,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ note_id, dry_run, validate_links, confirm_lab_write, confirmation }) => {
+      const ref = noteRef(note_id);
+      const validated_links = await validateLinksIfRequested(client, validate_links, [ref]);
+      const dryRunResult = guardedWriteResult(
+        config,
+        { dry_run, confirm_lab_write, confirmation },
+        { note_id },
+        { validated_links },
+      );
+      if (dryRunResult) {
+        return dryRunResult;
+      }
+      await assertDisposableTarget(client, config, ref);
+      return jsonResult(await client.delete(`/api/v1/notes/${note_id}`));
+    },
+  );
+
+  server.registerTool(
+    "pipedrive_delete_organization",
+    {
+      description: "Delete a lab-scoped organization after reading the target first. Defaults to dry-run.",
+      inputSchema: {
+        organization_id: z.number().int().positive(),
+        ...writeGuardSchema,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ organization_id, dry_run, validate_links, confirm_lab_write, confirmation }) => {
+      const ref = organizationRef(organization_id);
+      const validated_links = await validateLinksIfRequested(client, validate_links, [ref]);
+      const dryRunResult = guardedWriteResult(
+        config,
+        { dry_run, confirm_lab_write, confirmation },
+        { organization_id },
+        { validated_links },
+      );
+      if (dryRunResult) {
+        return dryRunResult;
+      }
+      await assertDisposableTarget(client, config, ref);
+      return jsonResult(await client.delete(`/api/v2/organizations/${organization_id}`));
+    },
+  );
+
+  server.registerTool(
+    "pipedrive_delete_person",
+    {
+      description: "Delete a lab-scoped person after reading the target first. Defaults to dry-run.",
+      inputSchema: {
+        person_id: z.number().int().positive(),
+        ...writeGuardSchema,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ person_id, dry_run, validate_links, confirm_lab_write, confirmation }) => {
+      const ref = personRef(person_id);
+      const validated_links = await validateLinksIfRequested(client, validate_links, [ref]);
+      const dryRunResult = guardedWriteResult(
+        config,
+        { dry_run, confirm_lab_write, confirmation },
+        { person_id },
+        { validated_links },
+      );
+      if (dryRunResult) {
+        return dryRunResult;
+      }
+      await assertDisposableTarget(client, config, ref);
+      return jsonResult(await client.delete(`/api/v2/persons/${person_id}`));
     },
   );
 

@@ -6,7 +6,7 @@
   without making broad CRM writes the default?
 - Lab repo state: public GitHub repository.
 - Public repo: <https://github.com/pezzos/pipedrive-mcp-lab>
-- Current MCP surface: 55 tools, with read tools plus guarded commercial workflow
+- Current MCP surface: 61 tools, with read tools plus guarded commercial workflow
   writes for common seller actions.
 - Real Pipedrive account: read-only validation run on 2026-05-23 with credentials loaded
   from local `.env`.
@@ -44,10 +44,11 @@
 | Read-tool MCP call against mocked HTTP API | done | `pipedrive_list_deals` calls a local mock server over stdio and sends token via `x-api-token` header, not URL query. |
 | Limited live Pipedrive read on configured account | done | On 2026-05-23, an MCP stdio client called live `pipedrive_list_pipelines`, `pipedrive_list_deals`, and `pipedrive_list_activities` with writes forced off. All returned `success: true`; the captured output recorded only counts and success flags. This is informational evidence, not counted sign-off for the expanded read-only surface because sandbox or trial status was not independently verified. The activities tool later moved from the earlier v1 path to `/api/v2/activities`, so the previous live activities result covers the old endpoint path, not the new v2 response shape. |
 | Mocked coverage for `search_items`, deal/product search, persons list/get, organizations list/get, stages list, leads list/get, activity types list, users current/list, notes list/get, deal files/mail/products/participants/followers, and deal/person/organization field discovery | done | `npm run check` passed on 2026-05-24 with 12 tests. The expanded MCP stdio test called each added read-only tool against a local mock API and asserted endpoint paths, filters, pagination parameters, `x-api-token` header usage, and absence of token values in URLs. |
-| Mocked commercial write pack | done | `npm run check` passed on 2026-05-24 with 12 tests. The stdio test asserts dry-run does not call the API, wrong confirmation blocks the call, lead creation requires a person or organization link, every write tool sends the expected `POST`/`PATCH`/`PUT` request to the mock when confirmed, and token values stay in the `x-api-token` header rather than URLs. |
+| Mocked commercial write pack | done | `npm run check` passed on 2026-05-24 with 12 tests. The stdio test asserts dry-run does not call the API, wrong confirmation blocks the call, lead creation requires a person or organization link, every write tool sends the expected `POST`/`PATCH`/`PUT`/`DELETE` request to the mock when confirmed, and token values stay in the `x-api-token` header rather than URLs. |
 | Lab-prefix write guard and dry-run link validation | done | `npm run check` passed on 2026-05-24 with 12 tests. Real writes require lab-prefixed create labels or a lab-prefixed existing target, dry-runs can use `validate_links=true` to read linked records, and dry-run payloads redact email, phone, notes, comments, content and lost reasons. |
+| Lab write confirmation without shared secret | done | `npm run check` passed on 2026-05-24 with 12 tests. When writes and lab-prefix protection are enabled, `confirm_lab_write=true` authorizes lab-scoped writes without exposing `PIPEDRIVE_WRITE_CONFIRMATION`; non-lab targets are still blocked by the target read. |
 | Base URL allowlist | done | Config tests reject non-Pipedrive base URLs. `PIPEDRIVE_ALLOW_MOCK_BASE_URL=true` only permits loopback mock URLs, not arbitrary hosts. |
-| MCP stdio tools/list for the expanded surface | done | A one-off inventory listed 55 tools after implementation; the test suite asserts the added tools are present and read-only where applicable. |
+| MCP stdio tools/list for the expanded surface | done | A one-off inventory listed 61 tools after implementation; the test suite asserts the added tools are present and read-only where applicable. |
 | Live smoke for the expanded read/write surface on a verified sandbox or trial account, or with explicit approval | not-run | This is the acceptance bar for counting the expansion as live-validated. The current configured-account read does not satisfy it on its own. |
 | Live pagination and rate-limit headers across the expanded read-only surface | not-run | Still pending. |
 | Real write execution against disposable CRM records | not-run | Requires sandbox or trial verification, or explicit approval on the configured account. |
@@ -57,7 +58,7 @@
 ## Current Allowed Conclusion
 
 The current lab may support this conclusion after tests pass: the local MCP server is
-structurally runnable over stdio, exposes an expanded 55-tool read/write lab surface,
+structurally runnable over stdio, exposes an expanded 61-tool read/write lab surface,
 keeps real writes behind explicit gates, can be tested without real CRM data, and can
 perform basic read-only calls against a configured Pipedrive account for the earlier core
 tools.
@@ -161,6 +162,22 @@ remote hosting.
   - A one-off MCP stdio inventory listed 55 tools.
   - Claude Code review was attempted again, but Claude returned the same 403
     organization-access error and no review content was usable.
+- Second live-test feedback integration on 2026-05-24:
+  - Added `confirm_lab_write=true` so a test agent can execute lab-prefixed writes
+    without receiving the secret confirmation string.
+  - Added lab-scoped delete tools for activities, deals, leads, notes, organizations
+    and persons. Each delete defaults to dry-run and reads the target first when lab
+    prefix protection is enabled.
+  - Added `DELETE` support to the Pipedrive client and mocked stdio coverage for delete
+    method/path behavior.
+  - Added `TEST_PROMPT.md` focused on synthetic live create/update/read/delete cycles
+    instead of re-testing already validated read-only discovery.
+  - `npm run check` passed with 12 tests.
+  - A one-off MCP stdio inventory listed 61 tools.
+  - Secret marker scan returned only the documented scan pattern in this file, not a
+    token value.
+  - Claude Code review was attempted again, but Claude returned the same 403
+    organization-access error and no review content was usable.
 
 ## Final Status
 
@@ -170,8 +187,8 @@ remote hosting.
 - not completed:
   - Counted live smoke for the expanded read/write surface on a verified sandbox or trial
     account, or with explicit approval.
-  - Real disposable writes for deals, contacts, leads, notes, activities, product line
-    items, participants and followers.
+  - Real disposable writes and cleanup for deals, contacts, leads, notes, activities,
+    product line items, participants and followers.
   - Real pagination and rate-limit header validation.
   - Email send/sync, file upload/download, reports, automations and webhooks.
   - OAuth or remote MCP hosting.

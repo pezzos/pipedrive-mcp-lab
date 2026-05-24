@@ -4,6 +4,7 @@ export type PipedriveConfig = {
   baseUrl: string;
   allowMockBaseUrl: boolean;
   enableWrites: boolean;
+  allowLabWriteConfirmation: boolean;
   requireLabPrefix: boolean;
   labPrefix: string;
   writeConfirmation: string;
@@ -16,6 +17,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): PipedriveConfi
   const baseUrl = clean(env.PIPEDRIVE_BASE_URL) ?? defaultBaseUrl(companyDomain);
   const allowMockBaseUrl = env.PIPEDRIVE_ALLOW_MOCK_BASE_URL === "true";
   const enableWrites = env.PIPEDRIVE_ENABLE_WRITES === "true";
+  const allowLabWriteConfirmation = env.PIPEDRIVE_ALLOW_LAB_WRITE_CONFIRMATION !== "false";
   const requireLabPrefix = env.PIPEDRIVE_REQUIRE_LAB_PREFIX !== "false";
   const labPrefix = clean(env.PIPEDRIVE_LAB_PREFIX) ?? "MCP LAB -";
   const writeConfirmation = clean(env.PIPEDRIVE_WRITE_CONFIRMATION) ?? "CONFIRM_WRITE";
@@ -27,6 +29,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): PipedriveConfi
     baseUrl,
     allowMockBaseUrl,
     enableWrites,
+    allowLabWriteConfirmation,
     requireLabPrefix,
     labPrefix,
     writeConfirmation,
