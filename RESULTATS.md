@@ -178,6 +178,22 @@ remote hosting.
     token value.
   - Claude Code review was attempted again, but Claude returned the same 403
     organization-access error and no review content was usable.
+- Third live-test feedback integration on 2026-05-24:
+  - Updated person create/update payloads to send `emails` and `phones` arrays while
+    preserving simple `email` and `phone` inputs for users.
+  - Updated activity create/update and the call/follow-up workflow to map `person_id`
+    into `participants` instead of sending the read-only `person_id` field.
+  - Updated lead create/update payloads to keep `organization_id`, require currency
+    when a value is supplied, and send value as `{ amount, currency }`.
+  - Removed the unreliable v2 organization `address` input from the MCP schema.
+  - Replaced `TEST_PROMPT.md` with a focused retest prompt for the remaining mapping
+    fixes instead of re-running already validated scenarios.
+  - `npm run check` passed with 12 tests.
+  - A one-off MCP stdio inventory listed 61 tools.
+  - Secret marker scan returned only the documented scan pattern in this file, not a
+    token value.
+  - Claude Code review was attempted again, but Claude returned the same 403
+    organization-access error and no review content was usable.
 
 ## Final Status
 

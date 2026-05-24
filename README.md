@@ -25,6 +25,9 @@ explicit approval is recorded.
   organizations, leads, notes and activities, moving/closing deals, converting leads,
   marking/rescheduling activities, adding products/participants/followers to deals,
   and logging a call plus a follow-up.
+- Friendly input mappings for common Pipedrive API shapes: person `email`/`phone` become
+  v2 `emails`/`phones`, activity `person_id` becomes `participants`, and lead values
+  become `{ amount, currency }`.
 - Tests with mocked HTTP responses and an MCP stdio client.
 - `RESULTATS.md` with factual run evidence.
 - `TEST_PROMPT.md` with the latest live validation prompt.

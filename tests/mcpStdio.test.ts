@@ -440,7 +440,7 @@ test("commercial write tools require confirmation and send expected methods when
     const realCalls = [
       {
         name: "pipedrive_create_activity",
-        arguments: { subject: "Activity", dry_run: false, confirmation: "YES_WRITE" },
+        arguments: { subject: "Activity", person_id: 11, dry_run: false, confirmation: "YES_WRITE" },
       },
       {
         name: "pipedrive_create_deal",
@@ -495,11 +495,19 @@ test("commercial write tools require confirmation and send expected methods when
       },
       {
         name: "pipedrive_update_organization",
-        arguments: { organization_id: 12, address: "Paris", dry_run: false, confirmation: "YES_WRITE" },
+        arguments: { organization_id: 12, name: "Acme Updated", dry_run: false, confirmation: "YES_WRITE" },
       },
       {
         name: "pipedrive_create_lead",
-        arguments: { title: "Qualified lead", person_id: 11, dry_run: false, confirmation: "YES_WRITE" },
+        arguments: {
+          title: "Qualified lead",
+          person_id: 11,
+          organization_id: 12,
+          value: 100,
+          currency: "EUR",
+          dry_run: false,
+          confirmation: "YES_WRITE",
+        },
       },
       {
         name: "pipedrive_update_lead",
@@ -524,7 +532,7 @@ test("commercial write tools require confirmation and send expected methods when
       },
       {
         name: "pipedrive_update_activity",
-        arguments: { activity_id: 20, subject: "Updated activity", dry_run: false, confirmation: "YES_WRITE" },
+        arguments: { activity_id: 20, subject: "Updated activity", person_id: 11, dry_run: false, confirmation: "YES_WRITE" },
       },
       {
         name: "pipedrive_mark_activity_done",
@@ -540,6 +548,7 @@ test("commercial write tools require confirmation and send expected methods when
           call_subject: "Call done",
           follow_up_subject: "Follow up",
           deal_id: 123,
+          person_id: 11,
           follow_up_due_date: "2026-05-24",
           dry_run: false,
           confirmation: "YES_WRITE",
@@ -612,19 +621,51 @@ test("commercial write tools require confirmation and send expected methods when
     );
     assert.equal(requested.every((entry) => entry.token === "test-token"), true);
     assert.equal(requested.every((entry) => !entry.url.includes("test-token")), true);
+    assert.deepEqual(requested[0]?.body, {
+      subject: "Activity",
+      type: "task",
+      participants: [{ person_id: 11, primary: true }],
+    });
     assert.deepEqual(requested[2]?.body, { stage_id: 5 });
     assert.deepEqual(requested[4]?.body, { status: "won" });
     assert.deepEqual(requested[6]?.body, { product_id: 40, item_price: 250, quantity: 2 });
     assert.deepEqual(requested[7]?.body, { person_id: 11 });
     assert.deepEqual(requested[8]?.body, { user_id: 7 });
-    assert.deepEqual(requested[13]?.body, { title: "Qualified lead", person_id: 11 });
+    assert.deepEqual(requested[9]?.body, {
+      name: "Ada Lovelace",
+      emails: [{ value: "ada@example.com", primary: true, label: "work" }],
+    });
+    assert.deepEqual(requested[10]?.body, { phones: [{ value: "+33123456789", primary: true, label: "work" }] });
+    assert.deepEqual(requested[12]?.body, { name: "Acme Updated" });
+    assert.deepEqual(requested[13]?.body, {
+      title: "Qualified lead",
+      person_id: 11,
+      organization_id: 12,
+      value: { amount: 100, currency: "EUR" },
+    });
     assert.deepEqual(requested[15]?.body, { content: "Discovery note", deal_id: 123 });
     assert.deepEqual(requested[16]?.body, { content: "Updated note" });
     assert.deepEqual(requested[17]?.body, { stage_id: 5 });
+    assert.deepEqual(requested[18]?.body, {
+      subject: "Updated activity",
+      participants: [{ person_id: 11, primary: true }],
+    });
     assert.equal((requested[19]?.body as { done?: boolean }).done, true);
     assert.equal((requested[20]?.body as { due_date?: string }).due_date, "2026-05-25");
-    assert.equal((requested[21]?.body as { done?: boolean }).done, true);
-    assert.equal((requested[22]?.body as { due_date?: string }).due_date, "2026-05-24");
+    assert.deepEqual(requested[21]?.body, {
+      subject: "Call done",
+      type: "call",
+      done: true,
+      deal_id: 123,
+      participants: [{ person_id: 11, primary: true }],
+    });
+    assert.deepEqual(requested[22]?.body, {
+      subject: "Follow up",
+      type: "task",
+      due_date: "2026-05-24",
+      deal_id: 123,
+      participants: [{ person_id: 11, primary: true }],
+    });
   } finally {
     await client.close();
     await new Promise<void>((resolve) => api.close(() => resolve()));
@@ -695,8 +736,8 @@ test("real writes require lab-scoped targets and dry-run can validate linked rec
       },
     });
     const dryRunText = (dryRun.content as Array<{ text?: string }>)[0]?.text ?? "";
-    assert.match(dryRunText, /"email": "\[redacted\]"/);
-    assert.match(dryRunText, /"phone": "\[redacted\]"/);
+    assert.match(dryRunText, /"emails": "\[redacted\]"/);
+    assert.match(dryRunText, /"phones": "\[redacted\]"/);
     assert.equal(requested.length, 0);
 
     const validatedDryRun = await client.callTool({

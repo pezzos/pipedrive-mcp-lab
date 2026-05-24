@@ -15,6 +15,11 @@ const noteText = z.string().min(1).max(100_000);
 const activityNote = z.string().max(10_000).optional();
 const moneyValue = z.number().min(0).optional();
 const currencyCode = z.string().regex(/^[A-Z]{3}$/, "Expected ISO 4217 currency code").optional();
+const contactDetail = z.object({
+  value: z.string().min(1).max(255),
+  primary: z.boolean().optional(),
+  label: z.string().min(1).max(80).optional(),
+});
 const customFieldValue = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 const customFields = z.record(z.string().min(1), customFieldValue).optional();
 
@@ -97,6 +102,12 @@ function withCustomFields<T extends Record<string, unknown>>(body: T, fields?: R
 function requireLeadLink(personId?: number, organizationId?: number) {
   if (!personId && !organizationId) {
     throw new Error("Pipedrive leads must be linked to a person_id or organization_id");
+  }
+}
+
+function requireLeadValueCurrency(value?: number, currency?: string) {
+  if (value !== undefined && !currency) {
+    throw new Error("Lead value requires a three-letter currency");
   }
 }
 
@@ -202,6 +213,41 @@ function productRef(id?: number): LinkRef {
   return { type: "product", id, path: `/api/v2/products/${id}`, labelFields: ["name"] };
 }
 
+function personPayload<T extends Record<string, unknown>>(
+  body: T & {
+    email?: string;
+    phone?: string;
+    emails?: Array<{ value: string; primary?: boolean; label?: string }>;
+    phones?: Array<{ value: string; primary?: boolean; label?: string }>;
+  },
+) {
+  const { email, phone, emails, phones, ...rest } = body;
+  return {
+    ...rest,
+    ...(emails || email ? { emails: emails ?? [{ value: email, primary: true, label: "work" }] } : {}),
+    ...(phones || phone ? { phones: phones ?? [{ value: phone, primary: true, label: "work" }] } : {}),
+  };
+}
+
+function leadPayload<T extends Record<string, unknown>>(
+  body: T & { value?: number; currency?: string; organization_id?: number },
+) {
+  const { value, currency, ...rest } = body;
+  requireLeadValueCurrency(value, currency);
+  return {
+    ...rest,
+    ...(value !== undefined && currency ? { value: { amount: value, currency } } : {}),
+  };
+}
+
+function activityPayload<T extends Record<string, unknown>>(body: T & { person_id?: number }) {
+  const { person_id, ...rest } = body;
+  return {
+    ...rest,
+    ...(person_id ? { participants: [{ person_id, primary: true }] } : {}),
+  };
+}
+
 function extractData(response: unknown) {
   if (isRecord(response) && isRecord(response.data)) {
     return response.data;
@@ -231,7 +277,7 @@ function redactDryRunPayload(value: unknown): unknown {
   }
   const redacted: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
-    redacted[key] = /^(content|email|phone|comments|lost_reason)$|note/i.test(key) && entry
+    redacted[key] = /^(content|email|emails|phone|phones|comments|lost_reason)$|note/i.test(key) && entry
       ? "[redacted]"
       : redactDryRunPayload(entry);
   }
@@ -776,14 +822,15 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       },
     },
     async ({ dry_run, validate_links, confirm_lab_write, confirmation, ...body }) => {
+      const payload = activityPayload(body);
       const refs = [dealRef(body.deal_id), personRef(body.person_id), organizationRef(body.org_id), leadRef(body.lead_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, body, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
       await assertDisposableLinkOrLabel(client, config, "activity", body.subject, refs);
-      return dryRunResult ?? jsonResult(await client.post("/api/v2/activities", body));
+      return dryRunResult ?? jsonResult(await client.post("/api/v2/activities", payload));
     },
   );
 
@@ -1019,13 +1066,15 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
         org_id: z.number().int().positive().optional(),
         email: z.string().email().optional(),
         phone: z.string().min(3).max(80).optional(),
+        emails: z.array(contactDetail).min(1).max(10).optional(),
+        phones: z.array(contactDetail).min(1).max(10).optional(),
         custom_fields: customFields,
         ...writeGuardSchema,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     async ({ dry_run, validate_links, confirm_lab_write, confirmation, custom_fields, ...body }) => {
-      const payload = withCustomFields(body, custom_fields);
+      const payload = withCustomFields(personPayload(body), custom_fields);
       const refs = [organizationRef(body.org_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
       const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
@@ -1048,13 +1097,15 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
         org_id: z.number().int().positive().optional(),
         email: z.string().email().optional(),
         phone: z.string().min(3).max(80).optional(),
+        emails: z.array(contactDetail).min(1).max(10).optional(),
+        phones: z.array(contactDetail).min(1).max(10).optional(),
         custom_fields: customFields,
         ...writeGuardSchema,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     async ({ person_id, dry_run, validate_links, confirm_lab_write, confirmation, custom_fields, ...body }) => {
-      const payload = withCustomFields(body, custom_fields);
+      const payload = withCustomFields(personPayload(body), custom_fields);
       const refs = [personRef(person_id), organizationRef(body.org_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
       const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
@@ -1073,7 +1124,6 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       inputSchema: {
         name: shortText,
         owner_id: z.number().int().positive().optional(),
-        address: z.string().max(500).optional(),
         custom_fields: customFields,
         ...writeGuardSchema,
       },
@@ -1098,7 +1148,6 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
         organization_id: z.number().int().positive(),
         name: optionalShortText,
         owner_id: z.number().int().positive().optional(),
-        address: z.string().max(500).optional(),
         custom_fields: customFields,
         ...writeGuardSchema,
       },
@@ -1136,7 +1185,7 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
     },
     async ({ dry_run, validate_links, confirm_lab_write, confirmation, custom_fields, organization_id, person_id, ...body }) => {
       requireLeadLink(person_id, organization_id);
-      const payload = withCustomFields({ ...body, person_id, org_id: organization_id }, custom_fields);
+      const payload = withCustomFields(leadPayload({ ...body, person_id, organization_id }), custom_fields);
       const refs = [personRef(person_id), organizationRef(organization_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
       const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
@@ -1167,7 +1216,7 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     async ({ lead_id, dry_run, validate_links, confirm_lab_write, confirmation, custom_fields, organization_id, person_id, ...body }) => {
-      const payload = withCustomFields({ ...body, person_id, org_id: organization_id }, custom_fields);
+      const payload = withCustomFields(leadPayload({ ...body, person_id, organization_id }), custom_fields);
       const refs = [leadRef(lead_id), personRef(person_id), organizationRef(organization_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
       const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
@@ -1276,6 +1325,7 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     async ({ activity_id, dry_run, validate_links, confirm_lab_write, confirmation, ...body }) => {
+      const payload = activityPayload(body);
       const refs = [
         activityRef(activity_id),
         dealRef(body.deal_id),
@@ -1284,12 +1334,12 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
         leadRef(body.lead_id),
       ];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
-      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, body, { validated_links });
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
       if (dryRunResult) {
         return dryRunResult;
       }
       await assertDisposableTarget(client, config, activityRef(activity_id));
-      return dryRunResult ?? jsonResult(await client.patch(`/api/v2/activities/${activity_id}`, body));
+      return dryRunResult ?? jsonResult(await client.patch(`/api/v2/activities/${activity_id}`, payload));
     },
   );
 
@@ -1383,20 +1433,24 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
         leadRef(linkArgs.lead_id),
       ];
       const callBody = {
-        subject: call_subject,
-        type: "call",
-        done: true,
-        due_date: call_date,
-        note: call_note,
-        ...linkArgs,
+        ...activityPayload({
+          subject: call_subject,
+          type: "call",
+          done: true,
+          due_date: call_date,
+          note: call_note,
+          ...linkArgs,
+        }),
       };
       const followUpBody = {
-        subject: follow_up_subject,
-        type: "task",
-        due_date: follow_up_due_date,
-        due_time: follow_up_due_time,
-        note: follow_up_note,
-        ...linkArgs,
+        ...activityPayload({
+          subject: follow_up_subject,
+          type: "task",
+          due_date: follow_up_due_date,
+          due_time: follow_up_due_time,
+          note: follow_up_note,
+          ...linkArgs,
+        }),
       };
       const payload = { call: callBody, follow_up: followUpBody };
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
