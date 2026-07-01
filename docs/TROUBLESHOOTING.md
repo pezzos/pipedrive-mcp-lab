@@ -20,10 +20,17 @@ PIPEDRIVE_BASE_URL=http://127.0.0.1:3000
 
 ## Tools Are Missing
 
-Write and Mailbox tools are absent unless:
+CRM write tools are absent unless:
 
 ```sh
 PIPEDRIVE_ENABLE_WRITES=true
+```
+
+Mailbox tools are absent unless:
+
+```sh
+PIPEDRIVE_ENABLE_WRITES=true
+PIPEDRIVE_ENABLE_MAILBOX_TOOLS=true
 ```
 
 Delete tools are absent unless:
@@ -59,7 +66,7 @@ Project and task endpoints are beta. Confirm the target account has project
 boards and phases:
 
 - `pipedrive_list_project_boards`
-- `pipedrive_list_project_phases`
+- `pipedrive_list_project_phases` with the selected `board_id`
 
 Milestone tasks require a `due_date`.
 

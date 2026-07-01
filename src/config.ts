@@ -6,6 +6,7 @@ export type PipedriveConfig = {
   allowMockBaseUrl: boolean;
   enableWrites: boolean;
   enableDeleteTools: boolean;
+  enableMailboxTools: boolean;
   requestTimeoutMs: number;
 };
 
@@ -17,6 +18,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): PipedriveConfi
   const allowMockBaseUrl = env.PIPEDRIVE_ALLOW_MOCK_BASE_URL === "true";
   const enableWrites = env.PIPEDRIVE_ENABLE_WRITES === "true";
   const enableDeleteTools = env.PIPEDRIVE_ENABLE_DELETE_TOOLS === "true";
+  const enableMailboxTools = env.PIPEDRIVE_ENABLE_MAILBOX_TOOLS === "true";
   const requestTimeoutMs = Number(env.PIPEDRIVE_REQUEST_TIMEOUT_MS ?? 10_000);
 
   return {
@@ -27,6 +29,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): PipedriveConfi
     allowMockBaseUrl,
     enableWrites,
     enableDeleteTools,
+    enableMailboxTools,
     requestTimeoutMs: Number.isFinite(requestTimeoutMs) && requestTimeoutMs > 0 ? requestTimeoutMs : 10_000,
   };
 }

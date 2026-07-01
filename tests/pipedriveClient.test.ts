@@ -18,6 +18,7 @@ test("adds token as authorization header and query filters without logging the t
       baseUrl: "https://acme.pipedrive.com",
       enableWrites: false,
       enableDeleteTools: false,
+      enableMailboxTools: false,
       requestTimeoutMs: 10000,
     },
     fetchMock,
@@ -43,6 +44,7 @@ test("reports API errors without echoing the token", async () => {
       baseUrl: "https://acme.pipedrive.com",
       enableWrites: false,
       enableDeleteTools: false,
+      enableMailboxTools: false,
       requestTimeoutMs: 10000,
     },
     fetchMock,
@@ -75,6 +77,7 @@ test("uses OAuth bearer authorization when an access token is configured", async
       baseUrl: "https://acme.pipedrive.com",
       enableWrites: false,
       enableDeleteTools: false,
+      enableMailboxTools: false,
       requestTimeoutMs: 10000,
     },
     fetchMock,
@@ -103,6 +106,7 @@ test("sends form-encoded PUT bodies when requested", async () => {
       baseUrl: "https://acme.pipedrive.com",
       enableWrites: false,
       enableDeleteTools: false,
+      enableMailboxTools: false,
       requestTimeoutMs: 10000,
     },
     fetchMock,
@@ -124,6 +128,7 @@ test("redacts echoed bearer tokens from API error messages", async () => {
       baseUrl: "https://acme.pipedrive.com",
       enableWrites: false,
       enableDeleteTools: false,
+      enableMailboxTools: false,
       requestTimeoutMs: 10000,
     },
     fetchMock,
@@ -133,6 +138,34 @@ test("redacts echoed bearer tokens from API error messages", async () => {
     assert.ok(error instanceof Error);
     assert.match(error.message, /Authorization: Bearer \[redacted\]/);
     assert.doesNotMatch(error.message, /oauth-secret-token/);
+    return true;
+  });
+});
+
+test("redacts generic secret markers from API error messages", async () => {
+  const fetchMock = (async () =>
+    new Response(JSON.stringify({
+      error: 'request failed: {"api_token":"test-token","client_secret":"very-secret"}',
+    }), { status: 401 })) as typeof fetch;
+
+  const client = new PipedriveClient(
+    {
+      apiToken: "test-token",
+      companyDomain: "acme",
+      baseUrl: "https://acme.pipedrive.com",
+      enableWrites: false,
+      enableDeleteTools: false,
+      enableMailboxTools: false,
+      requestTimeoutMs: 10000,
+    },
+    fetchMock,
+  );
+
+  await assert.rejects(() => client.get("/api/v2/deals"), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /api_token\":\"\[redacted\]/);
+    assert.match(error.message, /client_secret\":\"\[redacted\]/);
+    assert.doesNotMatch(error.message, /test-token|very-secret/);
     return true;
   });
 });

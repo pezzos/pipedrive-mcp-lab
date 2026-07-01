@@ -15,6 +15,7 @@ test("loads production-safe defaults without a token", () => {
   assert.equal(config.allowMockBaseUrl, false);
   assert.equal(config.enableWrites, false);
   assert.equal(config.enableDeleteTools, false);
+  assert.equal(config.enableMailboxTools, false);
   assert.equal(config.requestTimeoutMs, 10000);
 });
 
@@ -24,10 +25,12 @@ test("derives the base URL from the company domain", () => {
     PIPEDRIVE_API_TOKEN: "token",
     PIPEDRIVE_ENABLE_WRITES: "true",
     PIPEDRIVE_ENABLE_DELETE_TOOLS: "true",
+    PIPEDRIVE_ENABLE_MAILBOX_TOOLS: "true",
   });
   assert.equal(config.baseUrl, "https://acme.pipedrive.com");
   assert.equal(config.enableWrites, true);
   assert.equal(config.enableDeleteTools, true);
+  assert.equal(config.enableMailboxTools, true);
 });
 
 test("accepts an OAuth access token instead of an API token", () => {
@@ -44,19 +47,19 @@ test("loads only the local dotenv file", () => {
   const { env, packageDir, cleanup } = temporaryPackageEnv();
   try {
     writeFileSync(join(packageDir, "..", ".env"), "PIPEDRIVE_ENABLE_WRITES=true\n", "utf-8");
-    writeFileSync(join(packageDir, ".env"), "PIPEDRIVE_ENABLE_DELETE_TOOLS=true\n", "utf-8");
+    writeFileSync(join(packageDir, ".env"), "PIPEDRIVE_ENABLE_MAILBOX_TOOLS=true\n", "utf-8");
 
     loadRuntimeEnv({ packageDir, env });
     const diagnostics = getRuntimeEnvDiagnostics();
 
     assert.equal(env.PIPEDRIVE_ENABLE_WRITES, undefined);
-    assert.equal(env.PIPEDRIVE_ENABLE_DELETE_TOOLS, "true");
+    assert.equal(env.PIPEDRIVE_ENABLE_MAILBOX_TOOLS, "true");
     assert.equal(diagnostics.initialized, true);
     assert.equal(diagnostics.dotenvLoadingEnabled, true);
     assert.equal(diagnostics.dotenvLocalFilePresent, true);
     assert.equal(diagnostics.dotenvLoaded, true);
-    assert.equal(diagnostics.preexisting.enableDeleteTools, false);
-    assert.equal(diagnostics.current.enableDeleteTools, true);
+    assert.equal(diagnostics.preexisting.enableMailboxTools, false);
+    assert.equal(diagnostics.current.enableMailboxTools, true);
   } finally {
     cleanup();
   }
@@ -119,16 +122,16 @@ test("can skip dotenv loading for controlled environments", () => {
 test("runtime env diagnostics are returned as a defensive copy", () => {
   const { env, packageDir, cleanup } = temporaryPackageEnv();
   try {
-    writeFileSync(join(packageDir, ".env"), "PIPEDRIVE_ENABLE_DELETE_TOOLS=true\n", "utf-8");
+    writeFileSync(join(packageDir, ".env"), "PIPEDRIVE_ENABLE_MAILBOX_TOOLS=true\n", "utf-8");
     loadRuntimeEnv({ packageDir, env });
 
     const first = getRuntimeEnvDiagnostics();
     first.dotenvLoaded = false;
-    first.current.enableDeleteTools = false;
+    first.current.enableMailboxTools = false;
 
     const second = getRuntimeEnvDiagnostics();
     assert.equal(second.dotenvLoaded, true);
-    assert.equal(second.current.enableDeleteTools, true);
+    assert.equal(second.current.enableMailboxTools, true);
   } finally {
     cleanup();
   }

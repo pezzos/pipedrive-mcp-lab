@@ -24,6 +24,7 @@ const contactDetail = z.object({
 });
 const customFieldValue = z.union([z.string(), z.number(), z.boolean(), z.null()]);
 const customFields = z.record(z.string().min(1), customFieldValue).optional();
+const customFieldKeysSymbol = Symbol("pipedriveCustomFieldKeys");
 
 const cursorPagination = {
   limit: z.number().int().min(1).max(100).default(20),
@@ -76,7 +77,15 @@ function guardedWriteResult(
 }
 
 function withCustomFields<T extends Record<string, unknown>>(body: T, fields?: Record<string, unknown>) {
-  return fields ? { ...body, ...fields } : body;
+  if (!fields) {
+    return body;
+  }
+  const payload = { ...body, ...fields };
+  Object.defineProperty(payload, customFieldKeysSymbol, {
+    value: Object.keys(fields),
+    enumerable: false,
+  });
+  return payload;
 }
 
 function requireLeadLink(personId?: number, organizationId?: number) {
@@ -331,16 +340,35 @@ function redactDryRunPayload(value: unknown): unknown {
     return value;
   }
   const redacted: Record<string, unknown> = {};
+  const customFieldKeys = getCustomFieldKeys(value);
   for (const [key, entry] of Object.entries(value)) {
-    redacted[key] = isSensitivePayloadField(key) ? "[redacted]" : redactDryRunPayload(entry);
+    redacted[key] = customFieldKeys.has(key) || isSensitivePayloadField(key)
+      ? "[redacted]"
+      : key === "custom_fields"
+        ? redactCustomFieldValues(entry)
+        : redactDryRunPayload(entry);
   }
   return redacted;
 }
 
 function isSensitivePayloadField(key: string) {
-  return /^(content|email|emails|phone|phones|comments|lost_reason|body|body_html|body_url|snippet|subject|from_address|to_address|from_email|to_email|cc|bcc|reply_to|sender|recipients|attachments|note|notes|note_content)$/i.test(
+  return /(^|[_-])(token|secret|password|passwd|api[_-]?key|refresh[_-]?token|access[_-]?token)($|[_-])/i.test(
+    key,
+  ) || /^(content|email|emails|phone|phones|comments|lost_reason|body|body_html|body_url|snippet|subject|from_address|to_address|from_email|to_email|cc|bcc|reply_to|sender|recipients|attachments|note|notes|note_content)$/i.test(
     key,
   );
+}
+
+function redactCustomFieldValues(value: unknown): unknown {
+  if (!isRecord(value)) {
+    return "[redacted]";
+  }
+  return Object.fromEntries(Object.keys(value).map((key) => [key, "[redacted]"]));
+}
+
+function getCustomFieldKeys(value: Record<string, unknown>) {
+  const keys = (value as Record<symbol, unknown>)[customFieldKeysSymbol];
+  return new Set(Array.isArray(keys) ? keys.filter((key): key is string => typeof key === "string") : []);
 }
 
 function requireExactlyOneMailThreadLink(dealId?: number, leadId?: string) {
@@ -397,6 +425,7 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
         mock_base_url_allowed: config.allowMockBaseUrl,
         writes_enabled: config.enableWrites,
         delete_tools_enabled: config.enableWrites && config.enableDeleteTools,
+        mailbox_tools_enabled: config.enableWrites && config.enableMailboxTools,
         request_timeout_ms: config.requestTimeoutMs,
         runtime_env_diagnostics_initialized: envDiagnostics.initialized,
         dotenv_loading_enabled: envDiagnostics.dotenvLoadingEnabled,
@@ -404,9 +433,11 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
         dotenv_loaded: envDiagnostics.dotenvLoaded,
         runtime_env_preexisting_enable_writes: envDiagnostics.preexisting.enableWrites,
         runtime_env_preexisting_enable_delete_tools: envDiagnostics.preexisting.enableDeleteTools,
+        runtime_env_preexisting_enable_mailbox_tools: envDiagnostics.preexisting.enableMailboxTools,
         runtime_env_preexisting_load_dotenv: envDiagnostics.preexisting.loadDotenv,
         runtime_env_current_has_enable_writes: envDiagnostics.current.enableWrites,
         runtime_env_current_has_enable_delete_tools: envDiagnostics.current.enableDeleteTools,
+        runtime_env_current_has_enable_mailbox_tools: envDiagnostics.current.enableMailboxTools,
         runtime_env_current_has_load_dotenv: envDiagnostics.current.loadDotenv,
       });
     },
@@ -876,10 +907,11 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
     async ({ deal_id, ...args }) => jsonResult(await client.get(`/api/v1/deals/${deal_id}/files`, args)),
   );
 
+  if (config.enableWrites && config.enableMailboxTools) {
   server.registerTool(
     "pipedrive_list_deal_mail_messages",
     {
-      description: "List mail messages associated with a deal.",
+      description: "List mail messages associated with a deal. May include sensitive email metadata.",
       inputSchema: {
         deal_id: z.number().int().positive(),
         ...startPagination,
@@ -889,7 +921,6 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
     async ({ deal_id, ...args }) => jsonResult(await client.get(`/api/v1/deals/${deal_id}/mailMessages`, args)),
   );
 
-  if (config.enableWrites) {
   server.registerTool(
     "pipedrive_mailbox_probe",
     {
@@ -1795,7 +1826,7 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     async ({ organization_id, dry_run, validate_links, custom_fields, ...body }) => {
-      const payload = custom_fields ? { ...body, custom_fields } : body;
+      const payload = withCustomFields(body, custom_fields);
       const refs = [organizationRef(organization_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
       const dryRunResult = guardedWriteResult(config, { dry_run }, payload, { validated_links });

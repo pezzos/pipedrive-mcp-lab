@@ -21,8 +21,10 @@ Required for live API calls:
 
 Operational flags:
 
-- `PIPEDRIVE_ENABLE_WRITES=false` by default. Set to `true` to register write
-  and Mailbox tools.
+- `PIPEDRIVE_ENABLE_WRITES=false` by default. Set to `true` to register CRM
+  write tools.
+- `PIPEDRIVE_ENABLE_MAILBOX_TOOLS=false` by default. Set to `true` together
+  with writes to register Mailbox tools.
 - `PIPEDRIVE_ENABLE_DELETE_TOOLS=false` by default. Set to `true` together with
   writes to register delete tools.
 - `PIPEDRIVE_LOAD_DOTENV=true` by default. Set to `false` when the MCP host
@@ -36,7 +38,7 @@ ignored.
 
 ## Write Operation
 
-Write tools are hidden unless `PIPEDRIVE_ENABLE_WRITES=true`.
+CRM write tools are hidden unless `PIPEDRIVE_ENABLE_WRITES=true`.
 
 Every write tool defaults to `dry_run=true`. To execute a real write, the caller
 must pass `dry_run=false` and the server must have writes enabled. No per-call
@@ -58,8 +60,13 @@ Delete calls still default to `dry_run=true`.
 
 ## Mailbox
 
-Mailbox tools are hidden unless writes are enabled because mailbox linking is a
-write operation and mailbox reads can expose sensitive email metadata.
+Mailbox tools are hidden unless both flags are enabled because mailbox linking
+is a write operation and mailbox reads can expose sensitive email metadata:
+
+```sh
+PIPEDRIVE_ENABLE_WRITES=true
+PIPEDRIVE_ENABLE_MAILBOX_TOOLS=true
+```
 
 Some accounts may require OAuth scopes for Mailbox. Provide
 `PIPEDRIVE_ACCESS_TOKEN` when API-token access is rejected. This MCP does not
@@ -98,7 +105,8 @@ Remove these fields from tool calls:
 
 Use the new flags instead:
 
-- `PIPEDRIVE_ENABLE_WRITES=true` to register write and Mailbox tools.
+- `PIPEDRIVE_ENABLE_WRITES=true` to register CRM write tools.
+- `PIPEDRIVE_ENABLE_MAILBOX_TOOLS=true` to register Mailbox tools.
 - `PIPEDRIVE_ENABLE_DELETE_TOOLS=true` to register delete tools.
 
 Parent directory `.env` files are no longer loaded. Move required variables into

@@ -5,6 +5,7 @@ PIPEDRIVE_API_TOKEN=replace-with-api-token
 # Optional OAuth alternative for scoped endpoints such as Mailbox.
 # PIPEDRIVE_ACCESS_TOKEN=replace-with-oauth-access-token
 PIPEDRIVE_ENABLE_WRITES=false
+PIPEDRIVE_ENABLE_MAILBOX_TOOLS=false
 PIPEDRIVE_ENABLE_DELETE_TOOLS=false
 PIPEDRIVE_LOAD_DOTENV=true
 PIPEDRIVE_REQUEST_TIMEOUT_MS=10000

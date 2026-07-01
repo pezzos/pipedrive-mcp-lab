@@ -12,6 +12,8 @@
         "PIPEDRIVE_COMPANY_DOMAIN": "your-company",
         "PIPEDRIVE_API_TOKEN": "your-api-token",
         "PIPEDRIVE_ENABLE_WRITES": "false",
+        "PIPEDRIVE_ENABLE_MAILBOX_TOOLS": "false",
+        "PIPEDRIVE_ENABLE_DELETE_TOOLS": "false",
         "PIPEDRIVE_LOAD_DOTENV": "false"
       }
     }
@@ -45,6 +47,7 @@ Useful read-only calls:
         "PIPEDRIVE_COMPANY_DOMAIN": "your-company",
         "PIPEDRIVE_API_TOKEN": "your-api-token",
         "PIPEDRIVE_ENABLE_WRITES": "true",
+        "PIPEDRIVE_ENABLE_MAILBOX_TOOLS": "false",
         "PIPEDRIVE_ENABLE_DELETE_TOOLS": "false",
         "PIPEDRIVE_LOAD_DOTENV": "false"
       }
@@ -107,6 +110,7 @@ Write with linked-record validation:
         "PIPEDRIVE_COMPANY_DOMAIN": "your-company",
         "PIPEDRIVE_API_TOKEN": "your-api-token",
         "PIPEDRIVE_ENABLE_WRITES": "true",
+        "PIPEDRIVE_ENABLE_MAILBOX_TOOLS": "false",
         "PIPEDRIVE_ENABLE_DELETE_TOOLS": "true",
         "PIPEDRIVE_LOAD_DOTENV": "false"
       }
@@ -143,7 +147,29 @@ Delete execution:
 
 ## Mailbox
 
-Mailbox tools are registered when writes are enabled. Start with the probe:
+Mailbox tools are registered only when writes and Mailbox tools are both
+enabled:
+
+```json
+{
+  "mcpServers": {
+    "pipedrive": {
+      "command": "node",
+      "args": ["/absolute/path/to/pipedrive-mcp/dist/server.js"],
+      "env": {
+        "PIPEDRIVE_COMPANY_DOMAIN": "your-company",
+        "PIPEDRIVE_ACCESS_TOKEN": "your-oauth-access-token",
+        "PIPEDRIVE_ENABLE_WRITES": "true",
+        "PIPEDRIVE_ENABLE_MAILBOX_TOOLS": "true",
+        "PIPEDRIVE_ENABLE_DELETE_TOOLS": "false",
+        "PIPEDRIVE_LOAD_DOTENV": "false"
+      }
+    }
+  }
+}
+```
+
+Start with the probe:
 
 ```json
 { "name": "pipedrive_mailbox_probe", "arguments": {} }

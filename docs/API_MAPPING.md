@@ -32,15 +32,18 @@ payloads:
 
 ## Mailbox v1
 
-The MCP exposes Pipedrive Mailbox as a read/link surface when writes are enabled.
-It does not create drafts, send email, or reply to email because the documented
-Mailbox API does not provide a reliable endpoint for those operations.
+The MCP exposes Pipedrive Mailbox as a read/link surface only when writes and
+Mailbox tools are both enabled. It does not create drafts, send email, or reply
+to email because the documented Mailbox API does not provide a reliable endpoint
+for those operations.
 
 Current tool mapping:
 
 - `pipedrive_mailbox_probe` calls `GET /api/v1/mailbox/mailThreads` with
   `folder=inbox`, `start=0`, and `limit=1`, then returns only response shape
   metadata.
+- `pipedrive_list_deal_mail_messages` calls
+  `GET /api/v1/deals/{id}/mailMessages`.
 - `pipedrive_list_mail_threads` calls `GET /api/v1/mailbox/mailThreads`.
 - `pipedrive_get_mail_thread` calls `GET /api/v1/mailbox/mailThreads/{id}`.
 - `pipedrive_list_mail_thread_messages` calls

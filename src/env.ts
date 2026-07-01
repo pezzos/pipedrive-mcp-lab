@@ -6,6 +6,7 @@ import { config as loadDotenv } from "dotenv";
 const runtimeEnvKeys = {
   enableWrites: "PIPEDRIVE_ENABLE_WRITES",
   enableDeleteTools: "PIPEDRIVE_ENABLE_DELETE_TOOLS",
+  enableMailboxTools: "PIPEDRIVE_ENABLE_MAILBOX_TOOLS",
   loadDotenv: "PIPEDRIVE_LOAD_DOTENV",
 } as const;
 
@@ -93,6 +94,7 @@ function hasRuntimeEnvKeys(env: NodeJS.ProcessEnv): Record<keyof typeof runtimeE
   return {
     enableWrites: hasRuntimeEnvKey(env, runtimeEnvKeys.enableWrites),
     enableDeleteTools: hasRuntimeEnvKey(env, runtimeEnvKeys.enableDeleteTools),
+    enableMailboxTools: hasRuntimeEnvKey(env, runtimeEnvKeys.enableMailboxTools),
     loadDotenv: hasRuntimeEnvKey(env, runtimeEnvKeys.loadDotenv),
   };
 }

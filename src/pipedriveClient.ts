@@ -153,7 +153,12 @@ function summarizeError(data: unknown): string {
 function redactSecretMarkers(value: string): string {
   return value
     .replace(/authorization:\s*bearer\s+\S+/gi, "Authorization: Bearer [redacted]")
-    .replace(/x-api-token:\s*\S+/gi, "x-api-token: [redacted]");
+    .replace(/x-api-token:\s*\S+/gi, "x-api-token: [redacted]")
+    .replace(
+      /(["']?(?:access_token|refresh_token|api_token|apiKey|api_key|secret|password)["']?\s*[:=]\s*["']?)([^"',\s}&]+)/gi,
+      "$1[redacted]",
+    )
+    .replace(/\bBearer\s+[A-Za-z0-9._~+/=-]{16,}/gi, "Bearer [redacted]");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
