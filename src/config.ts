@@ -5,11 +5,7 @@ export type PipedriveConfig = {
   baseUrl: string;
   allowMockBaseUrl: boolean;
   enableWrites: boolean;
-  requireWriteConfirmation: boolean;
-  allowLabWriteConfirmation: boolean;
-  requireLabPrefix: boolean;
-  labPrefix: string;
-  writeConfirmation: string;
+  enableDeleteTools: boolean;
   requestTimeoutMs: number;
 };
 
@@ -20,11 +16,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): PipedriveConfi
   const baseUrl = clean(env.PIPEDRIVE_BASE_URL) ?? defaultBaseUrl(companyDomain);
   const allowMockBaseUrl = env.PIPEDRIVE_ALLOW_MOCK_BASE_URL === "true";
   const enableWrites = env.PIPEDRIVE_ENABLE_WRITES === "true";
-  const requireWriteConfirmation = env.PIPEDRIVE_REQUIRE_WRITE_CONFIRMATION !== "false";
-  const allowLabWriteConfirmation = env.PIPEDRIVE_ALLOW_LAB_WRITE_CONFIRMATION !== "false";
-  const requireLabPrefix = env.PIPEDRIVE_REQUIRE_LAB_PREFIX !== "false";
-  const labPrefix = clean(env.PIPEDRIVE_LAB_PREFIX) ?? "MCP LAB -";
-  const writeConfirmation = clean(env.PIPEDRIVE_WRITE_CONFIRMATION) ?? "CONFIRM_WRITE";
+  const enableDeleteTools = env.PIPEDRIVE_ENABLE_DELETE_TOOLS === "true";
   const requestTimeoutMs = Number(env.PIPEDRIVE_REQUEST_TIMEOUT_MS ?? 10_000);
 
   return {
@@ -34,11 +26,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): PipedriveConfi
     baseUrl,
     allowMockBaseUrl,
     enableWrites,
-    requireWriteConfirmation,
-    allowLabWriteConfirmation,
-    requireLabPrefix,
-    labPrefix,
-    writeConfirmation,
+    enableDeleteTools,
     requestTimeoutMs: Number.isFinite(requestTimeoutMs) && requestTimeoutMs > 0 ? requestTimeoutMs : 10_000,
   };
 }

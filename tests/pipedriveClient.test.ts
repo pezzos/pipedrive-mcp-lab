@@ -17,6 +17,7 @@ test("adds token as authorization header and query filters without logging the t
       companyDomain: "acme",
       baseUrl: "https://acme.pipedrive.com",
       enableWrites: false,
+      enableDeleteTools: false,
       requestTimeoutMs: 10000,
     },
     fetchMock,
@@ -41,6 +42,7 @@ test("reports API errors without echoing the token", async () => {
       companyDomain: "acme",
       baseUrl: "https://acme.pipedrive.com",
       enableWrites: false,
+      enableDeleteTools: false,
       requestTimeoutMs: 10000,
     },
     fetchMock,
@@ -72,6 +74,7 @@ test("uses OAuth bearer authorization when an access token is configured", async
       companyDomain: "acme",
       baseUrl: "https://acme.pipedrive.com",
       enableWrites: false,
+      enableDeleteTools: false,
       requestTimeoutMs: 10000,
     },
     fetchMock,
@@ -99,6 +102,7 @@ test("sends form-encoded PUT bodies when requested", async () => {
       companyDomain: "acme",
       baseUrl: "https://acme.pipedrive.com",
       enableWrites: false,
+      enableDeleteTools: false,
       requestTimeoutMs: 10000,
     },
     fetchMock,
@@ -107,4 +111,28 @@ test("sends form-encoded PUT bodies when requested", async () => {
   await client.putForm("/api/v1/mailbox/mailThreads/9", { deal_id: 123 });
   assert.equal(requestedContentType, "application/x-www-form-urlencoded");
   assert.equal(requestedBody, "deal_id=123");
+});
+
+test("redacts echoed bearer tokens from API error messages", async () => {
+  const fetchMock = (async () =>
+    new Response(JSON.stringify({ error: "Authorization: Bearer oauth-secret-token" }), { status: 401 })) as typeof fetch;
+
+  const client = new PipedriveClient(
+    {
+      accessToken: "oauth-secret-token",
+      companyDomain: "acme",
+      baseUrl: "https://acme.pipedrive.com",
+      enableWrites: false,
+      enableDeleteTools: false,
+      requestTimeoutMs: 10000,
+    },
+    fetchMock,
+  );
+
+  await assert.rejects(() => client.get("/api/v2/deals"), (error: unknown) => {
+    assert.ok(error instanceof Error);
+    assert.match(error.message, /Authorization: Bearer \[redacted\]/);
+    assert.doesNotMatch(error.message, /oauth-secret-token/);
+    return true;
+  });
 });

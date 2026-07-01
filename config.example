@@ -1,11 +1,11 @@
 PIPEDRIVE_COMPANY_DOMAIN=example-company
-PIPEDRIVE_API_TOKEN=replace-with-a-sandbox-token
+# Optional explicit base URL. If omitted, the company domain is used.
+# PIPEDRIVE_BASE_URL=https://example-company.pipedrive.com
+PIPEDRIVE_API_TOKEN=replace-with-api-token
 # Optional OAuth alternative for scoped endpoints such as Mailbox.
 # PIPEDRIVE_ACCESS_TOKEN=replace-with-oauth-access-token
 PIPEDRIVE_ENABLE_WRITES=false
-PIPEDRIVE_WRITE_CONFIRMATION=CONFIRM_WRITE
-PIPEDRIVE_REQUIRE_WRITE_CONFIRMATION=true
-PIPEDRIVE_ALLOW_LAB_WRITE_CONFIRMATION=true
-PIPEDRIVE_REQUIRE_LAB_PREFIX=true
-PIPEDRIVE_LAB_PREFIX=MCP LAB -
+PIPEDRIVE_ENABLE_DELETE_TOOLS=false
+PIPEDRIVE_LOAD_DOTENV=true
+PIPEDRIVE_REQUEST_TIMEOUT_MS=10000
 PIPEDRIVE_ALLOW_MOCK_BASE_URL=false

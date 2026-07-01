@@ -1,0 +1,118 @@
+# Operator Runbook
+
+This runbook covers local and private-client operation of `pipedrive-mcp`.
+
+## Install And Build
+
+```sh
+npm install
+npm run check
+npm run build
+```
+
+Use `node dist/server.js` as the MCP command.
+
+## Environment Contract
+
+Required for live API calls:
+
+- `PIPEDRIVE_COMPANY_DOMAIN` or `PIPEDRIVE_BASE_URL`
+- `PIPEDRIVE_API_TOKEN` or `PIPEDRIVE_ACCESS_TOKEN`
+
+Operational flags:
+
+- `PIPEDRIVE_ENABLE_WRITES=false` by default. Set to `true` to register write
+  and Mailbox tools.
+- `PIPEDRIVE_ENABLE_DELETE_TOOLS=false` by default. Set to `true` together with
+  writes to register delete tools.
+- `PIPEDRIVE_LOAD_DOTENV=true` by default. Set to `false` when the MCP host
+  supplies all environment variables.
+- `PIPEDRIVE_REQUEST_TIMEOUT_MS=10000` by default.
+- `PIPEDRIVE_ALLOW_MOCK_BASE_URL=false` by default. Use `true` only for loopback
+  mocked tests.
+
+Only the local `.env` next to the package is loaded. Parent `.env` files are
+ignored.
+
+## Write Operation
+
+Write tools are hidden unless `PIPEDRIVE_ENABLE_WRITES=true`.
+
+Every write tool defaults to `dry_run=true`. To execute a real write, the caller
+must pass `dry_run=false` and the server must have writes enabled. No per-call
+confirmation string is required in this production contract.
+
+Use `validate_links=true` when a write references existing Pipedrive record IDs.
+The server will read those linked records before sending the write.
+
+## Delete Operation
+
+Delete tools are hidden unless both flags are enabled:
+
+```sh
+PIPEDRIVE_ENABLE_WRITES=true
+PIPEDRIVE_ENABLE_DELETE_TOOLS=true
+```
+
+Delete calls still default to `dry_run=true`.
+
+## Mailbox
+
+Mailbox tools are hidden unless writes are enabled because mailbox linking is a
+write operation and mailbox reads can expose sensitive email metadata.
+
+Some accounts may require OAuth scopes for Mailbox. Provide
+`PIPEDRIVE_ACCESS_TOKEN` when API-token access is rejected. This MCP does not
+perform OAuth authorization or token refresh.
+
+Email draft creation, sending, and replies are not supported by this MCP
+version.
+
+## Private Package Delivery
+
+The package is private and is not prepared for public npm publication. Use:
+
+```sh
+npm pack --dry-run
+npm pack
+```
+
+The tarball should contain runtime files, README, LICENSE, config example, and
+docs only. It must not include source, tests, historical validation notes, or
+validation prompts.
+
+## Upgrading From Lab Version
+
+Remove these environment variables from host configs:
+
+- `PIPEDRIVE_WRITE_CONFIRMATION`
+- `PIPEDRIVE_REQUIRE_WRITE_CONFIRMATION`
+- `PIPEDRIVE_ALLOW_LAB_WRITE_CONFIRMATION`
+- `PIPEDRIVE_REQUIRE_LAB_PREFIX`
+- `PIPEDRIVE_LAB_PREFIX`
+
+Remove these fields from tool calls:
+
+- `confirmation`
+- `confirm_lab_write`
+
+Use the new flags instead:
+
+- `PIPEDRIVE_ENABLE_WRITES=true` to register write and Mailbox tools.
+- `PIPEDRIVE_ENABLE_DELETE_TOOLS=true` to register delete tools.
+
+Parent directory `.env` files are no longer loaded. Move required variables into
+the MCP package `.env` or the MCP host configuration.
+
+## Validation
+
+Required local validation:
+
+```sh
+npm run check
+npm pack --dry-run
+```
+
+Do not run live writes as part of ordinary validation. If live credentials are
+already configured, limit manual checks to read-only tools unless an operator
+explicitly approves a write test.

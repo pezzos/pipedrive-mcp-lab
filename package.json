@@ -1,15 +1,21 @@
 {
-  "name": "pipedrive-mcp-lab",
+  "name": "pipedrive-mcp",
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
   "type": "module",
   "bin": {
-    "pipedrive-mcp-lab": "dist/server.js"
+    "pipedrive-mcp": "dist/server.js"
   },
+  "files": [
+    "dist",
+    "docs",
+    "README.md",
+    "LICENSE",
+    "config.example"
+  ],
   "scripts": {
-    "build": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
-    "live:lab": "tsx src/liveLab.ts",
+    "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
     "test": "node --import tsx --test tests/*.test.ts",
     "check": "npm run build && npm test"
   },

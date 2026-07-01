@@ -39,7 +39,6 @@ jobs:
             --exclude-dir=.git \
             --exclude-dir=node_modules \
             --exclude-dir=dist \
-            --exclude-dir=live-lab-reports \
             --exclude='package-lock.json' \
             -e 'ghp_[A-Za-z0-9_]{20,}' \
             -e 'github_pat_[A-Za-z0-9_]{20,}' \

@@ -87,7 +87,7 @@ export class PipedriveClient {
     const data = text ? safeJsonParse(text) : null;
     if (!response.ok) {
       throw new Error(
-        `Pipedrive API ${method} ${path} failed with ${response.status}: ${summarizeError(data)}`,
+        redactSecretMarkers(`Pipedrive API ${method} ${path} failed with ${response.status}: ${summarizeError(data)}`),
       );
     }
     return data;
@@ -148,6 +148,12 @@ function summarizeError(data: unknown): string {
     return data.error_info;
   }
   return "request failed";
+}
+
+function redactSecretMarkers(value: string): string {
+  return value
+    .replace(/authorization:\s*bearer\s+\S+/gi, "Authorization: Bearer [redacted]")
+    .replace(/x-api-token:\s*\S+/gi, "x-api-token: [redacted]");
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

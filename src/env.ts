@@ -5,8 +5,7 @@ import { config as loadDotenv } from "dotenv";
 
 const runtimeEnvKeys = {
   enableWrites: "PIPEDRIVE_ENABLE_WRITES",
-  requireLabPrefix: "PIPEDRIVE_REQUIRE_LAB_PREFIX",
-  requireWriteConfirmation: "PIPEDRIVE_REQUIRE_WRITE_CONFIRMATION",
+  enableDeleteTools: "PIPEDRIVE_ENABLE_DELETE_TOOLS",
   loadDotenv: "PIPEDRIVE_LOAD_DOTENV",
 } as const;
 
@@ -19,7 +18,6 @@ type RuntimeEnvDiagnostics = {
   initialized: boolean;
   dotenvLoadingEnabled: boolean;
   dotenvLocalFilePresent: boolean;
-  dotenvParentFilePresent: boolean;
   dotenvLoaded: boolean;
   preexisting: Record<keyof typeof runtimeEnvKeys, boolean>;
   current: Record<keyof typeof runtimeEnvKeys, boolean>;
@@ -29,7 +27,6 @@ let diagnostics: RuntimeEnvDiagnostics = {
   initialized: false,
   dotenvLoadingEnabled: process.env.PIPEDRIVE_LOAD_DOTENV?.toLowerCase() !== "false",
   dotenvLocalFilePresent: false,
-  dotenvParentFilePresent: false,
   dotenvLoaded: false,
   preexisting: hasRuntimeEnvKeys(process.env),
   current: hasRuntimeEnvKeys(process.env),
@@ -41,15 +38,12 @@ export function loadRuntimeEnv(options: RuntimeEnvOptions = {}): void {
   const dotenvLoadingEnabled = env.PIPEDRIVE_LOAD_DOTENV?.toLowerCase() !== "false";
   const packageDir = options.packageDir ?? defaultPackageDir();
   const localDotenv = resolve(packageDir, ".env");
-  const parentDotenv = resolve(dirname(packageDir), ".env");
   const dotenvLocalFilePresent = existsSync(localDotenv);
-  const dotenvParentFilePresent = existsSync(parentDotenv);
 
   diagnostics = {
     initialized: true,
     dotenvLoadingEnabled,
     dotenvLocalFilePresent,
-    dotenvParentFilePresent,
     dotenvLoaded: false,
     preexisting,
     current: hasRuntimeEnvKeys(env),
@@ -59,20 +53,12 @@ export function loadRuntimeEnv(options: RuntimeEnvOptions = {}): void {
     return;
   }
 
-  const paths = [];
-  if (dotenvLocalFilePresent) {
-    paths.push(localDotenv);
-  }
-  if (dotenvParentFilePresent) {
-    paths.push(parentDotenv);
-  }
-
-  if (paths.length === 0) {
+  if (!dotenvLocalFilePresent) {
     return;
   }
 
   const result = loadDotenv({
-    path: paths,
+    path: localDotenv,
     override: false,
     quiet: true,
     processEnv: env,
@@ -106,8 +92,7 @@ function formatError(error: unknown): string {
 function hasRuntimeEnvKeys(env: NodeJS.ProcessEnv): Record<keyof typeof runtimeEnvKeys, boolean> {
   return {
     enableWrites: hasRuntimeEnvKey(env, runtimeEnvKeys.enableWrites),
-    requireLabPrefix: hasRuntimeEnvKey(env, runtimeEnvKeys.requireLabPrefix),
-    requireWriteConfirmation: hasRuntimeEnvKey(env, runtimeEnvKeys.requireWriteConfirmation),
+    enableDeleteTools: hasRuntimeEnvKey(env, runtimeEnvKeys.enableDeleteTools),
     loadDotenv: hasRuntimeEnvKey(env, runtimeEnvKeys.loadDotenv),
   };
 }
