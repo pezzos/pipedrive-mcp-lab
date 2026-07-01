@@ -9,11 +9,13 @@
   },
   "scripts": {
     "build": "node -e \"fs.rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
+    "live:lab": "tsx src/liveLab.ts",
     "test": "node --import tsx --test tests/*.test.ts",
     "check": "npm run build && npm test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
+    "dotenv": "^17.4.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {

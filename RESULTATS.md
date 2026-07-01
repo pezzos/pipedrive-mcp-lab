@@ -8,6 +8,8 @@
 - Public repo: <https://github.com/pezzos/pipedrive-mcp-lab>
 - Current MCP surface: 61 tools, with read tools plus guarded commercial workflow
   writes for common seller actions.
+- API mapping notes: see `docs/API_MAPPING.md` for live-discovered mapping behavior and
+  explicit gaps.
 - Real Pipedrive account: read-only validation run on 2026-05-23, followed by guarded
   disposable write validation on 2026-05-24 with credentials loaded from local `.env`.
 - Account type: not independently verified by Codex; treated as a live configured
@@ -53,6 +55,10 @@
 | Live pagination and rate-limit headers across the expanded read-only surface | not-run | Still pending. |
 | Real write execution against disposable CRM records | done | Across the 2026-05-24 live runs, disposable lab-prefixed organizations, persons, leads, deals, notes, activities, call/follow-up workflow activities, won/lost deals, participants, and followers were created or exercised where account state allowed it, then cleaned up. Final re-reads showed expected tombstones such as `is_deleted=true` or `active_flag=false`, or 404 for deleted leads. |
 | Live product line item write | skipped | `pipedrive_list_products` returned zero live products in the configured account, so adding a product line item to a deal could not be tested without first creating or importing a product. |
+| API mapping note | done | `docs/API_MAPPING.md` records live-discovered mappings for person email/phone, activity participants, lead value amount/currency, unreliable organization address behavior, and the untested live product line item path without broadening the claimed coverage. |
+| Reproducible live-lab harness | mocked-done/live-not-run-after-addition | Added `npm run live:lab -- --prefix "..."` on 2026-05-24. Mocked tests prove strict preflight gates, documented dry-run with no API calls, create/read/update/close/delete sequencing for organization/person/lead/deal/note/activity, and redacted JSON/Markdown reports. A fresh real-account run with this new harness has not been executed in this session. |
+| Versioned validation prompts | done | Replaced the single `TEST_PROMPT.md` file with `prompts/full-live-validation.md`, `prompts/focused-retest-mappings.md`, `prompts/product-line-item-retest.md`, and `prompts/read-only-smoke.md`. These prompts separate full live validation, targeted mapping retests, product-only retests, and read-only smoke without expanding live coverage claims. |
+| GitHub Actions CI | added/local-checked | Added `.github/workflows/ci.yml` to run `npm ci`, `npm run check`, `git diff --check`, a basic secret marker scan, and `npm audit --audit-level=high`. Local command results are recorded below; remote GitHub execution is pending the next push or pull request. |
 | Public repo secret scan | done | Local pre-publish `rg` scan passed on 2026-05-23; GitHub secret scanning is expected to run after public push. |
 | Public GitHub repo creation | done | `pezzos/pipedrive-mcp-lab` was created public and pushed on 2026-05-23. |
 
@@ -213,6 +219,34 @@ remote hosting.
     returned zero products in the configured account.
   - No remaining P0/P1/P2 issue was reported by the test session; remaining limits are
     sandbox data and out-of-scope UI areas, not observed MCP mapping failures.
+- Reproducible live-lab harness addition on 2026-05-24:
+  - Added `src/liveLab.ts` and `npm run live:lab`.
+  - The harness requires `PIPEDRIVE_ENABLE_WRITES=true`, active lab-prefix protection,
+    a unique `--prefix` starting with `PIPEDRIVE_LAB_PREFIX`, `--confirm-live-lab`, and
+    an explicit `--dry-run` or `--no-dry-run` mode.
+  - Dry-run mode writes planned JSON/Markdown reports without calling the Pipedrive API.
+  - Non-dry-run mode creates, rereads, updates, closes or deletes disposable
+    organization/person/lead/deal/note/activity records through the existing endpoint
+    surface, then writes redacted reports under `live-lab-reports/` by default.
+  - Added mocked harness tests for gate rejection, no-call dry-run reporting, full live
+    sequence ordering, token header behavior, and report redaction.
+  - `npm run check` passed with 16 tests.
+- API mapping documentation on 2026-05-24:
+  - Added `docs/API_MAPPING.md` to centralize the live-discovered person, activity,
+    lead, organization address, and product line item mapping notes.
+  - The doc explicitly keeps product line items and organization address writes out of
+    live-validated coverage.
+- Prompt and CI maintenance on 2026-05-24:
+  - Removed `TEST_PROMPT.md` and split manual validation prompts into four versioned
+    files under `prompts/`.
+  - Added GitHub Actions CI for install, build/test, whitespace diff checks, a basic
+    secret marker scan, and high-severity npm audit.
+  - Local validation commands for this change:
+    - `npm ci`: passed.
+    - `npm run check`: passed with 16 tests.
+    - `git diff --check`: passed.
+    - basic secret scan using the CI grep patterns: passed.
+    - `npm audit --audit-level=high`: passed.
 
 ## Final Status
 
@@ -220,6 +254,7 @@ remote hosting.
 - protocol article impact: draft update possible with an expanded MCP surface, mocked
   commercial write coverage, and real disposable live writes for the core CRM workflow.
 - not completed:
+  - Fresh real-account execution of the new reproducible `npm run live:lab` harness.
   - Product line item live write, because the configured account had no products.
   - Real pagination and rate-limit header validation.
   - Email send/sync, file upload/download, reports, automations and webhooks.

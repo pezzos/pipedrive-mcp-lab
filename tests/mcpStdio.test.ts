@@ -13,6 +13,7 @@ test("starts over stdio, lists tools, and dry-runs the write tool", async () => 
     cwd: process.cwd(),
     env: {
       PATH: process.env.PATH ?? "",
+      PIPEDRIVE_LOAD_DOTENV: "false",
       PIPEDRIVE_COMPANY_DOMAIN: "acme",
       PIPEDRIVE_API_TOKEN: "test-token",
       PIPEDRIVE_ENABLE_WRITES: "false",
@@ -52,6 +53,33 @@ test("starts over stdio, lists tools, and dry-runs the write tool", async () => 
       "pipedrive_list_deal_followers",
       "pipedrive_list_deal_files",
       "pipedrive_list_deal_mail_messages",
+      "pipedrive_mailbox_probe",
+      "pipedrive_list_mail_threads",
+      "pipedrive_get_mail_thread",
+      "pipedrive_list_mail_thread_messages",
+      "pipedrive_get_mail_message",
+      "pipedrive_link_mail_thread",
+      "pipedrive_list_project_boards",
+      "pipedrive_get_project_board",
+      "pipedrive_list_project_phases",
+      "pipedrive_get_project_phase",
+      "pipedrive_list_project_templates",
+      "pipedrive_get_project_template",
+      "pipedrive_list_project_fields",
+      "pipedrive_get_project_field",
+      "pipedrive_list_projects",
+      "pipedrive_get_project",
+      "pipedrive_search_projects",
+      "pipedrive_list_archived_projects",
+      "pipedrive_list_tasks",
+      "pipedrive_get_task",
+      "pipedrive_create_project",
+      "pipedrive_update_project",
+      "pipedrive_archive_project",
+      "pipedrive_delete_project",
+      "pipedrive_create_task",
+      "pipedrive_update_task",
+      "pipedrive_delete_task",
       "pipedrive_create_deal",
       "pipedrive_update_deal",
       "pipedrive_move_deal_stage",
@@ -85,8 +113,41 @@ test("starts over stdio, lists tools, and dry-runs the write tool", async () => 
     }
     const createActivity = listed.tools.find((tool) => tool.name === "pipedrive_create_activity");
     const searchItems = listed.tools.find((tool) => tool.name === "pipedrive_search_items");
+    const linkMailThread = listed.tools.find((tool) => tool.name === "pipedrive_link_mail_thread");
+    const createProject = listed.tools.find((tool) => tool.name === "pipedrive_create_project");
+    const createTask = listed.tools.find((tool) => tool.name === "pipedrive_create_task");
+    const updateTask = listed.tools.find((tool) => tool.name === "pipedrive_update_task");
     assert.equal(createActivity?.annotations?.readOnlyHint, false);
     assert.equal(searchItems?.annotations?.readOnlyHint, true);
+    assert.equal(linkMailThread?.annotations?.readOnlyHint, false);
+    assert.match(JSON.stringify(linkMailThread?.inputSchema ?? {}), /confirm_lab_write/);
+    assert.match(createProject?.description ?? "", /before creating project tasks/);
+    assert.match(createTask?.description ?? "", /Requires project_id/);
+    assert.match(createTask?.description ?? "", /Do not pass board_id or phase_id/);
+    assert.match(updateTask?.description ?? "", /not a board or phase/);
+    assert.match(JSON.stringify(createTask?.inputSchema ?? {}), /Existing parent project id/);
+    assert.match(JSON.stringify(createTask?.inputSchema ?? {}), /not board_id or phase_id/);
+    assert.match(JSON.stringify(updateTask?.inputSchema ?? {}), /use pipedrive_update_project/);
+    assert.doesNotMatch(toolNames.join(","), /draft|send|reply|delete_mail_thread/);
+    assert.doesNotMatch(JSON.stringify(linkMailThread?.inputSchema ?? {}), /shared_flag|read_flag|archived_flag/);
+
+    const health = await client.callTool({ name: "pipedrive_health_check", arguments: {} });
+    const healthContent = health.content as Array<{ type: string; text?: string }>;
+    const healthJson = JSON.parse(healthContent[0]?.text ?? "{}");
+    assert.equal(healthJson.runtime_env_diagnostics_initialized, true);
+    assert.equal(healthJson.dotenv_loading_enabled, false);
+    assert.equal(healthJson.dotenv_local_file_present, false);
+    assert.equal(typeof healthJson.dotenv_parent_file_present, "boolean");
+    assert.equal(healthJson.dotenv_loaded, false);
+    assert.equal(healthJson.runtime_env_preexisting_enable_writes, true);
+    assert.equal(healthJson.runtime_env_preexisting_require_lab_prefix, false);
+    assert.equal(healthJson.runtime_env_preexisting_require_write_confirmation, false);
+    assert.equal(healthJson.runtime_env_preexisting_load_dotenv, true);
+    assert.equal(healthJson.runtime_env_current_has_enable_writes, true);
+    assert.equal(healthJson.runtime_env_current_has_require_lab_prefix, false);
+    assert.equal(healthJson.runtime_env_current_has_require_write_confirmation, false);
+    assert.equal(healthJson.runtime_env_current_has_load_dotenv, true);
+    assert.equal(JSON.stringify(healthJson).includes("test-token"), false);
 
     const result = await client.callTool({
       name: "pipedrive_create_activity",
@@ -113,6 +174,7 @@ test("dry-run works without token and live write fails clearly without token", a
     cwd: process.cwd(),
     env: {
       PATH: process.env.PATH ?? "",
+      PIPEDRIVE_LOAD_DOTENV: "false",
       PIPEDRIVE_COMPANY_DOMAIN: "acme",
       PIPEDRIVE_ENABLE_WRITES: "true",
     },
@@ -158,6 +220,40 @@ test("dry-run works without token and live write fails clearly without token", a
   }
 });
 
+test("production mode can write without shared confirmation", async () => {
+  const client = new Client({ name: "pipedrive-mcp-lab-test", version: "0.1.0" });
+  const transport = new StdioClientTransport({
+    command: "node",
+    args: ["dist/server.js"],
+    cwd: process.cwd(),
+    env: {
+      PATH: process.env.PATH ?? "",
+      PIPEDRIVE_LOAD_DOTENV: "false",
+      PIPEDRIVE_COMPANY_DOMAIN: "acme",
+      PIPEDRIVE_ENABLE_WRITES: "true",
+      PIPEDRIVE_REQUIRE_WRITE_CONFIRMATION: "false",
+      PIPEDRIVE_REQUIRE_LAB_PREFIX: "false",
+    },
+    stderr: "pipe",
+  });
+
+  await client.connect(transport);
+  try {
+    const result = await client.callTool({
+      name: "pipedrive_create_activity",
+      arguments: {
+        subject: "Follow up",
+        dry_run: false,
+      },
+    });
+    const content = result.content as Array<{ type: string; text?: string }>;
+    assert.equal(result.isError, true);
+    assert.match(content[0]?.text ?? "", /PIPEDRIVE_API_TOKEN/);
+  } finally {
+    await client.close();
+  }
+});
+
 test("read tool calls mocked Pipedrive API over stdio without token in URL", async () => {
   let requestedUrl = "";
   let requestedToken = "";
@@ -177,6 +273,7 @@ test("read tool calls mocked Pipedrive API over stdio without token in URL", asy
     cwd: process.cwd(),
     env: {
       PATH: process.env.PATH ?? "",
+      PIPEDRIVE_LOAD_DOTENV: "false",
       PIPEDRIVE_BASE_URL: `http://127.0.0.1:${port}`,
       PIPEDRIVE_ALLOW_MOCK_BASE_URL: "true",
       PIPEDRIVE_API_TOKEN: "test-token",
@@ -216,6 +313,28 @@ test("expanded read-only tools call expected Pipedrive endpoints and forward fil
       token: request.headers["x-api-token"]?.toString() ?? "",
     });
     response.writeHead(200, { "content-type": "application/json" });
+    if (request.url === "/api/v2/tasks/55") {
+      response.end(
+        JSON.stringify({ success: true, data: { id: 55, title: "MCP LAB - Task", is_done: 1, is_milestone: 0 } }),
+      );
+      return;
+    }
+    if (request.url === "/api/v1/mailbox/mailThreads?folder=inbox&start=0&limit=1") {
+      response.end(
+        JSON.stringify({
+          success: true,
+          data: [
+            {
+              id: 91,
+              subject: "Secret customer renewal",
+              from_address: "customer@example.com",
+              snippet: "Sensitive snippet",
+            },
+          ],
+        }),
+      );
+      return;
+    }
     response.end(JSON.stringify({ success: true, data: [], additional_data: {} }));
   });
   await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
@@ -228,6 +347,7 @@ test("expanded read-only tools call expected Pipedrive endpoints and forward fil
     cwd: process.cwd(),
     env: {
       PATH: process.env.PATH ?? "",
+      PIPEDRIVE_LOAD_DOTENV: "false",
       PIPEDRIVE_BASE_URL: `http://127.0.0.1:${port}`,
       PIPEDRIVE_ALLOW_MOCK_BASE_URL: "true",
       PIPEDRIVE_API_TOKEN: "test-token",
@@ -302,11 +422,58 @@ test("expanded read-only tools call expected Pipedrive endpoints and forward fil
       { name: "pipedrive_list_deal_followers", arguments: { deal_id: 123, limit: 16, cursor: "fol1" } },
       { name: "pipedrive_list_deal_files", arguments: { deal_id: 123, limit: 17, start: 2 } },
       { name: "pipedrive_list_deal_mail_messages", arguments: { deal_id: 123, limit: 18, start: 3 } },
+      { name: "pipedrive_mailbox_probe", arguments: {} },
+      { name: "pipedrive_list_mail_threads", arguments: { folder: "inbox", limit: 19, start: 4 } },
+      { name: "pipedrive_get_mail_thread", arguments: { mail_thread_id: 91 } },
+      { name: "pipedrive_list_mail_thread_messages", arguments: { mail_thread_id: 91 } },
+      { name: "pipedrive_get_mail_message", arguments: { mail_message_id: 92, include_body: true } },
+      { name: "pipedrive_list_project_boards", arguments: {} },
+      { name: "pipedrive_get_project_board", arguments: { board_id: 60 } },
+      { name: "pipedrive_list_project_phases", arguments: { board_id: 60 } },
+      { name: "pipedrive_get_project_phase", arguments: { phase_id: 61 } },
+      { name: "pipedrive_list_project_templates", arguments: { limit: 19, cursor: "tmpl1" } },
+      { name: "pipedrive_get_project_template", arguments: { template_id: 62 } },
+      { name: "pipedrive_list_project_fields", arguments: { limit: 20, cursor: "projf1" } },
+      { name: "pipedrive_get_project_field", arguments: { field_code: "field_hash" } },
+      {
+        name: "pipedrive_list_projects",
+        arguments: { status: "open", phase_id: 61, deal_id: 123, person_id: 11, org_id: 12, limit: 21, cursor: "proj1" },
+      },
+      { name: "pipedrive_get_project", arguments: { project_id: 50 } },
+      {
+        name: "pipedrive_search_projects",
+        arguments: {
+          term: "migration",
+          fields: ["title", "description"],
+          exact_match: true,
+          person_id: 11,
+          organization_id: 12,
+          limit: 22,
+          cursor: "projs1",
+        },
+      },
+      { name: "pipedrive_list_archived_projects", arguments: { status: "completed", phase_id: 61, limit: 23, cursor: "arch1" } },
+      {
+        name: "pipedrive_list_tasks",
+        arguments: { project_id: 50, is_done: true, is_milestone: false, assignee_id: 7, limit: 24, cursor: "task1" },
+      },
+      { name: "pipedrive_get_task", arguments: { task_id: 55 } },
     ];
 
     for (const call of calls) {
       const result = await client.callTool(call);
       assert.equal(result.isError, undefined);
+      if (call.name === "pipedrive_get_task") {
+        const text = (result.content as Array<{ text?: string }>)[0]?.text ?? "";
+        assert.match(text, /"done": true/);
+        assert.match(text, /"milestone": false/);
+      }
+      if (call.name === "pipedrive_mailbox_probe") {
+        const text = (result.content as Array<{ text?: string }>)[0]?.text ?? "";
+        assert.match(text, /"mailbox_read_ok": true/);
+        assert.match(text, /"subject"/);
+        assert.doesNotMatch(text, /Secret customer renewal|customer@example\.com|Sensitive snippet/);
+      }
     }
 
     const urls = requested.map((entry) => entry.url);
@@ -354,6 +521,37 @@ test("expanded read-only tools call expected Pipedrive endpoints and forward fil
     assert.ok(urls.includes("/api/v2/deals/123/followers?limit=16&cursor=fol1"));
     assert.ok(urls.includes("/api/v1/deals/123/files?limit=17&start=2"));
     assert.ok(urls.includes("/api/v1/deals/123/mailMessages?limit=18&start=3"));
+    assert.ok(urls.includes("/api/v1/mailbox/mailThreads?folder=inbox&start=0&limit=1"));
+    assert.ok(urls.includes("/api/v1/mailbox/mailThreads?folder=inbox&limit=19&start=4"));
+    assert.ok(urls.includes("/api/v1/mailbox/mailThreads/91"));
+    assert.ok(urls.includes("/api/v1/mailbox/mailThreads/91/mailMessages"));
+    assert.ok(urls.includes("/api/v1/mailbox/mailMessages/92?include_body=1"));
+    assert.ok(urls.includes("/api/v2/boards"));
+    assert.ok(urls.includes("/api/v2/boards/60"));
+    assert.ok(urls.includes("/api/v2/phases?board_id=60"));
+    assert.ok(urls.includes("/api/v2/phases/61"));
+    assert.ok(urls.includes("/api/v2/projectTemplates?limit=19&cursor=tmpl1"));
+    assert.ok(urls.includes("/api/v2/projectTemplates/62"));
+    assert.ok(urls.includes("/api/v2/projectFields?limit=20&cursor=projf1"));
+    assert.ok(urls.includes("/api/v2/projectFields/field_hash"));
+    assert.ok(
+      urls.includes(
+        "/api/v2/projects?status=open&phase_id=61&deal_id=123&person_id=11&org_id=12&limit=21&cursor=proj1",
+      ),
+    );
+    assert.ok(urls.includes("/api/v2/projects/50"));
+    assert.ok(
+      urls.includes(
+        "/api/v2/projects/search?term=migration&fields=title%2Cdescription&exact_match=true&person_id=11&organization_id=12&limit=22&cursor=projs1",
+      ),
+    );
+    assert.ok(urls.includes("/api/v2/projects/archived?status=completed&phase_id=61&limit=23&cursor=arch1"));
+    assert.ok(
+      urls.includes(
+        "/api/v2/tasks?is_done=true&is_milestone=false&assignee_id=7&project_id=50&limit=24&cursor=task1",
+      ),
+    );
+    assert.ok(urls.includes("/api/v2/tasks/55"));
     assert.equal(requested.every((entry) => entry.token === "test-token"), true);
     assert.equal(requested.every((entry) => !entry.url.includes("test-token")), true);
   } finally {
@@ -388,6 +586,7 @@ test("commercial write tools require confirmation and send expected methods when
     cwd: process.cwd(),
     env: {
       PATH: process.env.PATH ?? "",
+      PIPEDRIVE_LOAD_DOTENV: "false",
       PIPEDRIVE_BASE_URL: `http://127.0.0.1:${port}`,
       PIPEDRIVE_ALLOW_MOCK_BASE_URL: "true",
       PIPEDRIVE_API_TOKEN: "test-token",
@@ -672,6 +871,358 @@ test("commercial write tools require confirmation and send expected methods when
   }
 });
 
+test("mail thread linking is guarded and sends form-encoded payloads", async () => {
+  const requested: Array<{ method: string; url: string; body: string; contentType: string; token: string }> = [];
+  const api = createServer(async (request, response) => {
+    let text = "";
+    for await (const chunk of request) {
+      text += chunk.toString();
+    }
+    requested.push({
+      method: request.method ?? "",
+      url: request.url ?? "",
+      body: text,
+      contentType: request.headers["content-type"]?.toString() ?? "",
+      token: request.headers["x-api-token"]?.toString() ?? "",
+    });
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ success: true, data: { id: 999, title: "Linked" } }));
+  });
+  await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
+  const { port } = api.address() as AddressInfo;
+
+  const client = new Client({ name: "pipedrive-mcp-lab-test", version: "0.1.0" });
+  const transport = new StdioClientTransport({
+    command: "node",
+    args: ["dist/server.js"],
+    cwd: process.cwd(),
+    env: {
+      PATH: process.env.PATH ?? "",
+      PIPEDRIVE_LOAD_DOTENV: "false",
+      PIPEDRIVE_BASE_URL: `http://127.0.0.1:${port}`,
+      PIPEDRIVE_ALLOW_MOCK_BASE_URL: "true",
+      PIPEDRIVE_API_TOKEN: "test-token",
+      PIPEDRIVE_ENABLE_WRITES: "true",
+      PIPEDRIVE_WRITE_CONFIRMATION: "YES_WRITE",
+      PIPEDRIVE_REQUIRE_LAB_PREFIX: "false",
+    },
+    stderr: "pipe",
+  });
+
+  await client.connect(transport);
+  try {
+    const dryRun = await client.callTool({
+      name: "pipedrive_link_mail_thread",
+      arguments: { mail_thread_id: 91, deal_id: 123, dry_run: true, validate_links: false },
+    });
+    assert.equal(dryRun.isError, undefined);
+    assert.match((dryRun.content as Array<{ text?: string }>)[0]?.text ?? "", /"dry_run": true/);
+    assert.equal(requested.length, 0);
+
+    const invalidTarget = await client.callTool({
+      name: "pipedrive_link_mail_thread",
+      arguments: {
+        mail_thread_id: 91,
+        deal_id: 123,
+        lead_id: "11111111-1111-4111-8111-111111111111",
+        dry_run: true,
+      },
+    });
+    assert.equal(invalidTarget.isError, true);
+    assert.equal(requested.length, 0);
+
+    const rejected = await client.callTool({
+      name: "pipedrive_link_mail_thread",
+      arguments: { mail_thread_id: 91, deal_id: 123, dry_run: false, confirmation: "WRONG" },
+    });
+    assert.equal(rejected.isError, true);
+    assert.equal(requested.length, 0);
+
+    const linked = await client.callTool({
+      name: "pipedrive_link_mail_thread",
+      arguments: { mail_thread_id: 91, deal_id: 123, dry_run: false, confirmation: "YES_WRITE" },
+    });
+    assert.equal(linked.isError, undefined);
+    assert.deepEqual(
+      requested.map((entry) => `${entry.method} ${entry.url}`),
+      ["GET /api/v2/deals/123", "PUT /api/v1/mailbox/mailThreads/91"],
+    );
+    assert.equal(requested[1]?.contentType, "application/x-www-form-urlencoded");
+    assert.equal(requested[1]?.body, "deal_id=123");
+    assert.equal(requested.every((entry) => entry.token === "test-token"), true);
+  } finally {
+    await client.close();
+    await new Promise<void>((resolve) => api.close(() => resolve()));
+  }
+});
+
+test("mail thread linking accepts lab confirmation only for lab-scoped targets", async () => {
+  const requested: Array<{ method: string; url: string; body: string; contentType: string; token: string }> = [];
+  const api = createServer(async (request, response) => {
+    let text = "";
+    for await (const chunk of request) {
+      text += chunk.toString();
+    }
+    requested.push({
+      method: request.method ?? "",
+      url: request.url ?? "",
+      body: text,
+      contentType: request.headers["content-type"]?.toString() ?? "",
+      token: request.headers["x-api-token"]?.toString() ?? "",
+    });
+
+    const url = request.url ?? "";
+    if (request.method === "GET" && url === "/api/v2/deals/123") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ success: true, data: { id: 123, title: "Real customer deal" } }));
+      return;
+    }
+    if (request.method === "GET" && url === "/api/v2/deals/124") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ success: true, data: { id: 124, title: "MCP LAB - Safe deal" } }));
+      return;
+    }
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ success: true, data: { id: 999, title: "Linked" } }));
+  });
+  await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
+  const { port } = api.address() as AddressInfo;
+
+  const client = new Client({ name: "pipedrive-mcp-lab-test", version: "0.1.0" });
+  const transport = new StdioClientTransport({
+    command: "node",
+    args: ["dist/server.js"],
+    cwd: process.cwd(),
+    env: {
+      PATH: process.env.PATH ?? "",
+      PIPEDRIVE_LOAD_DOTENV: "false",
+      PIPEDRIVE_BASE_URL: `http://127.0.0.1:${port}`,
+      PIPEDRIVE_ALLOW_MOCK_BASE_URL: "true",
+      PIPEDRIVE_API_TOKEN: "test-token",
+      PIPEDRIVE_ENABLE_WRITES: "true",
+      PIPEDRIVE_ALLOW_LAB_WRITE_CONFIRMATION: "true",
+      PIPEDRIVE_REQUIRE_LAB_PREFIX: "true",
+      PIPEDRIVE_LAB_PREFIX: "MCP LAB -",
+    },
+    stderr: "pipe",
+  });
+
+  await client.connect(transport);
+  try {
+    const unconfirmed = await client.callTool({
+      name: "pipedrive_link_mail_thread",
+      arguments: { mail_thread_id: 91, deal_id: 124, dry_run: false, validate_links: false },
+    });
+    assert.equal(unconfirmed.isError, true);
+    assert.match((unconfirmed.content as Array<{ text?: string }>)[0]?.text ?? "", /Write confirmation/);
+    assert.equal(requested.length, 0);
+
+    const unsafeTarget = await client.callTool({
+      name: "pipedrive_link_mail_thread",
+      arguments: { mail_thread_id: 91, deal_id: 123, dry_run: false, validate_links: false, confirm_lab_write: true },
+    });
+    assert.equal(unsafeTarget.isError, true);
+    assert.match((unsafeTarget.content as Array<{ text?: string }>)[0]?.text ?? "", /MCP LAB -/);
+    assert.deepEqual(
+      requested.map((entry) => `${entry.method} ${entry.url}`),
+      ["GET /api/v2/deals/123"],
+    );
+
+    const linked = await client.callTool({
+      name: "pipedrive_link_mail_thread",
+      arguments: { mail_thread_id: 91, deal_id: 124, dry_run: false, validate_links: true, confirm_lab_write: true },
+    });
+    assert.equal(linked.isError, undefined);
+    assert.deepEqual(
+      requested.slice(-3).map((entry) => `${entry.method} ${entry.url}`),
+      ["GET /api/v2/deals/124", "GET /api/v2/deals/124", "PUT /api/v1/mailbox/mailThreads/91"],
+    );
+    assert.equal(requested.at(-1)?.contentType, "application/x-www-form-urlencoded");
+    assert.equal(requested.at(-1)?.body, "deal_id=124");
+    assert.equal(requested.every((entry) => entry.token === "test-token"), true);
+  } finally {
+    await client.close();
+    await new Promise<void>((resolve) => api.close(() => resolve()));
+  }
+});
+
+test("project and task write tools send expected methods and payloads", async () => {
+  const requested: Array<{ method: string; url: string; body: unknown; token: string }> = [];
+  const api = createServer(async (request, response) => {
+    let text = "";
+    for await (const chunk of request) {
+      text += chunk.toString();
+    }
+    requested.push({
+      method: request.method ?? "",
+      url: request.url ?? "",
+      body: text ? JSON.parse(text) : null,
+      token: request.headers["x-api-token"]?.toString() ?? "",
+    });
+    response.writeHead(200, { "content-type": "application/json" });
+    response.end(JSON.stringify({ success: true, data: { id: 999 } }));
+  });
+  await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
+  const { port } = api.address() as AddressInfo;
+
+  const client = new Client({ name: "pipedrive-mcp-lab-test", version: "0.1.0" });
+  const transport = new StdioClientTransport({
+    command: "node",
+    args: ["dist/server.js"],
+    cwd: process.cwd(),
+    env: {
+      PATH: process.env.PATH ?? "",
+      PIPEDRIVE_LOAD_DOTENV: "false",
+      PIPEDRIVE_BASE_URL: `http://127.0.0.1:${port}`,
+      PIPEDRIVE_ALLOW_MOCK_BASE_URL: "true",
+      PIPEDRIVE_API_TOKEN: "test-token",
+      PIPEDRIVE_ENABLE_WRITES: "true",
+      PIPEDRIVE_WRITE_CONFIRMATION: "YES_WRITE",
+      PIPEDRIVE_REQUIRE_LAB_PREFIX: "false",
+    },
+    stderr: "pipe",
+  });
+
+  await client.connect(transport);
+  try {
+    const dryRun = await client.callTool({
+      name: "pipedrive_create_project",
+      arguments: {
+        title: "MCP LAB - Project",
+        board_id: 60,
+        phase_id: 61,
+        dry_run: true,
+      },
+    });
+    assert.equal(dryRun.isError, undefined);
+    assert.match((dryRun.content as Array<{ text?: string }>)[0]?.text ?? "", /"dry_run": true/);
+    assert.equal(requested.length, 0);
+
+    const calls = [
+      {
+        name: "pipedrive_create_project",
+        arguments: {
+          title: "MCP LAB - Project",
+          board_id: 60,
+          phase_id: 61,
+          description: "Project description",
+          deal_ids: [123],
+          person_ids: [11],
+          org_ids: [12],
+          label_ids: [70],
+          custom_fields: { project_hash: "custom value" },
+          dry_run: false,
+          confirmation: "YES_WRITE",
+        },
+      },
+      {
+        name: "pipedrive_update_project",
+        arguments: {
+          project_id: 50,
+          title: "MCP LAB - Project updated",
+          phase_id: 62,
+          custom_fields: { project_hash: null },
+          dry_run: false,
+          confirmation: "YES_WRITE",
+        },
+      },
+      {
+        name: "pipedrive_archive_project",
+        arguments: { project_id: 50, dry_run: false, confirmation: "YES_WRITE" },
+      },
+      {
+        name: "pipedrive_delete_project",
+        arguments: { project_id: 50, dry_run: false, confirmation: "YES_WRITE" },
+      },
+      {
+        name: "pipedrive_create_task",
+        arguments: {
+          title: "MCP LAB - Task",
+          project_id: 50,
+          description: "Task description",
+          done: false,
+          milestone: true,
+          due_date: "2026-05-25",
+          assignee_id: 7,
+          priority: 2,
+          dry_run: false,
+          confirmation: "YES_WRITE",
+        },
+      },
+      {
+        name: "pipedrive_update_task",
+        arguments: {
+          task_id: 55,
+          title: "MCP LAB - Task updated",
+          done: true,
+          milestone: false,
+          dry_run: false,
+          confirmation: "YES_WRITE",
+        },
+      },
+      {
+        name: "pipedrive_delete_task",
+        arguments: { task_id: 55, dry_run: false, confirmation: "YES_WRITE" },
+      },
+    ];
+
+    for (const call of calls) {
+      const result = await client.callTool(call);
+      assert.equal(result.isError, undefined);
+    }
+
+    assert.deepEqual(
+      requested.map((entry) => `${entry.method} ${entry.url}`),
+      [
+        "POST /api/v2/projects",
+        "PATCH /api/v2/projects/50",
+        "POST /api/v2/projects/50/archive",
+        "DELETE /api/v2/projects/50",
+        "POST /api/v2/tasks",
+        "PATCH /api/v2/tasks/55",
+        "DELETE /api/v2/tasks/55",
+      ],
+    );
+    assert.equal(requested.every((entry) => entry.token === "test-token"), true);
+    assert.equal(requested.every((entry) => !entry.url.includes("test-token")), true);
+    assert.deepEqual(requested[0]?.body, {
+      title: "MCP LAB - Project",
+      board_id: 60,
+      phase_id: 61,
+      description: "Project description",
+      deal_ids: [123],
+      person_ids: [11],
+      org_ids: [12],
+      label_ids: [70],
+      custom_fields: { project_hash: "custom value" },
+    });
+    assert.deepEqual(requested[1]?.body, {
+      title: "MCP LAB - Project updated",
+      phase_id: 62,
+      custom_fields: { project_hash: null },
+    });
+    assert.deepEqual(requested[2]?.body, {});
+    assert.deepEqual(requested[4]?.body, {
+      title: "MCP LAB - Task",
+      project_id: 50,
+      description: "Task description",
+      is_done: false,
+      is_milestone: true,
+      due_date: "2026-05-25",
+      assignee_id: 7,
+      priority: 2,
+    });
+    assert.deepEqual(requested[5]?.body, {
+      title: "MCP LAB - Task updated",
+      is_done: true,
+      is_milestone: false,
+    });
+  } finally {
+    await client.close();
+    await new Promise<void>((resolve) => api.close(() => resolve()));
+  }
+});
+
 test("real writes require lab-scoped targets and dry-run can validate linked records", async () => {
   const requested: Array<{ method: string; url: string; body: unknown; token: string }> = [];
   const api = createServer(async (request, response) => {
@@ -702,6 +1253,36 @@ test("real writes require lab-scoped targets and dry-run can validate linked rec
       response.end(JSON.stringify({ success: true, data: { id: 124, title: "MCP LAB - Safe deal" } }));
       return;
     }
+    if (request.method === "GET" && url === "/api/v2/boards/60") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ success: true, data: { id: 60, name: "Delivery" } }));
+      return;
+    }
+    if (request.method === "GET" && url === "/api/v2/phases/61") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ success: true, data: { id: 61, name: "Kickoff" } }));
+      return;
+    }
+    if (request.method === "GET" && url === "/api/v2/projects/50") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ success: true, data: { id: 50, title: "MCP LAB - Safe project" } }));
+      return;
+    }
+    if (request.method === "GET" && url === "/api/v2/projects/51") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ success: true, data: { id: 51, title: "Real customer project" } }));
+      return;
+    }
+    if (request.method === "GET" && url === "/api/v2/tasks/55") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ success: true, data: { id: 55, title: "MCP LAB - Safe task" } }));
+      return;
+    }
+    if (request.method === "GET" && url === "/api/v2/tasks/56") {
+      response.writeHead(200, { "content-type": "application/json" });
+      response.end(JSON.stringify({ success: true, data: { id: 56, title: "Real customer task" } }));
+      return;
+    }
     response.writeHead(200, { "content-type": "application/json" });
     response.end(JSON.stringify({ success: true, data: { id: 999 } }));
   });
@@ -715,6 +1296,7 @@ test("real writes require lab-scoped targets and dry-run can validate linked rec
     cwd: process.cwd(),
     env: {
       PATH: process.env.PATH ?? "",
+      PIPEDRIVE_LOAD_DOTENV: "false",
       PIPEDRIVE_BASE_URL: `http://127.0.0.1:${port}`,
       PIPEDRIVE_ALLOW_MOCK_BASE_URL: "true",
       PIPEDRIVE_API_TOKEN: "test-token",
@@ -808,6 +1390,124 @@ test("real writes require lab-scoped targets and dry-run can validate linked rec
     assert.deepEqual(
       requested.slice(-2).map((entry) => `${entry.method} ${entry.url}`),
       ["GET /api/v2/deals/124", "DELETE /api/v2/deals/124"],
+    );
+
+    const validatedProjectDryRun = await client.callTool({
+      name: "pipedrive_create_project",
+      arguments: {
+        title: "MCP LAB - Project",
+        board_id: 60,
+        phase_id: 61,
+        validate_links: true,
+        dry_run: true,
+      },
+    });
+    assert.equal(validatedProjectDryRun.isError, undefined);
+    assert.match((validatedProjectDryRun.content as Array<{ text?: string }>)[0]?.text ?? "", /"board:60"/);
+    assert.match((validatedProjectDryRun.content as Array<{ text?: string }>)[0]?.text ?? "", /"phase:61"/);
+    assert.deepEqual(
+      requested.slice(-2).map((entry) => `${entry.method} ${entry.url}`),
+      ["GET /api/v2/boards/60", "GET /api/v2/phases/61"],
+    );
+
+    const unsafeProjectCreate = await client.callTool({
+      name: "pipedrive_create_project",
+      arguments: {
+        title: "Real customer project",
+        board_id: 60,
+        phase_id: 61,
+        dry_run: false,
+        confirmation: "YES_WRITE",
+      },
+    });
+    assert.equal(unsafeProjectCreate.isError, true);
+    assert.match((unsafeProjectCreate.content as Array<{ text?: string }>)[0]?.text ?? "", /MCP LAB -/);
+
+    const unsafeProjectDelete = await client.callTool({
+      name: "pipedrive_delete_project",
+      arguments: {
+        project_id: 51,
+        dry_run: false,
+        confirmation: "YES_WRITE",
+      },
+    });
+    assert.equal(unsafeProjectDelete.isError, true);
+    assert.equal(requested.at(-1)?.url, "/api/v2/projects/51");
+
+    const safeProjectDelete = await client.callTool({
+      name: "pipedrive_delete_project",
+      arguments: {
+        project_id: 50,
+        dry_run: false,
+        confirm_lab_write: true,
+      },
+    });
+    assert.equal(safeProjectDelete.isError, undefined);
+    assert.deepEqual(
+      requested.slice(-2).map((entry) => `${entry.method} ${entry.url}`),
+      ["GET /api/v2/projects/50", "DELETE /api/v2/projects/50"],
+    );
+
+    const unsafeTaskCreate = await client.callTool({
+      name: "pipedrive_create_task",
+      arguments: {
+        title: "Real customer task",
+        project_id: 50,
+        dry_run: false,
+        confirmation: "YES_WRITE",
+      },
+    });
+    assert.equal(unsafeTaskCreate.isError, true);
+    assert.match((unsafeTaskCreate.content as Array<{ text?: string }>)[0]?.text ?? "", /MCP LAB -/);
+
+    const milestoneWithoutDueDate = await client.callTool({
+      name: "pipedrive_create_task",
+      arguments: {
+        title: "MCP LAB - Milestone",
+        project_id: 50,
+        milestone: true,
+        dry_run: true,
+      },
+    });
+    assert.equal(milestoneWithoutDueDate.isError, true);
+    assert.match((milestoneWithoutDueDate.content as Array<{ text?: string }>)[0]?.text ?? "", /milestone tasks require due_date/);
+
+    const validatedTaskDryRun = await client.callTool({
+      name: "pipedrive_create_task",
+      arguments: {
+        title: "MCP LAB - Task",
+        project_id: 50,
+        validate_links: true,
+        dry_run: true,
+      },
+    });
+    assert.equal(validatedTaskDryRun.isError, undefined);
+    assert.match((validatedTaskDryRun.content as Array<{ text?: string }>)[0]?.text ?? "", /"project:50"/);
+    assert.equal(requested.at(-1)?.url, "/api/v2/projects/50");
+
+    const unsafeTaskDelete = await client.callTool({
+      name: "pipedrive_delete_task",
+      arguments: {
+        task_id: 56,
+        dry_run: false,
+        confirmation: "YES_WRITE",
+      },
+    });
+    assert.equal(unsafeTaskDelete.isError, true);
+    assert.equal(requested.at(-1)?.url, "/api/v2/tasks/56");
+
+    const safeTaskDelete = await client.callTool({
+      name: "pipedrive_delete_task",
+      arguments: {
+        task_id: 55,
+        dry_run: false,
+        confirm_lab_write: true,
+      },
+    });
+    assert.equal(safeTaskDelete.isError, undefined);
+    assert.deepEqual(
+      requested.slice(-2).map((entry) => `${entry.method} ${entry.url}`),
+      ["GET /api/v2/tasks/55", "DELETE /api/v2/tasks/55"],
     );
   } finally {
     await client.close();

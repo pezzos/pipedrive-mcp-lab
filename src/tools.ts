@@ -1,6 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod/v4";
 import { PipedriveConfig } from "./config.js";
+import { getRuntimeEnvDiagnostics } from "./env.js";
 import { PipedriveClient } from "./pipedriveClient.js";
 
 const pipedriveDateTime = z.string().datetime({ offset: true });
@@ -13,6 +14,7 @@ const shortText = z.string().min(1).max(255);
 const optionalShortText = z.string().min(1).max(255).optional();
 const noteText = z.string().min(1).max(100_000);
 const activityNote = z.string().max(10_000).optional();
+const longText = z.string().max(65_000).optional();
 const moneyValue = z.number().min(0).optional();
 const currencyCode = z.string().regex(/^[A-Z]{3}$/, "Expected ISO 4217 currency code").optional();
 const contactDetail = z.object({
@@ -43,6 +45,7 @@ const searchItemType = z.enum([
   "mail_attachment",
   "project",
 ]);
+const mailFolder = z.enum(["inbox", "drafts", "sent", "archive"]);
 
 function commaList(values?: string[]) {
   return values?.length ? values.join(",") : undefined;
@@ -65,6 +68,9 @@ function assertWriteAllowed(
   }
   if (!config.enableWrites) {
     throw new Error("PIPEDRIVE_ENABLE_WRITES must be true for real write operations");
+  }
+  if (!config.requireWriteConfirmation) {
+    return;
   }
   if (args.confirmation !== config.writeConfirmation && !canUseLabConfirmation(config, args.confirm_lab_write)) {
     throw new Error("Write confirmation did not match PIPEDRIVE_WRITE_CONFIRMATION");
@@ -112,7 +118,18 @@ function requireLeadValueCurrency(value?: number, currency?: string) {
 }
 
 type LinkRef = {
-  type: "activity" | "deal" | "lead" | "note" | "organization" | "person" | "product";
+  type:
+    | "activity"
+    | "board"
+    | "deal"
+    | "lead"
+    | "note"
+    | "organization"
+    | "person"
+    | "phase"
+    | "product"
+    | "project"
+    | "task";
   id: number | string | undefined;
   path: string;
   labelFields: string[];
@@ -138,11 +155,12 @@ async function assertDisposableTarget(
   ref: LinkRef,
 ) {
   if (!config.requireLabPrefix || ref.id === undefined) {
-    return;
+    return undefined;
   }
   const record = extractData(await client.get(ref.path));
   const label = findFirstString(record, ref.labelFields);
   assertLabLabel(config, ref.type, label);
+  return record;
 }
 
 async function assertDisposableLinkOrLabel(
@@ -213,6 +231,80 @@ function productRef(id?: number): LinkRef {
   return { type: "product", id, path: `/api/v2/products/${id}`, labelFields: ["name"] };
 }
 
+function projectRef(id?: number): LinkRef {
+  return { type: "project", id, path: `/api/v2/projects/${id}`, labelFields: ["title"] };
+}
+
+function taskRef(id?: number): LinkRef {
+  return { type: "task", id, path: `/api/v2/tasks/${id}`, labelFields: ["title"] };
+}
+
+function boardRef(id?: number): LinkRef {
+  return { type: "board", id, path: `/api/v2/boards/${id}`, labelFields: ["name"] };
+}
+
+function phaseRef(id?: number): LinkRef {
+  return { type: "phase", id, path: `/api/v2/phases/${id}`, labelFields: ["name"] };
+}
+
+function projectPayload<T extends Record<string, unknown>>(body: T & { custom_fields?: Record<string, unknown> }) {
+  const { custom_fields, ...rest } = body;
+  return {
+    ...rest,
+    ...(custom_fields ? { custom_fields } : {}),
+  };
+}
+
+function taskPayload<T extends Record<string, unknown>>(body: T & { done?: boolean; milestone?: boolean }) {
+  const { done, milestone, ...rest } = body;
+  return {
+    ...rest,
+    ...(done !== undefined ? { is_done: done } : {}),
+    ...(milestone !== undefined ? { is_milestone: milestone } : {}),
+  };
+}
+
+function requireTaskMilestoneDueDate(
+  body: { milestone?: boolean; due_date?: string },
+  existingTask?: unknown,
+) {
+  if (body.milestone === true && body.due_date === undefined && !findFirstString(existingTask, ["due_date"])) {
+    throw new Error("Pipedrive milestone tasks require due_date");
+  }
+}
+
+function normalizeTaskResponse(response: unknown): unknown {
+  if (!isRecord(response)) {
+    return response;
+  }
+  return normalizeTaskContainer(response);
+}
+
+function normalizeTaskContainer(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((entry) => normalizeTaskContainer(entry));
+  }
+  if (!isRecord(value)) {
+    return value;
+  }
+  const normalized: Record<string, unknown> = {};
+  for (const [key, entry] of Object.entries(value)) {
+    if (key === "is_done" || key === "is_milestone") {
+      const normalizedKey = key === "is_done" ? "done" : "milestone";
+      normalized[normalizedKey] = isTaskBooleanInt(entry) ? entry === 1 : entry;
+    } else if ((key === "done" || key === "milestone") && isTaskBooleanInt(entry)) {
+      normalized[key] = entry === 1;
+    } else {
+      normalized[key] = normalizeTaskContainer(entry);
+    }
+  }
+  return normalized;
+}
+
+function isTaskBooleanInt(value: unknown): value is 0 | 1 {
+  return value === 0 || value === 1;
+}
+
 function personPayload<T extends Record<string, unknown>>(
   body: T & {
     email?: string;
@@ -277,11 +369,41 @@ function redactDryRunPayload(value: unknown): unknown {
   }
   const redacted: Record<string, unknown> = {};
   for (const [key, entry] of Object.entries(value)) {
-    redacted[key] = /^(content|email|emails|phone|phones|comments|lost_reason)$|note/i.test(key) && entry
+    redacted[key] = isSensitivePayloadField(key) && entry
       ? "[redacted]"
       : redactDryRunPayload(entry);
   }
   return redacted;
+}
+
+function isSensitivePayloadField(key: string) {
+  return /^(content|email|emails|phone|phones|comments|lost_reason|body|body_html|body_url|snippet|subject|from_address|to_address|from_email|to_email|cc|bcc|reply_to|sender|recipients|attachments)$|note/i.test(
+    key,
+  );
+}
+
+function requireExactlyOneMailThreadLink(dealId?: number, leadId?: string) {
+  if (dealId && leadId) {
+    throw new Error("Mail thread linking accepts either deal_id or lead_id, not both");
+  }
+  if (!dealId && !leadId) {
+    throw new Error("Mail thread linking requires deal_id or lead_id");
+  }
+}
+
+function mailboxProbeSummary(response: unknown) {
+  const topLevelKeys = isRecord(response) ? Object.keys(response).sort() : [];
+  const data = isRecord(response) ? response.data : undefined;
+  const firstRecord = Array.isArray(data) ? data.find(isRecord) : isRecord(data) ? data : undefined;
+  const dataFieldNames = firstRecord ? Object.keys(firstRecord).sort() : [];
+  return {
+    mailbox_read_ok: true,
+    top_level_keys: topLevelKeys,
+    data_kind: Array.isArray(data) ? "array" : isRecord(data) ? "object" : typeof data,
+    data_count: Array.isArray(data) ? data.length : undefined,
+    data_field_names: dataFieldNames,
+    sensitive_data_fields_present: dataFieldNames.filter(isSensitivePayloadField),
+  };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -303,18 +425,36 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       inputSchema: {},
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
-    async () =>
-      jsonResult({
-        token_configured: Boolean(config.apiToken),
+    async () => {
+      const envDiagnostics = getRuntimeEnvDiagnostics();
+      return jsonResult({
+        token_configured: Boolean(config.apiToken || config.accessToken),
+        api_token_configured: Boolean(config.apiToken),
+        access_token_configured: Boolean(config.accessToken),
         company_domain_configured: Boolean(config.companyDomain),
         base_url_configured: Boolean(config.baseUrl),
         mock_base_url_allowed: config.allowMockBaseUrl,
         writes_enabled: config.enableWrites,
+        write_confirmation_required: config.requireWriteConfirmation,
         lab_write_confirmation_allowed: config.allowLabWriteConfirmation,
         lab_prefix_required: config.requireLabPrefix,
         lab_prefix: config.labPrefix,
         write_confirmation_configured: Boolean(config.writeConfirmation),
-      }),
+        runtime_env_diagnostics_initialized: envDiagnostics.initialized,
+        dotenv_loading_enabled: envDiagnostics.dotenvLoadingEnabled,
+        dotenv_local_file_present: envDiagnostics.dotenvLocalFilePresent,
+        dotenv_parent_file_present: envDiagnostics.dotenvParentFilePresent,
+        dotenv_loaded: envDiagnostics.dotenvLoaded,
+        runtime_env_preexisting_enable_writes: envDiagnostics.preexisting.enableWrites,
+        runtime_env_preexisting_require_lab_prefix: envDiagnostics.preexisting.requireLabPrefix,
+        runtime_env_preexisting_require_write_confirmation: envDiagnostics.preexisting.requireWriteConfirmation,
+        runtime_env_preexisting_load_dotenv: envDiagnostics.preexisting.loadDotenv,
+        runtime_env_current_has_enable_writes: envDiagnostics.current.enableWrites,
+        runtime_env_current_has_require_lab_prefix: envDiagnostics.current.requireLabPrefix,
+        runtime_env_current_has_require_write_confirmation: envDiagnostics.current.requireWriteConfirmation,
+        runtime_env_current_has_load_dotenv: envDiagnostics.current.loadDotenv,
+      });
+    },
   );
 
   server.registerTool(
@@ -796,6 +936,559 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
   );
 
   server.registerTool(
+    "pipedrive_mailbox_probe",
+    {
+      description:
+        "Read-only mailbox access probe. Checks whether the configured Pipedrive credentials can list one inbox thread without returning mail subjects, addresses or bodies.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async () =>
+      jsonResult(
+        mailboxProbeSummary(
+          await client.get("/api/v1/mailbox/mailThreads", { folder: "inbox", start: 0, limit: 1 }),
+        ),
+      ),
+  );
+
+  server.registerTool(
+    "pipedrive_list_mail_threads",
+    {
+      description:
+        "List Pipedrive mailbox threads in a folder. Results may include sensitive email metadata such as subjects and addresses.",
+      inputSchema: {
+        folder: mailFolder.default("inbox"),
+        ...startPagination,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async (args) => jsonResult(await client.get("/api/v1/mailbox/mailThreads", args)),
+  );
+
+  server.registerTool(
+    "pipedrive_get_mail_thread",
+    {
+      description:
+        "Get one Pipedrive mailbox thread. The response may include sensitive email metadata such as subject and participants.",
+      inputSchema: {
+        mail_thread_id: z.number().int().positive(),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async ({ mail_thread_id }) => jsonResult(await client.get(`/api/v1/mailbox/mailThreads/${mail_thread_id}`)),
+  );
+
+  server.registerTool(
+    "pipedrive_list_mail_thread_messages",
+    {
+      description:
+        "List all mail messages inside a Pipedrive mailbox thread. Use pipedrive_get_mail_message with include_body=true only when the message body is needed.",
+      inputSchema: {
+        mail_thread_id: z.number().int().positive(),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async ({ mail_thread_id }) =>
+      jsonResult(await client.get(`/api/v1/mailbox/mailThreads/${mail_thread_id}/mailMessages`)),
+  );
+
+  server.registerTool(
+    "pipedrive_get_mail_message",
+    {
+      description:
+        "Get one Pipedrive mail message. include_body defaults to false; include_body=true may return sensitive email body content.",
+      inputSchema: {
+        mail_message_id: z.number().int().positive(),
+        include_body: z.boolean().default(false),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async ({ mail_message_id, include_body }) =>
+      jsonResult(
+        await client.get(`/api/v1/mailbox/mailMessages/${mail_message_id}`, {
+          include_body: include_body ? 1 : 0,
+        }),
+      ),
+  );
+
+  server.registerTool(
+    "pipedrive_link_mail_thread",
+    {
+      description:
+        "Link a Pipedrive mailbox thread to exactly one deal or lead. Defaults to dry-run and does not change read, archive, sharing or deletion state.",
+      inputSchema: {
+        mail_thread_id: z.number().int().positive(),
+        deal_id: z.number().int().positive().optional(),
+        lead_id: z.string().uuid().optional(),
+        dry_run: z.boolean().default(true),
+        validate_links: z.boolean().default(true),
+        confirm_lab_write: z.boolean().default(false),
+        confirmation: z.string().optional(),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ mail_thread_id, deal_id, lead_id, dry_run, validate_links, confirm_lab_write, confirmation }) => {
+      requireExactlyOneMailThreadLink(deal_id, lead_id);
+      const payload = { deal_id, lead_id };
+      const refs = [dealRef(deal_id), leadRef(lead_id)];
+      if (dry_run ?? true) {
+        const validated_links = await validateLinksIfRequested(client, validate_links, refs);
+        const dryRunResult = guardedWriteResult(
+          config,
+          { dry_run, confirm_lab_write, confirmation },
+          payload,
+          { validated_links },
+        );
+        if (dryRunResult) {
+          return dryRunResult;
+        }
+        throw new Error("Mailbox dry-run unexpectedly reached live write path");
+      }
+      const writeGate = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload);
+      if (writeGate) {
+        return writeGate;
+      }
+      await validateLinksIfRequested(client, validate_links, refs);
+      await assertDisposableTarget(client, config, deal_id ? dealRef(deal_id) : leadRef(lead_id));
+      return jsonResult(await client.putForm(`/api/v1/mailbox/mailThreads/${mail_thread_id}`, payload));
+    },
+  );
+
+  server.registerTool(
+    "pipedrive_list_project_boards",
+    {
+      description: "List active Pipedrive project boards. Project board endpoints are beta.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async () => jsonResult(await client.get("/api/v2/boards")),
+  );
+
+  server.registerTool(
+    "pipedrive_get_project_board",
+    {
+      description: "Get one Pipedrive project board by id. Project board endpoints are beta.",
+      inputSchema: {
+        board_id: z.number().int().positive(),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async ({ board_id }) => jsonResult(await client.get(`/api/v2/boards/${board_id}`)),
+  );
+
+  server.registerTool(
+    "pipedrive_list_project_phases",
+    {
+      description: "List active Pipedrive project phases under a board. Project phase endpoints are beta.",
+      inputSchema: {
+        board_id: z.number().int().positive(),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async ({ board_id }) => jsonResult(await client.get("/api/v2/phases", { board_id })),
+  );
+
+  server.registerTool(
+    "pipedrive_get_project_phase",
+    {
+      description: "Get one Pipedrive project phase by id. Project phase endpoints are beta.",
+      inputSchema: {
+        phase_id: z.number().int().positive(),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async ({ phase_id }) => jsonResult(await client.get(`/api/v2/phases/${phase_id}`)),
+  );
+
+  server.registerTool(
+    "pipedrive_list_project_templates",
+    {
+      description: "List Pipedrive project templates.",
+      inputSchema: {
+        ...cursorPagination,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async (args) => jsonResult(await client.get("/api/v2/projectTemplates", args)),
+  );
+
+  server.registerTool(
+    "pipedrive_get_project_template",
+    {
+      description: "Get one Pipedrive project template by id.",
+      inputSchema: {
+        template_id: z.number().int().positive(),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async ({ template_id }) => jsonResult(await client.get(`/api/v2/projectTemplates/${template_id}`)),
+  );
+
+  server.registerTool(
+    "pipedrive_list_project_fields",
+    {
+      description: "List Pipedrive project field metadata. Project field endpoints are beta.",
+      inputSchema: {
+        ...cursorPagination,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async (args) => jsonResult(await client.get("/api/v2/projectFields", args)),
+  );
+
+  server.registerTool(
+    "pipedrive_get_project_field",
+    {
+      description: "Get one Pipedrive project field by field code. Project field endpoints are beta.",
+      inputSchema: {
+        field_code: z.string().min(1).max(255),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async ({ field_code }) => jsonResult(await client.get(`/api/v2/projectFields/${field_code}`)),
+  );
+
+  server.registerTool(
+    "pipedrive_list_projects",
+    {
+      description: "List non-archived Pipedrive projects with optional filters. Project endpoints are beta.",
+      inputSchema: {
+        filter_id: z.number().int().positive().optional(),
+        status: z.enum(["open", "completed", "canceled", "deleted"]).optional(),
+        phase_id: z.number().int().positive().optional(),
+        deal_id: z.number().int().positive().optional(),
+        person_id: z.number().int().positive().optional(),
+        org_id: z.number().int().positive().optional(),
+        ...cursorPagination,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async (args) => jsonResult(await client.get("/api/v2/projects", args)),
+  );
+
+  server.registerTool(
+    "pipedrive_get_project",
+    {
+      description: "Get one Pipedrive project by id. Project endpoints are beta.",
+      inputSchema: {
+        project_id: z.number().int().positive(),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async ({ project_id }) => jsonResult(await client.get(`/api/v2/projects/${project_id}`)),
+  );
+
+  server.registerTool(
+    "pipedrive_search_projects",
+    {
+      description: "Search projects by title, description, notes or custom fields. Project endpoints are beta.",
+      inputSchema: {
+        term: z.string().min(2),
+        fields: z.array(z.enum(["custom_fields", "notes", "title", "description"])).min(1).max(4).optional(),
+        exact_match: z.boolean().optional(),
+        person_id: z.number().int().positive().optional(),
+        organization_id: z.number().int().positive().optional(),
+        ...cursorPagination,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async ({ term, fields, exact_match, person_id, organization_id, limit, cursor }) =>
+      jsonResult(
+        await client.get("/api/v2/projects/search", {
+          term,
+          fields: commaList(fields),
+          exact_match,
+          person_id,
+          organization_id,
+          limit,
+          cursor,
+        }),
+      ),
+  );
+
+  server.registerTool(
+    "pipedrive_list_archived_projects",
+    {
+      description: "List archived Pipedrive projects. Project endpoints are beta.",
+      inputSchema: {
+        filter_id: z.number().int().positive().optional(),
+        status: z.enum(["open", "completed", "canceled", "deleted"]).optional(),
+        phase_id: z.number().int().positive().optional(),
+        ...cursorPagination,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async (args) => jsonResult(await client.get("/api/v2/projects/archived", args)),
+  );
+
+  server.registerTool(
+    "pipedrive_list_tasks",
+    {
+      description: "List Pipedrive project tasks. Task endpoints are beta.",
+      inputSchema: {
+        is_done: z.boolean().optional(),
+        is_milestone: z.boolean().optional(),
+        assignee_id: z.number().int().positive().optional(),
+        project_id: z.number().int().positive().optional(),
+        parent_task_id: z.number().int().positive().optional(),
+        ...cursorPagination,
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async (args) => jsonResult(normalizeTaskResponse(await client.get("/api/v2/tasks", args))),
+  );
+
+  server.registerTool(
+    "pipedrive_get_task",
+    {
+      description: "Get one Pipedrive project task by id. Task endpoints are beta.",
+      inputSchema: {
+        task_id: z.number().int().positive(),
+      },
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async ({ task_id }) => jsonResult(normalizeTaskResponse(await client.get(`/api/v2/tasks/${task_id}`))),
+  );
+
+  server.registerTool(
+    "pipedrive_create_project",
+    {
+      description:
+        "Create a lab-scoped Pipedrive project container from board_id and phase_id. Use this before creating project tasks; do not use it for task items. template_id is intentionally unsupported in this first slice.",
+      inputSchema: {
+        title: shortText.describe("Project title. In lab mode, it must start with PIPEDRIVE_LAB_PREFIX."),
+        board_id: z.number().int().positive().describe("Project board id, usually discovered with pipedrive_list_project_boards."),
+        phase_id: z.number().int().positive().describe("Project phase id, usually discovered with pipedrive_list_project_phases."),
+        description: longText.describe("Optional project description."),
+        owner_id: z.number().int().positive().optional(),
+        start_date: pipedriveDate.optional(),
+        end_date: pipedriveDate.optional(),
+        deal_ids: z.array(z.number().int().positive()).min(1).max(100).optional(),
+        person_ids: z.array(z.number().int().positive()).min(1).max(100).optional(),
+        org_ids: z.array(z.number().int().positive()).min(1).max(100).optional(),
+        label_ids: z.array(z.number().int().positive()).min(1).max(100).optional(),
+        custom_fields: customFields,
+        ...writeGuardSchema,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ dry_run, validate_links, confirm_lab_write, confirmation, ...body }) => {
+      const payload = projectPayload(body);
+      const refs = [
+        boardRef(body.board_id),
+        phaseRef(body.phase_id),
+        ...(body.deal_ids ?? []).map((id) => dealRef(id)),
+        ...(body.person_ids ?? []).map((id) => personRef(id)),
+        ...(body.org_ids ?? []).map((id) => organizationRef(id)),
+      ];
+      const validated_links = await validateLinksIfRequested(client, validate_links, refs);
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
+      if (dryRunResult) {
+        return dryRunResult;
+      }
+      assertLabLabel(config, "project", body.title);
+      return jsonResult(await client.post("/api/v2/projects", payload));
+    },
+  );
+
+  server.registerTool(
+    "pipedrive_update_project",
+    {
+      description:
+        "Update a lab-scoped Pipedrive project container. Use board_id or phase_id here to move the project between project board/phase positions; use pipedrive_update_task for task fields.",
+      inputSchema: {
+        project_id: z.number().int().positive().describe("Existing project id returned by project read/create/search tools."),
+        title: optionalShortText.describe("Updated project title. In lab mode, existing project title must be lab-prefixed."),
+        board_id: z.number().int().positive().optional().describe("Optional project board id; not valid for task updates."),
+        phase_id: z.number().int().positive().optional().describe("Optional project phase id; not valid for task updates."),
+        description: longText.describe("Optional project description."),
+        owner_id: z.number().int().positive().optional(),
+        start_date: pipedriveDate.optional(),
+        end_date: pipedriveDate.optional(),
+        deal_ids: z.array(z.number().int().positive()).min(1).max(100).optional(),
+        person_ids: z.array(z.number().int().positive()).min(1).max(100).optional(),
+        org_ids: z.array(z.number().int().positive()).min(1).max(100).optional(),
+        label_ids: z.array(z.number().int().positive()).min(1).max(100).optional(),
+        custom_fields: customFields,
+        ...writeGuardSchema,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ project_id, dry_run, validate_links, confirm_lab_write, confirmation, ...body }) => {
+      const payload = projectPayload(body);
+      const refs = [
+        projectRef(project_id),
+        boardRef(body.board_id),
+        phaseRef(body.phase_id),
+        ...(body.deal_ids ?? []).map((id) => dealRef(id)),
+        ...(body.person_ids ?? []).map((id) => personRef(id)),
+        ...(body.org_ids ?? []).map((id) => organizationRef(id)),
+      ];
+      const validated_links = await validateLinksIfRequested(client, validate_links, refs);
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
+      if (dryRunResult) {
+        return dryRunResult;
+      }
+      await assertDisposableTarget(client, config, projectRef(project_id));
+      return jsonResult(await client.patch(`/api/v2/projects/${project_id}`, payload));
+    },
+  );
+
+  server.registerTool(
+    "pipedrive_archive_project",
+    {
+      description: "Archive a lab-scoped Pipedrive project. Defaults to dry-run.",
+      inputSchema: {
+        project_id: z.number().int().positive(),
+        dry_run: z.boolean().default(true),
+        confirm_lab_write: z.boolean().default(false),
+        confirmation: z.string().optional(),
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ project_id, dry_run, confirm_lab_write, confirmation }) => {
+      const dryRunResult = guardedWriteResult(
+        config,
+        { dry_run, confirm_lab_write, confirmation },
+        { project_id },
+      );
+      if (dryRunResult) {
+        return dryRunResult;
+      }
+      await assertDisposableTarget(client, config, projectRef(project_id));
+      return jsonResult(await client.post(`/api/v2/projects/${project_id}/archive`, {}));
+    },
+  );
+
+  server.registerTool(
+    "pipedrive_delete_project",
+    {
+      description: "Delete a lab-scoped Pipedrive project after reading the target first. Defaults to dry-run.",
+      inputSchema: {
+        project_id: z.number().int().positive(),
+        ...writeGuardSchema,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ project_id, dry_run, validate_links, confirm_lab_write, confirmation }) => {
+      const ref = projectRef(project_id);
+      const validated_links = await validateLinksIfRequested(client, validate_links, [ref]);
+      const dryRunResult = guardedWriteResult(
+        config,
+        { dry_run, confirm_lab_write, confirmation },
+        { project_id },
+        { validated_links },
+      );
+      if (dryRunResult) {
+        return dryRunResult;
+      }
+      await assertDisposableTarget(client, config, ref);
+      return jsonResult(await client.delete(`/api/v2/projects/${project_id}`));
+    },
+  );
+
+  server.registerTool(
+    "pipedrive_create_task",
+    {
+      description:
+        "Create a lab-scoped task inside an existing Pipedrive project. Requires project_id from pipedrive_create_project, pipedrive_list_projects or pipedrive_get_project. Do not pass board_id or phase_id; those belong to pipedrive_create_project.",
+      inputSchema: {
+        title: shortText.describe("Task title. In lab mode, it must start with PIPEDRIVE_LAB_PREFIX."),
+        project_id: z.number().int().positive().describe("Existing parent project id. This is not board_id or phase_id."),
+        parent_task_id: z.number().int().positive().optional().describe("Optional parent task id for subtasks."),
+        description: longText.describe("Optional task description."),
+        done: z.boolean().optional().describe("Whether the task is done. The MCP maps this to Pipedrive is_done."),
+        milestone: z.boolean().optional().describe("Whether the task is a milestone. milestone=true requires due_date."),
+        due_date: pipedriveDate.optional().describe("Task due date. Required when milestone=true."),
+        start_date: pipedriveDate.optional(),
+        assignee_id: z.number().int().positive().optional(),
+        priority: z.number().int().min(0).optional(),
+        ...writeGuardSchema,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ dry_run, validate_links, confirm_lab_write, confirmation, ...body }) => {
+      requireTaskMilestoneDueDate(body);
+      const payload = taskPayload(body);
+      const refs = [projectRef(body.project_id)];
+      const validated_links = await validateLinksIfRequested(client, validate_links, refs);
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
+      if (dryRunResult) {
+        return dryRunResult;
+      }
+      assertLabLabel(config, "task", body.title);
+      return jsonResult(normalizeTaskResponse(await client.post("/api/v2/tasks", payload)));
+    },
+  );
+
+  server.registerTool(
+    "pipedrive_update_task",
+    {
+      description:
+        "Update fields on an existing lab-scoped project task. project_id refers to the containing project, not a board or phase; use pipedrive_update_project for board_id or phase_id changes.",
+      inputSchema: {
+        task_id: z.number().int().positive().describe("Existing task id returned by task create/list/get tools."),
+        title: optionalShortText.describe("Updated task title. In lab mode, existing task title must be lab-prefixed."),
+        project_id: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe("Optional containing project id. This is not board_id or phase_id; use pipedrive_update_project for board/phase changes."),
+        parent_task_id: z.number().int().positive().optional().describe("Optional parent task id for subtasks."),
+        description: longText.describe("Optional task description."),
+        done: z.boolean().optional().describe("Whether the task is done. The MCP maps this to Pipedrive is_done."),
+        milestone: z.boolean().optional().describe("Whether the task is a milestone. milestone=true requires due_date unless the task already has one."),
+        due_date: pipedriveDate.optional().describe("Task due date. Required to set milestone=true unless the task already has a due date."),
+        start_date: pipedriveDate.optional(),
+        assignee_id: z.number().int().positive().optional(),
+        priority: z.number().int().min(0).optional(),
+        ...writeGuardSchema,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ task_id, dry_run, validate_links, confirm_lab_write, confirmation, ...body }) => {
+      const payload = taskPayload(body);
+      const refs = [taskRef(task_id), projectRef(body.project_id)];
+      const validated_links = await validateLinksIfRequested(client, validate_links, refs);
+      const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });
+      if (dryRunResult) {
+        return dryRunResult;
+      }
+      const existingTask = await assertDisposableTarget(client, config, taskRef(task_id));
+      requireTaskMilestoneDueDate(body, existingTask);
+      return jsonResult(normalizeTaskResponse(await client.patch(`/api/v2/tasks/${task_id}`, payload)));
+    },
+  );
+
+  server.registerTool(
+    "pipedrive_delete_task",
+    {
+      description: "Delete a lab-scoped Pipedrive project task after reading the target first. Defaults to dry-run.",
+      inputSchema: {
+        task_id: z.number().int().positive(),
+        ...writeGuardSchema,
+      },
+      annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
+    },
+    async ({ task_id, dry_run, validate_links, confirm_lab_write, confirmation }) => {
+      const ref = taskRef(task_id);
+      const validated_links = await validateLinksIfRequested(client, validate_links, [ref]);
+      const dryRunResult = guardedWriteResult(
+        config,
+        { dry_run, confirm_lab_write, confirmation },
+        { task_id },
+        { validated_links },
+      );
+      if (dryRunResult) {
+        return dryRunResult;
+      }
+      await assertDisposableTarget(client, config, ref);
+      return jsonResult(await client.delete(`/api/v2/tasks/${task_id}`));
+    },
+  );
+
+  server.registerTool(
     "pipedrive_create_activity",
     {
       description:
@@ -1148,13 +1841,14 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
         organization_id: z.number().int().positive(),
         name: optionalShortText,
         owner_id: z.number().int().positive().optional(),
+        website: optionalShortText,
         custom_fields: customFields,
         ...writeGuardSchema,
       },
       annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
     },
     async ({ organization_id, dry_run, validate_links, confirm_lab_write, confirmation, custom_fields, ...body }) => {
-      const payload = withCustomFields(body, custom_fields);
+      const payload = custom_fields ? { ...body, custom_fields } : body;
       const refs = [organizationRef(organization_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
       const dryRunResult = guardedWriteResult(config, { dry_run, confirm_lab_write, confirmation }, payload, { validated_links });

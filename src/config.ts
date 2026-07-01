@@ -1,9 +1,11 @@
 export type PipedriveConfig = {
   apiToken?: string;
+  accessToken?: string;
   companyDomain?: string;
   baseUrl: string;
   allowMockBaseUrl: boolean;
   enableWrites: boolean;
+  requireWriteConfirmation: boolean;
   allowLabWriteConfirmation: boolean;
   requireLabPrefix: boolean;
   labPrefix: string;
@@ -14,9 +16,11 @@ export type PipedriveConfig = {
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): PipedriveConfig {
   const companyDomain = clean(env.PIPEDRIVE_COMPANY_DOMAIN);
   const apiToken = clean(env.PIPEDRIVE_API_TOKEN);
+  const accessToken = clean(env.PIPEDRIVE_ACCESS_TOKEN);
   const baseUrl = clean(env.PIPEDRIVE_BASE_URL) ?? defaultBaseUrl(companyDomain);
   const allowMockBaseUrl = env.PIPEDRIVE_ALLOW_MOCK_BASE_URL === "true";
   const enableWrites = env.PIPEDRIVE_ENABLE_WRITES === "true";
+  const requireWriteConfirmation = env.PIPEDRIVE_REQUIRE_WRITE_CONFIRMATION !== "false";
   const allowLabWriteConfirmation = env.PIPEDRIVE_ALLOW_LAB_WRITE_CONFIRMATION !== "false";
   const requireLabPrefix = env.PIPEDRIVE_REQUIRE_LAB_PREFIX !== "false";
   const labPrefix = clean(env.PIPEDRIVE_LAB_PREFIX) ?? "MCP LAB -";
@@ -25,10 +29,12 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): PipedriveConfi
 
   return {
     apiToken,
+    accessToken,
     companyDomain,
     baseUrl,
     allowMockBaseUrl,
     enableWrites,
+    requireWriteConfirmation,
     allowLabWriteConfirmation,
     requireLabPrefix,
     labPrefix,
@@ -39,8 +45,8 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): PipedriveConfi
 
 export function requireConfigured(config: PipedriveConfig): void {
   const missing = [];
-  if (!config.apiToken) {
-    missing.push("PIPEDRIVE_API_TOKEN");
+  if (!config.apiToken && !config.accessToken) {
+    missing.push("PIPEDRIVE_API_TOKEN or PIPEDRIVE_ACCESS_TOKEN");
   }
   if (!config.baseUrl) {
     missing.push("PIPEDRIVE_COMPANY_DOMAIN or PIPEDRIVE_BASE_URL");

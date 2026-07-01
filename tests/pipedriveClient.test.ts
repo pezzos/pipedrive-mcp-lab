@@ -53,3 +53,58 @@ test("reports API errors without echoing the token", async () => {
     return true;
   });
 });
+
+test("uses OAuth bearer authorization when an access token is configured", async () => {
+  let requestedUrl = "";
+  let requestedAuth = "";
+  let requestedApiToken = "";
+  const fetchMock = (async (url: URL, init?: RequestInit) => {
+    requestedUrl = url.toString();
+    const headers = new Headers(init?.headers);
+    requestedAuth = headers.get("Authorization") ?? "";
+    requestedApiToken = headers.get("x-api-token") ?? "";
+    return new Response(JSON.stringify({ success: true, data: [] }), { status: 200 });
+  }) as typeof fetch;
+
+  const client = new PipedriveClient(
+    {
+      accessToken: "oauth-secret-token",
+      companyDomain: "acme",
+      baseUrl: "https://acme.pipedrive.com",
+      enableWrites: false,
+      requestTimeoutMs: 10000,
+    },
+    fetchMock,
+  );
+
+  await client.get("/api/v1/mailbox/mailThreads", { folder: "inbox", limit: 1 });
+  assert.match(requestedUrl, /\/api\/v1\/mailbox\/mailThreads/);
+  assert.doesNotMatch(requestedUrl, /oauth-secret-token/);
+  assert.equal(requestedAuth, "Bearer oauth-secret-token");
+  assert.equal(requestedApiToken, "");
+});
+
+test("sends form-encoded PUT bodies when requested", async () => {
+  let requestedContentType = "";
+  let requestedBody = "";
+  const fetchMock = (async (_url: URL, init?: RequestInit) => {
+    requestedContentType = new Headers(init?.headers).get("content-type") ?? "";
+    requestedBody = String(init?.body ?? "");
+    return new Response(JSON.stringify({ success: true, data: { id: 1 } }), { status: 200 });
+  }) as typeof fetch;
+
+  const client = new PipedriveClient(
+    {
+      apiToken: "test-token",
+      companyDomain: "acme",
+      baseUrl: "https://acme.pipedrive.com",
+      enableWrites: false,
+      requestTimeoutMs: 10000,
+    },
+    fetchMock,
+  );
+
+  await client.putForm("/api/v1/mailbox/mailThreads/9", { deal_id: 123 });
+  assert.equal(requestedContentType, "application/x-www-form-urlencoded");
+  assert.equal(requestedBody, "deal_id=123");
+});

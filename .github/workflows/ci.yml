@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Build and test
+        run: npm run check
+
+      - name: Git diff whitespace check
+        run: git diff --check
+
+      - name: Basic secret scan
+        shell: bash
+        run: |
+          set -euo pipefail
+          matches="$(grep -R -E -n \
+            --exclude-dir=.git \
+            --exclude-dir=node_modules \
+            --exclude-dir=dist \
+            --exclude-dir=live-lab-reports \
+            --exclude='package-lock.json' \
+            -e 'ghp_[A-Za-z0-9_]{20,}' \
+            -e 'github_pat_[A-Za-z0-9_]{20,}' \
+            -e 'gho_[A-Za-z0-9_]{20,}' \
+            -e 'tskey-[A-Za-z0-9]{20,}' \
+            -e 'Bearer [A-Za-z0-9._-]{24,}' \
+            -e 'x-api-token: [A-Za-z0-9._-]{24,}' \
+            -e 'PIPEDRIVE_API_TOKEN=[A-Za-z0-9._-]{24,}' \
+            . || true)"
+          matches="$(printf '%s\n' "$matches" | grep -v 'replace-with-a-sandbox-token' || true)"
+          if [ -n "$matches" ]; then
+            printf '%s\n' "$matches"
+            echo "Potential secret marker found" >&2
+            exit 1
+          fi
+
+      - name: Audit high severity dependencies
+        run: npm audit --audit-level=high

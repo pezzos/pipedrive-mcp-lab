@@ -39,6 +39,14 @@ export class PipedriveClient {
     return this.request("PUT", path, params, body);
   }
 
+  async putForm(
+    path: string,
+    body: Record<string, string | number | boolean | undefined>,
+    params: Record<string, string | number | boolean | undefined> = {},
+  ) {
+    return this.request("PUT", path, params, body, "form");
+  }
+
   async delete(path: string, params: Record<string, string | number | boolean | undefined> = {}) {
     return this.request("DELETE", path, params);
   }
@@ -48,9 +56,11 @@ export class PipedriveClient {
     path: string,
     params: Record<string, string | number | boolean | undefined>,
     body?: unknown,
+    bodyFormat: "json" | "form" = "json",
   ) {
     requireConfigured(this.config);
     const url = this.url(path, params);
+    const encodedBody = body === undefined ? undefined : encodeBody(body, bodyFormat);
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), this.config.requestTimeoutMs);
     let response: Response;
@@ -58,11 +68,11 @@ export class PipedriveClient {
       response = await this.fetchImpl(url, {
         method,
         headers: {
-          "x-api-token": this.config.apiToken ?? "",
-          ...(body ? { "content-type": "application/json" } : {}),
+          ...authHeaders(this.config),
+          ...(encodedBody ? { "content-type": contentType(bodyFormat) } : {}),
         },
         signal: controller.signal,
-        body: body ? JSON.stringify(body) : undefined,
+        body: encodedBody,
       });
     } catch (error) {
       if (error instanceof Error && error.name === "AbortError") {
@@ -93,6 +103,33 @@ export class PipedriveClient {
     }
     return url;
   }
+}
+
+function authHeaders(config: PipedriveConfig): Record<string, string> {
+  if (config.accessToken) {
+    return { Authorization: `Bearer ${config.accessToken}` };
+  }
+  return { "x-api-token": config.apiToken ?? "" };
+}
+
+function contentType(format: "json" | "form") {
+  return format === "form" ? "application/x-www-form-urlencoded" : "application/json";
+}
+
+function encodeBody(body: unknown, format: "json" | "form") {
+  if (format === "json") {
+    return JSON.stringify(body);
+  }
+  if (!isRecord(body)) {
+    throw new Error("Form-encoded Pipedrive API requests require an object body");
+  }
+  const params = new URLSearchParams();
+  for (const [key, value] of Object.entries(body)) {
+    if (value !== undefined && value !== "") {
+      params.set(key, String(value));
+    }
+  }
+  return params.toString();
 }
 
 function safeJsonParse(text: string): unknown {
