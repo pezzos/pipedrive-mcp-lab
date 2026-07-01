@@ -111,9 +111,12 @@ test("can skip dotenv loading for controlled environments", () => {
     const diagnostics = getRuntimeEnvDiagnostics();
 
     assert.equal(env.PIPEDRIVE_ENABLE_WRITES, undefined);
+    assert.equal(diagnostics.initialized, true);
     assert.equal(diagnostics.dotenvLoadingEnabled, false);
+    assert.equal(diagnostics.dotenvLocalFilePresent, false);
     assert.equal(diagnostics.dotenvLoaded, false);
     assert.equal(diagnostics.preexisting.loadDotenv, true);
+    assert.equal(diagnostics.current.loadDotenv, true);
   } finally {
     cleanup();
   }

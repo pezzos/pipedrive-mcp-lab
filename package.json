@@ -16,9 +16,11 @@
   ],
   "scripts": {
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
+    "build:plugin": "node scripts/build-plugin.mjs",
+    "pack:claude-plugin": "npm run build:plugin && node scripts/pack-claude-plugin.mjs",
     "prepack": "npm run build",
     "test": "node --import tsx --test tests/*.test.ts",
-    "check": "npm run build && npm test"
+    "check": "npm run build && npm run build:plugin && npm test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -27,6 +29,7 @@
   },
   "devDependencies": {
     "@types/node": "^25.0.0",
+    "esbuild": "^0.25.12",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3"
   }

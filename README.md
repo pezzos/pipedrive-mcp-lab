@@ -26,6 +26,20 @@ version.
 
 ## Quick Start
 
+For Claude Cowork or Claude Code plugin delivery, build the autonomous plugin
+artifact:
+
+```sh
+npm install
+npm run check
+npm run pack:claude-plugin
+claude plugin validate dist/claude-plugin/pipedrive-mcp
+```
+
+See [Claude Cowork Plugin](docs/CLAUDE_COWORK_PLUGIN.md).
+
+For a plain MCP host or repository checkout:
+
 ```sh
 npm install
 cp config.example .env
@@ -59,6 +73,10 @@ Build the server first, then configure the MCP host to run either
 `node dist/server.js` from this repository or the packaged `pipedrive-mcp` bin.
 Claude Desktop examples are below; additional profiles are in
 [MCP client examples](docs/MCP_CLIENT_EXAMPLES.md).
+
+The Claude plugin path is separate from the plain MCP host path. Plugin source
+files live under `plugin/claude/`, and the staged plugin lives under
+`dist/claude-plugin/pipedrive-mcp/`.
 
 ## Runtime Configuration
 

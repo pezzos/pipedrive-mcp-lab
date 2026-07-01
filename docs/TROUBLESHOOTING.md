@@ -42,6 +42,9 @@ PIPEDRIVE_ENABLE_DELETE_TOOLS=true
 
 Restart the MCP host after changing environment variables.
 
+For Claude plugin installs, also confirm the plugin is enabled and the MCP
+server appears in Claude's MCP/plugin UI. The plugin is disabled by default.
+
 ## Writes Return Dry-Run Responses
 
 Write tools default to `dry_run=true`. Pass `dry_run=false` for a real write and
@@ -86,12 +89,41 @@ values.
 
 Set `PIPEDRIVE_LOAD_DOTENV=false` when the MCP host supplies all variables.
 
+Claude plugin delivery always sets `PIPEDRIVE_LOAD_DOTENV=false`; configure
+values through plugin user config instead of `.env`.
+
+## Claude Plugin Validation Fails
+
+Run:
+
+```sh
+npm run pack:claude-plugin
+claude plugin validate dist/claude-plugin/pipedrive-mcp
+```
+
+If validation fails, check that the staged artifact contains `.claude-plugin/`,
+`.mcp.json`, `skills/`, and `dist/plugin-server.js`.
+
+## Claude Plugin MCP Server Does Not Start
+
+Check:
+
+- The plugin is enabled.
+- Plugin user config contains a company domain and either an API token or OAuth
+  access token.
+- Custom plugins and local MCP servers are allowed by workspace policy.
+- `dist/plugin-server.js` exists in the staged plugin artifact.
+
+Use `claude --plugin-dir dist/claude-plugin/pipedrive-mcp` for local pilot
+testing before client rollout.
+
 ## Package Contents Look Wrong
 
 Run:
 
 ```sh
 npm run build
+npm run pack:claude-plugin
 npm pack --dry-run
 ```
 

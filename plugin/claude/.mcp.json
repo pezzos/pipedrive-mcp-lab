@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "pipedrive-mcp": {
+      "command": "node",
+      "args": [
+        "${CLAUDE_PLUGIN_ROOT}/dist/plugin-server.js"
+      ],
+      "env": {
+        "PIPEDRIVE_LOAD_DOTENV": "false",
+        "PIPEDRIVE_COMPANY_DOMAIN": "${user_config.company_domain}",
+        "PIPEDRIVE_BASE_URL": "${user_config.base_url}",
+        "PIPEDRIVE_API_TOKEN": "${user_config.api_token}",
+        "PIPEDRIVE_ACCESS_TOKEN": "${user_config.access_token}",
+        "PIPEDRIVE_ENABLE_WRITES": "${user_config.enable_writes}",
+        "PIPEDRIVE_ENABLE_MAILBOX_TOOLS": "${user_config.enable_mailbox_tools}",
+        "PIPEDRIVE_ENABLE_DELETE_TOOLS": "${user_config.enable_delete_tools}",
+        "PIPEDRIVE_REQUEST_TIMEOUT_MS": "${user_config.request_timeout_ms}"
+      }
+    }
+  }
+}

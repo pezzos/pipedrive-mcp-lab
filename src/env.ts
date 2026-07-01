@@ -37,22 +37,27 @@ export function loadRuntimeEnv(options: RuntimeEnvOptions = {}): void {
   const env = options.env ?? process.env;
   const preexisting = hasRuntimeEnvKeys(env);
   const dotenvLoadingEnabled = env.PIPEDRIVE_LOAD_DOTENV?.toLowerCase() !== "false";
-  const packageDir = options.packageDir ?? defaultPackageDir();
-  const localDotenv = resolve(packageDir, ".env");
-  const dotenvLocalFilePresent = existsSync(localDotenv);
 
   diagnostics = {
     initialized: true,
     dotenvLoadingEnabled,
-    dotenvLocalFilePresent,
+    dotenvLocalFilePresent: false,
     dotenvLoaded: false,
     preexisting,
     current: hasRuntimeEnvKeys(env),
   };
 
-  if (env.PIPEDRIVE_LOAD_DOTENV?.toLowerCase() === "false") {
+  if (!dotenvLoadingEnabled) {
     return;
   }
+
+  const packageDir = options.packageDir ?? defaultPackageDir();
+  const localDotenv = resolve(packageDir, ".env");
+  const dotenvLocalFilePresent = existsSync(localDotenv);
+  diagnostics = {
+    ...diagnostics,
+    dotenvLocalFilePresent,
+  };
 
   if (!dotenvLocalFilePresent) {
     return;

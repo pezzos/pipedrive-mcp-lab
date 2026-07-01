@@ -12,6 +12,15 @@ npm run build
 
 Use `node dist/server.js` as the MCP command.
 
+For Claude Cowork or Claude Code plugin delivery:
+
+```sh
+npm run pack:claude-plugin
+claude plugin validate dist/claude-plugin/pipedrive-mcp
+```
+
+The plugin artifact is staged at `dist/claude-plugin/pipedrive-mcp/`.
+
 ## Environment Contract
 
 Required for live API calls:
@@ -89,6 +98,22 @@ The tarball should contain runtime files, README, LICENSE, config example, and
 docs only. It must not include source, tests, historical validation notes, or
 validation prompts.
 
+## Private Claude Plugin Delivery
+
+Use `npm run pack:claude-plugin` to stage a Cowork/Claude Code plugin with a
+bundled MCP server and skills. Routine delivery should use a private plugin
+repository or private Claude plugin marketplace. Use `claude --plugin-dir` only
+for local pilot testing.
+
+The plugin does not load `.env`; it forces `PIPEDRIVE_LOAD_DOTENV=false` and
+receives configuration through Claude plugin user config. Sensitive values should
+use Claude secure storage where available. If Claude falls back to credentials
+under `~/.claude/`, treat that path as sensitive and rotate tokens during
+offboarding.
+
+Before Cowork rollout, confirm custom plugins and local MCP servers are allowed
+by workspace policy.
+
 ## Upgrading From Lab Version
 
 Remove these environment variables from host configs:
@@ -119,6 +144,8 @@ Required local validation:
 
 ```sh
 npm run check
+npm run pack:claude-plugin
+claude plugin validate dist/claude-plugin/pipedrive-mcp
 npm pack --dry-run
 ```
 
