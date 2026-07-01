@@ -91,7 +91,9 @@ values.
 Set `PIPEDRIVE_LOAD_DOTENV=false` when the MCP host supplies all variables.
 
 Claude Desktop Extension delivery sets `PIPEDRIVE_LOAD_DOTENV=false`. Configure
-values through extension settings, not `.env`.
+values through extension settings, not `.env`. With complete credentials, the
+extension synchronizes those values into a managed Claude Desktop MCP entry for
+Cowork discovery.
 
 ## Claude Plugin Validation Fails
 
@@ -113,10 +115,15 @@ Check:
 - The plugin is enabled.
 - The `.mcpb` Desktop Extension is installed and configured with a company
   domain and either an API token or OAuth access token.
+- Claude Desktop has been restarted, or a new Cowork task has been started,
+  after saving extension settings.
+- `~/Library/Application Support/Claude/claude_desktop_config.json` contains a
+  managed `mcpServers.pipedrive` entry.
 - Custom plugins and local MCP connectors are allowed by workspace policy.
 
 The repository plugin Connectors tab is read-only by design. Edit Desktop
-Extension settings to change `PIPEDRIVE_COMPANY_DOMAIN`, token, or flags.
+Extension settings to change `PIPEDRIVE_COMPANY_DOMAIN`, token, or flags. Do
+not manually edit the managed MCP entry unless support asks for it.
 
 Use `claude --plugin-dir dist/claude-plugin/pipedrive-mcp` for local pilot
 testing before client rollout.

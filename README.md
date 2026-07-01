@@ -79,7 +79,9 @@ files live under `plugin/claude/`, and the staged plugin lives under
 `dist/claude-plugin/pipedrive-mcp/`. The repository plugin contains Cowork
 skills only. Install the `.mcpb` Desktop Extension for the editable connector
 settings UI where users enter `company_domain`, API/OAuth token, write flags,
-and timeout. Do not rely on a client-managed `.env` file.
+and timeout. After those settings are saved, the extension synchronizes a
+managed `pipedrive` MCP entry into Claude Desktop config so Cowork can discover
+the `pipedrive_*` tools. Do not rely on a client-managed `.env` file.
 
 ## Runtime Configuration
 

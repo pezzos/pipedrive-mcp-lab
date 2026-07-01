@@ -40,7 +40,7 @@ test("staged Claude plugin artifact is isolated and read-only by default", { tim
   const pluginJsonPath = join(artifactRoot, ".claude-plugin", "plugin.json");
   assert.equal(existsSync(pluginJsonPath), true);
   const pluginJson = JSON.parse(readFileSync(pluginJsonPath, "utf8"));
-  assert.equal(pluginJson.version, "0.1.3");
+  assert.equal(pluginJson.version, "0.1.4");
   assert.equal(pluginJson.skills, "./skills/");
   assert.equal("mcpServers" in pluginJson, false);
   assert.equal("userConfig" in pluginJson, false);

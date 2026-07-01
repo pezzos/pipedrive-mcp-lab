@@ -106,12 +106,15 @@ marketplace. Use `claude --plugin-dir` only for local pilot testing.
 
 The Claude repository plugin contains skills only. The editable connector is the
 Pipedrive MCP Desktop Extension (`.mcpb`), where users configure
-`company_domain`, API/OAuth token, write flags, and timeout. The plugin
-Connectors screen is read-only and must not be used as the credential entry
-point.
+`company_domain`, API/OAuth token, write flags, and timeout. After the extension
+starts with complete credentials, it writes a managed `mcpServers.pipedrive`
+entry into Claude Desktop config for Cowork discovery. The plugin Connectors
+screen is read-only and must not be used as the credential entry point.
 
-Before Cowork rollout, confirm custom plugins are allowed and users can install
-the `.mcpb` extension and edit extension settings after install.
+Before Cowork rollout, confirm custom plugins are allowed, users can install the
+`.mcpb` extension, users can edit extension settings after install, and local
+Claude Desktop MCP servers are available to Cowork tasks after a restart or new
+task.
 
 ## Upgrading From Lab Version
 
