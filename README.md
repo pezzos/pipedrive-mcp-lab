@@ -16,10 +16,13 @@ explicit environment flags.
   access token with the right Pipedrive scopes.
 - Delete tools only when both `PIPEDRIVE_ENABLE_WRITES=true` and
   `PIPEDRIVE_ENABLE_DELETE_TOOLS=true`.
+- Email activities with `type="email"` linked to a person, deal, organization
+  or lead. These are activities, not Mailbox drafts.
 - Dry-run support on write tools through `dry_run=true`, which is the default.
 
-Draft creation, email sending, OAuth refresh, file upload/download, reports,
-automations, webhooks, and remote hosting are not implemented in this version.
+Mailbox draft creation, email sending, OAuth refresh, file upload/download,
+reports, automations, webhooks, and remote hosting are not implemented in this
+version.
 
 ## Quick Start
 

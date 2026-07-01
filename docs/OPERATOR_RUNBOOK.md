@@ -72,8 +72,9 @@ Some accounts may require OAuth scopes for Mailbox. Provide
 `PIPEDRIVE_ACCESS_TOKEN` when API-token access is rejected. This MCP does not
 perform OAuth authorization or token refresh.
 
-Email draft creation, sending, and replies are not supported by this MCP
-version.
+Mailbox draft creation, sending, and replies are not supported by this MCP
+version. To create an email to-do, use `pipedrive_create_activity` with
+`type="email"` and place the draft body or instructions in `note`.
 
 ## Private Package Delivery
 

@@ -98,6 +98,27 @@ Write with linked-record validation:
 }
 ```
 
+Email activity linked to a contact, deal and organization:
+
+```json
+{
+  "name": "pipedrive_create_activity",
+  "arguments": {
+    "subject": "Email follow-up",
+    "type": "email",
+    "person_id": 123,
+    "deal_id": 456,
+    "org_id": 789,
+    "note": "<p>Draft body or instructions for the email activity.</p>",
+    "validate_links": true,
+    "dry_run": true
+  }
+}
+```
+
+This creates a Pipedrive activity, not a Mailbox draft. Use `dry_run=false` only
+after reviewing the payload.
+
 ## Delete-Enabled Configuration
 
 ```json
@@ -190,4 +211,4 @@ Link a thread to a deal:
 ```
 
 Mailbox access may require `PIPEDRIVE_ACCESS_TOKEN` with appropriate scopes.
-Draft creation and email sending are not supported.
+Mailbox draft creation and email sending are not supported.

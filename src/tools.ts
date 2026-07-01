@@ -1480,10 +1480,11 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
     "pipedrive_create_activity",
     {
       description:
-        "Create an activity only when writes are enabled. Defaults to dry-run for safe review.",
+        "Create an activity only when writes are enabled. For an email activity, pass type=\"email\" and put the draft body or instructions in note; this creates an activity, not a Mailbox draft. Defaults to dry-run for safe review.",
       inputSchema: {
         subject: shortText,
         type: z.string().max(80).default("task"),
+        owner_id: z.number().int().positive().optional(),
         deal_id: z.number().int().positive().optional(),
         person_id: z.number().int().positive().optional(),
         org_id: z.number().int().positive().optional(),

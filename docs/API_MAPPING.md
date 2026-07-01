@@ -6,7 +6,7 @@ not a complete Pipedrive API contract.
 ## Scope
 
 - Evidence source: mocked stdio tests and prior controlled Pipedrive validation.
-- Coverage limit: product line items, pagination, rate-limit behavior, email
+- Coverage limit: product line items, pagination, rate-limit behavior, Mailbox
   draft/send/reply, file upload/download, reports, automations, webhooks, OAuth
   refresh flows, and remote hosting remain outside this mapping note.
 - Safety: customer CRM payloads should not be copied into tests or docs.
@@ -69,6 +69,17 @@ it to activity participants:
   "participants": [{ "person_id": 123, "primary": true }]
 }
 ```
+
+## Email Activities
+
+The MCP supports Pipedrive email activities through `pipedrive_create_activity`.
+Pass `type: "email"` and put the draft body or operator instructions in `note`.
+Link the activity with one or more of `person_id`, `deal_id`, `org_id`, or
+`lead_id`.
+
+This creates a Pipedrive activity, not a Mailbox draft. Mailbox draft creation is
+not implemented because the documented Mailbox API does not provide a reliable
+create-draft endpoint.
 
 ## Lead Value
 

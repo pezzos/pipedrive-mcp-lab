@@ -309,6 +309,35 @@ test("dry-run redacts secret-like custom fields", async () => {
   }
 });
 
+test("email activity dry-run links person deal and organization", async () => {
+  const { client, close } = await connectMcp({ PIPEDRIVE_ENABLE_WRITES: "true" });
+  try {
+    const dryRun = await callJson(client, "pipedrive_create_activity", {
+      subject: "Email follow-up",
+      type: "email",
+      owner_id: 77,
+      person_id: 11,
+      deal_id: 22,
+      org_id: 33,
+      note: "<p>Draft body for the email activity.</p>",
+      dry_run: true,
+    });
+
+    assert.equal(dryRun.dry_run, true);
+    assert.deepEqual(dryRun.would_send, {
+      subject: "[redacted]",
+      type: "email",
+      owner_id: 77,
+      deal_id: 22,
+      org_id: 33,
+      note: "[redacted]",
+      participants: [{ person_id: 11, primary: true }],
+    });
+  } finally {
+    await close();
+  }
+});
+
 test("read and write calls use expected Pipedrive endpoints and validate_links behavior", async () => {
   const requested: Array<{ method: string; path: string; token: string; body: string }> = [];
   const api = createServer((request, response) => {
