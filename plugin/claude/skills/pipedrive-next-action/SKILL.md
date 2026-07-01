@@ -17,7 +17,7 @@ Record-focused mode:
 Queue mode:
 
 - The user asks for old, overdue, pending, or priority tasks/activities.
-- List open activities and tasks, focusing on oldest due dates and incomplete work.
+- List open activities and tasks, focusing on earliest due dates and most overdue work first.
 
 ## Gather Context
 
@@ -43,4 +43,4 @@ Summarize:
 
 If the next action is a follow-up email, use the Pipedrive email activity workflow to draft an email-as-activity. If the next action is a call, meeting, task, or deadline, use the Pipedrive add activity workflow.
 
-Do not create, update, mark done, or reschedule anything without the dry-run and explicit approval pattern.
+This skill reads and recommends only. All writes must be performed by the appropriate write skill with dry-run preview and explicit approval.

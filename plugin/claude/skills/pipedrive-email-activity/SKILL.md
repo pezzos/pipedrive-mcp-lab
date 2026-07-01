@@ -25,10 +25,10 @@ Keep the tone ready for operator review. Do not claim that the email was sent.
 
 ## Write Safely
 
-Use `pipedrive_create_activity` or `pipedrive_update_activity` with `type="email"`.
+Use `pipedrive_create_activity` or `pipedrive_update_activity` with `type="email"`. This skill owns composing or changing email activity content. If the user only wants to schedule an already-written email todo, use the add activity workflow.
 
 Always:
 
-1. Call first with `dry_run=true` and `validate_links=true`.
+1. Call first with `dry_run=true` and `validate_links=true` when any linked record ID is present in the payload.
 2. Show the proposed subject, note/body, due date, and linked records.
 3. Ask for explicit approval before calling again with `dry_run=false`.

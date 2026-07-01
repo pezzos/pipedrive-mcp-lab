@@ -21,10 +21,10 @@ Do not mark an ambiguous activity as done.
 
 - Done/completed/finished -> `pipedrive_mark_activity_done`.
 - Postpone/reschedule/change date -> `pipedrive_reschedule_activity`.
-- Update subject, note, type, or links -> `pipedrive_update_activity`.
+- Use `pipedrive_update_activity` only for completion support fields that are not covered by marking done or rescheduling. If the request is to compose or change email activity content, use the email activity workflow. If the request is a general field update unrelated to completion or rescheduling, use the update record workflow.
 
-After completion, offer to create a follow-up only when it is useful. Use the add activity or email activity workflow for the follow-up.
+After completion, offer to create a follow-up when the completed activity is a call or meeting, or when the activity note mentions a pending commitment. Do not offer unprompted follow-ups for simple deadline or email activities.
 
 ## Write Safely
 
-Always run the selected tool with `dry_run=true` first. Show the target activity ID, current subject/date, and proposed change. Execute with `dry_run=false` only after explicit approval.
+Always run the selected tool with `dry_run=true` first. Use `validate_links=true` when any linked record ID is present in the payload. Show the target activity ID, current subject/date, and proposed change. Execute with `dry_run=false` only after explicit approval.

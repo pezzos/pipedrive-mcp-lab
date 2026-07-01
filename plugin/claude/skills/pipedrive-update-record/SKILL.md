@@ -29,8 +29,10 @@ Use the narrowest matching tool:
 - `pipedrive_update_project`
 - `pipedrive_update_task`
 - `pipedrive_update_note`
-- `pipedrive_update_activity`
+- `pipedrive_update_activity` only for explicit non-email field changes that are not completion or rescheduling workflows
 
-Always call first with `dry_run=true` and `validate_links=true` when links are present. Show old value when known, proposed new value, target record ID, and expected impact. Execute with `dry_run=false` only after explicit approval.
+For activity writes, completion and date changes belong to the complete activity workflow. Email activity content belongs to the email activity workflow.
+
+Always call first with `dry_run=true` and `validate_links=true` when any linked record ID is present in the payload. Show old value when known, proposed new value, target record ID, and expected impact. Execute with `dry_run=false` only after explicit approval.
 
 Never delete records from this skill.

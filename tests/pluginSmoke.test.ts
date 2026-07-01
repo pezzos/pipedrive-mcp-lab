@@ -30,7 +30,8 @@ test("staged Claude plugin artifact is isolated and read-only by default", { tim
 
   assert.equal(existsSync(join(artifactRoot, ".claude-plugin", "plugin.json")), true);
   assert.equal(existsSync(join(artifactRoot, ".mcp.json")), true);
-  assert.equal(existsSync(join(artifactRoot, "skills", "pipedrive-crm", "SKILL.md")), true);
+  assert.equal(existsSync(join(artifactRoot, "skills", "pipedrive-add-activity", "SKILL.md")), true);
+  assert.equal(existsSync(join(artifactRoot, "skills", "pipedrive-dictation-aliases", "SKILL.md")), true);
   assert.equal(existsSync(join(artifactRoot, "dist", "plugin-server.js")), true);
   assertCleanArtifact(artifactRoot);
 

@@ -24,6 +24,18 @@ Je retiens pour cette session : "David Lespée" -> "David Lespect" (person_id=12
 
 Use the corrected CRM record for the rest of the current task.
 
+## Tools
+
+Use read-only search tools:
+
+- `pipedrive_search_persons` for contacts and spoken individual names.
+- `pipedrive_list_organizations` for companies, accounts, and clients.
+- `pipedrive_find_deals` or `pipedrive_search_items` for deals and opportunities.
+- `pipedrive_search_projects` for projects.
+- `pipedrive_list_activities` for existing activities when the user refers to a task, call, meeting, or follow-up.
+
+Prefer person search first for names that sound like people. Prefer organization search first for company-like names.
+
 ## Persistence Limit
 
 Current plugin skills can use the confirmed alias during the active conversation, but they do not provide durable cross-session alias storage by themselves. A durable alias registry requires a future MCP tool or plugin data store that can read and write mappings such as:
