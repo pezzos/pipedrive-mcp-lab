@@ -12,6 +12,11 @@ managed `pipedrive` MCP server entry to Claude Desktop's
 tools through the same Desktop MCP path. Users do not need to edit `.env` files
 or JSON config by hand.
 
+The synchronized Desktop MCP entry launches the bundled server with `node`.
+Make sure Node.js is available to Claude Desktop through the user's PATH. The
+Desktop Extension itself may use Claude's built-in Node runtime, but Cowork's
+shared Desktop MCP discovery path uses the standard `mcpServers` command.
+
 ## Build The Plugin
 
 ```sh

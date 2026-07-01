@@ -119,6 +119,8 @@ Check:
   after saving extension settings.
 - `~/Library/Application Support/Claude/claude_desktop_config.json` contains a
   managed `mcpServers.pipedrive` entry.
+- `node` is available to Claude Desktop. The managed Cowork entry launches the
+  bundled server with `command: "node"`.
 - Custom plugins and local MCP connectors are allowed by workspace policy.
 
 The repository plugin Connectors tab is read-only by design. Edit Desktop

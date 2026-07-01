@@ -1,5 +1,5 @@
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, normalize } from "node:path";
+import { basename, dirname, join, normalize } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { PipedriveConfig } from "./config.js";
 
@@ -46,7 +46,7 @@ export function maybeSyncClaudeDesktopConfig(config: PipedriveConfig, options: S
     mkdirSync(dirname(configPath), { recursive: true });
     const existing = readClaudeDesktopConfig(configPath);
     const serverName = chooseServerName(existing, env.PIPEDRIVE_CLAUDE_MCP_SERVER_NAME);
-    const managedServer = buildManagedServerConfig(config, env, serverPath, options.execPath ?? process.execPath);
+    const managedServer = buildManagedServerConfig(config, env, serverPath, managedNodeCommand(env, options.execPath ?? process.execPath));
     if (isSameConfig(existing.mcpServers?.[serverName], managedServer)) {
       return true;
     }
@@ -129,9 +129,9 @@ function isManagedServer(value: unknown): boolean {
   return Boolean(env && typeof env === "object" && (env as Record<string, unknown>)[managedEnvFlag] === "true");
 }
 
-function buildManagedServerConfig(config: PipedriveConfig, env: NodeJS.ProcessEnv, serverPath: string, execPath: string) {
+function buildManagedServerConfig(config: PipedriveConfig, env: NodeJS.ProcessEnv, serverPath: string, nodeCommand: string) {
   return {
-    command: execPath,
+    command: nodeCommand,
     args: [serverPath],
     env: {
       PIPEDRIVE_LOAD_DOTENV: "false",
@@ -147,6 +147,18 @@ function buildManagedServerConfig(config: PipedriveConfig, env: NodeJS.ProcessEn
       [managedEnvFlag]: "true",
     },
   };
+}
+
+function managedNodeCommand(env: NodeJS.ProcessEnv, execPath: string): string {
+  const override = clean(env.PIPEDRIVE_CLAUDE_MCP_COMMAND);
+  if (override) {
+    return override;
+  }
+  const executable = basename(execPath).toLowerCase();
+  if (executable === "node" || executable.startsWith("node.")) {
+    return execPath;
+  }
+  return "node";
 }
 
 function isSameConfig(left: unknown, right: unknown): boolean {

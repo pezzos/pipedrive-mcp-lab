@@ -100,6 +100,25 @@ test("writes a managed Claude Desktop MCP server from Desktop Extension settings
   }
 });
 
+test("uses node command when the extension process executable is Claude Helper", () => {
+  const { home, cleanup } = temporaryHome();
+  try {
+    const didSync = maybeSyncClaudeDesktopConfig(config(), {
+      env: {},
+      homeDir: home,
+      platform: "darwin",
+      serverPath: join(home, extensionServerPath),
+      execPath: "/Applications/Claude.app/Contents/Frameworks/Claude Helper (Plugin).app/Contents/MacOS/Claude Helper (Plugin)",
+    });
+
+    assert.equal(didSync, true);
+    const written = JSON.parse(readFileSync(claudeConfigPath(home), "utf8"));
+    assert.equal(written.mcpServers.pipedrive.command, "node");
+  } finally {
+    cleanup();
+  }
+});
+
 test("uses a fallback server name when pipedrive is user-managed", () => {
   const { home, cleanup } = temporaryHome();
   try {

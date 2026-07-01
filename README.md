@@ -81,7 +81,9 @@ skills only. Install the `.mcpb` Desktop Extension for the editable connector
 settings UI where users enter `company_domain`, API/OAuth token, write flags,
 and timeout. After those settings are saved, the extension synchronizes a
 managed `pipedrive` MCP entry into Claude Desktop config so Cowork can discover
-the `pipedrive_*` tools. Do not rely on a client-managed `.env` file.
+the `pipedrive_*` tools. That managed entry launches the bundled server with
+`node`, so Node.js must be available to Claude Desktop for Cowork discovery. Do
+not rely on a client-managed `.env` file.
 
 ## Runtime Configuration
 
