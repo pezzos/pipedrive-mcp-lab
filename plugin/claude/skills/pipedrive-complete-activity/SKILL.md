@@ -5,6 +5,10 @@ description: Use when the user says an activity, task, call, meeting, reminder, 
 
 # Pipedrive Complete Activity
 
+## Required Tooling
+
+Requires Pipedrive MCP. Use only `pipedrive_*` tools. Do not use the official Pipedrive connector. If no `pipedrive_*` tools are available, stop and tell the user that the Pipedrive MCP connection must be configured before this skill can be used.
+
 Use this skill for requests like "j'ai fait l'appel avec Jean", "marque cette relance comme faite", "l'email est parti", "reporte cette tâche à vendredi", or "mets à jour cette activité".
 
 ## Resolve The Activity

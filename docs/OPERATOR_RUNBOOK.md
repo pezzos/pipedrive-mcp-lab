@@ -100,19 +100,18 @@ validation prompts.
 
 ## Private Claude Plugin Delivery
 
-Use `npm run pack:claude-plugin` to stage a Cowork/Claude Code plugin with a
-bundled MCP server and skills. Routine delivery should use a private plugin
-repository or private Claude plugin marketplace. Use `claude --plugin-dir` only
-for local pilot testing.
+Use `npm run pack:claude-plugin` to stage a Cowork/Claude Code skills plugin.
+Routine delivery should use a private plugin repository or private Claude plugin
+marketplace. Use `claude --plugin-dir` only for local pilot testing.
 
-The plugin does not load `.env`; it forces `PIPEDRIVE_LOAD_DOTENV=false` and
-receives configuration through Claude plugin user config. Sensitive values should
-use Claude secure storage where available. If Claude falls back to credentials
-under `~/.claude/`, treat that path as sensitive and rotate tokens during
-offboarding.
+The Claude repository plugin contains skills only. The editable connector is the
+Pipedrive MCP Desktop Extension (`.mcpb`), where users configure
+`company_domain`, API/OAuth token, write flags, and timeout. The plugin
+Connectors screen is read-only and must not be used as the credential entry
+point.
 
-Before Cowork rollout, confirm custom plugins and local MCP servers are allowed
-by workspace policy.
+Before Cowork rollout, confirm custom plugins are allowed and users can install
+the `.mcpb` extension and edit extension settings after install.
 
 ## Upgrading From Lab Version
 

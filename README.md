@@ -26,7 +26,7 @@ version.
 
 ## Quick Start
 
-For Claude Cowork or Claude Code plugin delivery, build the autonomous plugin
+For Claude Cowork or Claude Code plugin delivery, build the skills plugin
 artifact:
 
 ```sh
@@ -76,7 +76,10 @@ Claude Desktop examples are below; additional profiles are in
 
 The Claude plugin path is separate from the plain MCP host path. Plugin source
 files live under `plugin/claude/`, and the staged plugin lives under
-`dist/claude-plugin/pipedrive-mcp/`.
+`dist/claude-plugin/pipedrive-mcp/`. The repository plugin contains Cowork
+skills only. Install the `.mcpb` Desktop Extension for the editable connector
+settings UI where users enter `company_domain`, API/OAuth token, write flags,
+and timeout. Do not rely on a client-managed `.env` file.
 
 ## Runtime Configuration
 

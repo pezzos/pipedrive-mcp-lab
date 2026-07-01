@@ -5,6 +5,10 @@ description: Use when a spoken or dictated contact, company, deal, lead, project
 
 # Pipedrive Dictation Aliases
 
+## Required Tooling
+
+Requires Pipedrive MCP. Use only `pipedrive_*` tools. Do not use the official Pipedrive connector. If no `pipedrive_*` tools are available, stop and tell the user that the Pipedrive MCP connection must be configured before this skill can be used.
+
 Use this skill when speech-to-text likely changed a Pipedrive name. Example: "David Lespée" may need to resolve to "David Lespect".
 
 ## Resolution Workflow

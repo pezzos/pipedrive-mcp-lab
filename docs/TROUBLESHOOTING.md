@@ -42,8 +42,9 @@ PIPEDRIVE_ENABLE_DELETE_TOOLS=true
 
 Restart the MCP host after changing environment variables.
 
-For Claude plugin installs, also confirm the plugin is enabled and the MCP
-server appears in Claude's MCP/plugin UI. The plugin is disabled by default.
+For Claude plugin installs, confirm the plugin is enabled and its plugin options
+are configured. Reload or restart Claude after changing plugin options so the
+bundled MCP server receives the updated values.
 
 ## Writes Return Dry-Run Responses
 
@@ -89,8 +90,8 @@ values.
 
 Set `PIPEDRIVE_LOAD_DOTENV=false` when the MCP host supplies all variables.
 
-Claude plugin delivery always sets `PIPEDRIVE_LOAD_DOTENV=false`; configure
-values through plugin user config instead of `.env`.
+Claude Desktop Extension delivery sets `PIPEDRIVE_LOAD_DOTENV=false`. Configure
+values through extension settings, not `.env`.
 
 ## Claude Plugin Validation Fails
 
@@ -101,18 +102,21 @@ npm run pack:claude-plugin
 claude plugin validate dist/claude-plugin/pipedrive-mcp
 ```
 
-If validation fails, check that the staged artifact contains `.claude-plugin/`,
-`.mcp.json`, `skills/`, and `dist/plugin-server.js`.
+If validation fails, check that the staged repository plugin artifact contains
+`.claude-plugin/` and `skills/`, and does not contain `.mcp.json` or
+`dist/plugin-server.js`.
 
-## Claude Plugin MCP Server Does Not Start
+## Claude Plugin Loads But Pipedrive Tools Are Missing
 
 Check:
 
 - The plugin is enabled.
-- Plugin user config contains a company domain and either an API token or OAuth
-  access token.
-- Custom plugins and local MCP servers are allowed by workspace policy.
-- `dist/plugin-server.js` exists in the staged plugin artifact.
+- The `.mcpb` Desktop Extension is installed and configured with a company
+  domain and either an API token or OAuth access token.
+- Custom plugins and local MCP connectors are allowed by workspace policy.
+
+The repository plugin Connectors tab is read-only by design. Edit Desktop
+Extension settings to change `PIPEDRIVE_COMPANY_DOMAIN`, token, or flags.
 
 Use `claude --plugin-dir dist/claude-plugin/pipedrive-mcp` for local pilot
 testing before client rollout.

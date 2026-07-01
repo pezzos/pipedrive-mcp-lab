@@ -5,6 +5,10 @@ description: Use when the user asks to add, record, save, or attach information,
 
 # Pipedrive Add Note
 
+## Required Tooling
+
+Requires Pipedrive MCP. Use only `pipedrive_*` tools. Do not use the official Pipedrive connector. If no `pipedrive_*` tools are available, stop and tell the user that the Pipedrive MCP connection must be configured before this skill can be used.
+
 Use this skill for requests like "ajoute cette info sur Jean", "note ça sur Acme", "mets ce compte rendu sur l'affaire X", or "garde cette information sur ce prospect".
 
 ## Choose The Target

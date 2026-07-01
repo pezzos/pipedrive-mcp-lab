@@ -1,9 +1,9 @@
 # Claude Cowork Plugin
 
 This package can be staged as a Claude plugin for Claude Cowork and Claude Code.
-The plugin bundles the Pipedrive MCP server and Pipedrive-specific skills. It
-does not require `npm install` at runtime because the MCP server is bundled into
-`dist/plugin-server.js`.
+The repository plugin contains Pipedrive-specific Cowork skills only. Install
+the Pipedrive MCP Desktop Extension (`.mcpb`) for the actual local connector and
+editable API-key settings.
 
 ## Build The Plugin
 
@@ -20,9 +20,9 @@ The staged plugin lives at:
 dist/claude-plugin/pipedrive-mcp/
 ```
 
-The staged artifact contains the Claude plugin manifest, MCP config, skills,
-the bundled server, README, LICENSE, and this guide. It must not contain
-`src/`, `tests/`, `node_modules/`, `.env`, tarballs, or package lock files.
+The staged plugin artifact contains the Claude plugin manifest, skills, README,
+LICENSE, and this guide. It must not contain `.mcp.json`, `dist/`, `src/`,
+`tests/`, `node_modules/`, `.env`, tarballs, or package lock files.
 
 ## Install For Pilot Testing
 
@@ -36,27 +36,36 @@ For routine client delivery, use a private Git plugin repository or private
 Claude plugin marketplace. Do not use a side-loaded zip as the primary support
 path.
 
-## Configure Credentials
+## Configure The Connector
 
-The plugin uses `userConfig` and maps values into the MCP process environment.
-Configure:
+Configure credentials in the Desktop Extension settings, not in the Cowork
+plugin Connectors tab and not in a `.env` file. Required fields:
 
-- Pipedrive company domain, or explicit base URL.
-- `api_token` or `access_token`.
-- Optional write, Mailbox, and delete flags.
+- Pipedrive company domain: enter only the company subdomain used for
+  `https://<company>.pipedrive.com`.
+- Pipedrive API token, or OAuth access token where required.
+
+Optional fields:
+
+- Explicit base URL, only when the company domain is not enough.
+- Write, Mailbox, and delete flags.
 - Request timeout.
 
-The plugin forces `PIPEDRIVE_LOAD_DOTENV=false`. Do not place credentials in a
-plugin `.env` file.
+The Cowork plugin's Connectors screen is read-only when a repository plugin
+declares a connector. For client delivery, the repository plugin therefore does
+not declare a connector. The `.mcpb` extension owns the editable configuration
+form for the local MCP server.
 
-Sensitive values are expected to use Claude's secure storage path where
-available. On hosts where keychain integration is unavailable, Claude may fall
-back to credentials stored under `~/.claude/`. Treat that path as sensitive and
-include token rotation in offboarding.
+Sensitive values should use Claude's secure storage path where available. If a
+local Claude host stores credentials under `~/.claude/`, treat that path as
+sensitive and include token rotation in offboarding.
 
 ## Safety Defaults
 
 - The plugin is disabled by default after installation.
+- The repository plugin contains no credentials, `.mcp.json`, or bundled server.
+- The skills require `pipedrive_*` tools and instruct Claude not to use the
+  official Pipedrive connector.
 - CRM write tools are not registered unless writes are enabled.
 - Mailbox tools require both writes and the Mailbox flag.
 - Delete tools require both writes and the delete flag.
@@ -69,12 +78,14 @@ include token rotation in offboarding.
 Before client rollout, confirm:
 
 - Custom plugins are allowed by the workspace or organization.
-- Local MCP servers are allowed.
 - The user can install and trust the plugin.
-- The client accepts the credential storage behavior for sensitive user config.
+- The user can install the `.mcpb` Desktop Extension and edit extension
+  settings.
+- The client accepts the credential storage behavior for extension settings.
 
-If any of these are blocked by admin policy, use the standard MCP host
-configuration path documented in `docs/MCP_CLIENT_EXAMPLES.md`.
+If the Pipedrive MCP tools are unavailable, first check that the `.mcpb`
+extension is installed and configured. Do not fall back to the official
+Pipedrive connector.
 
 ## Update And Uninstall
 
@@ -82,6 +93,5 @@ For a private plugin repository, update by publishing a new plugin version and
 having users update or reinstall the plugin according to the marketplace
 workflow.
 
-When uninstalling, remove the plugin and revoke or rotate Pipedrive tokens that
-were configured for it. If Claude reports retained plugin data or credentials,
-delete those as part of offboarding.
+When uninstalling, remove the plugin and the Desktop Extension, then revoke or
+rotate Pipedrive tokens that were configured for it.

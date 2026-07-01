@@ -1,22 +1,31 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readdirSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { basename, join } from "node:path";
 import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 
 const readOnlyToolCount = 46;
 const artifactRoot = join(process.cwd(), "dist", "claude-plugin", "pipedrive-mcp");
+const expectedSkillNames = [
+  "pipedrive-add-activity",
+  "pipedrive-add-note",
+  "pipedrive-complete-activity",
+  "pipedrive-dictation-aliases",
+  "pipedrive-email-activity",
+  "pipedrive-next-action",
+  "pipedrive-update-record",
+];
 
-test("bundled plugin server exposes the read-only profile directly", { timeout: 180_000 }, async () => {
+test("standalone MCP server bundle exposes the read-only profile directly", { timeout: 180_000 }, async () => {
   execFileSync("npm", ["run", "build:plugin"], { cwd: process.cwd(), stdio: "pipe" });
 
   const tools = await listTools(join(process.cwd(), "dist", "plugin-server.js"), process.cwd());
   assertReadOnlyProfile(tools);
 });
 
-test("bundled plugin server starts before credentials are configured", { timeout: 180_000 }, async () => {
+test("standalone MCP server bundle starts before credentials are configured", { timeout: 180_000 }, async () => {
   execFileSync("npm", ["run", "build:plugin"], { cwd: process.cwd(), stdio: "pipe" });
 
   const tools = await listTools(join(process.cwd(), "dist", "plugin-server.js"), process.cwd(), {
@@ -28,15 +37,30 @@ test("bundled plugin server starts before credentials are configured", { timeout
 test("staged Claude plugin artifact is isolated and read-only by default", { timeout: 180_000 }, async () => {
   execFileSync("npm", ["run", "pack:claude-plugin"], { cwd: process.cwd(), stdio: "pipe" });
 
-  assert.equal(existsSync(join(artifactRoot, ".claude-plugin", "plugin.json")), true);
-  assert.equal(existsSync(join(artifactRoot, ".mcp.json")), true);
-  assert.equal(existsSync(join(artifactRoot, "skills", "pipedrive-add-activity", "SKILL.md")), true);
-  assert.equal(existsSync(join(artifactRoot, "skills", "pipedrive-dictation-aliases", "SKILL.md")), true);
-  assert.equal(existsSync(join(artifactRoot, "dist", "plugin-server.js")), true);
-  assertCleanArtifact(artifactRoot);
+  const pluginJsonPath = join(artifactRoot, ".claude-plugin", "plugin.json");
+  assert.equal(existsSync(pluginJsonPath), true);
+  const pluginJson = JSON.parse(readFileSync(pluginJsonPath, "utf8"));
+  assert.equal(pluginJson.version, "0.1.3");
+  assert.equal(pluginJson.skills, "./skills/");
+  assert.equal("mcpServers" in pluginJson, false);
+  assert.equal("userConfig" in pluginJson, false);
+  assert.equal(existsSync(join(artifactRoot, ".mcp.json")), false);
+  assert.equal(existsSync(join(artifactRoot, "dist", "plugin-server.js")), false);
+  const skillNames = readdirSync(join(artifactRoot, "skills")).sort();
+  assert.deepEqual(skillNames, expectedSkillNames);
+  for (const skillName of expectedSkillNames) {
+    assert.equal(existsSync(join(artifactRoot, "skills", skillName, "SKILL.md")), true);
+  }
 
-  const tools = await listTools(join(artifactRoot, "dist", "plugin-server.js"), artifactRoot);
-  assertReadOnlyProfile(tools);
+  for (const skillDir of skillNames) {
+    const skillPath = join(artifactRoot, "skills", skillDir, "SKILL.md");
+    const skillText = readFileSync(skillPath, "utf8");
+    assert.match(skillText, /Requires Pipedrive MCP\./);
+    assert.match(skillText, /Use only `pipedrive_\*` tools\./);
+    assert.match(skillText, /Do not use the official Pipedrive connector\./);
+  }
+
+  assertCleanArtifact(artifactRoot);
 });
 
 async function listTools(serverPath: string, cwd: string, overrides: Record<string, string | undefined> = {}) {
@@ -85,9 +109,16 @@ function assertCleanArtifact(root: string) {
     assert.equal(parts.includes("src"), false, `artifact must not include src: ${relative}`);
     assert.equal(parts.includes("tests"), false, `artifact must not include tests: ${relative}`);
     assert.equal(parts.includes("node_modules"), false, `artifact must not include node_modules: ${relative}`);
+    assert.equal(parts.includes("dist"), false, `artifact must not include bundled server files: ${relative}`);
     assert.equal(parts.includes("package-lock.json"), false, `artifact must not include package-lock.json: ${relative}`);
     assert.equal(parts.includes(".env"), false, `artifact must not include .env: ${relative}`);
+    assert.equal(parts.includes(".mcp.json"), false, `artifact must not include MCP server config: ${relative}`);
     assert.equal(relative.endsWith(".tgz"), false, `artifact must not include tarballs: ${relative}`);
+    assert.equal(
+      /secret|token|credential/i.test(basename(file)) && !relative.startsWith("docs/"),
+      false,
+      `artifact must not include secret-like files outside docs: ${relative}`,
+    );
   }
 }
 

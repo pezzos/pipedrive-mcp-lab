@@ -5,6 +5,10 @@ description: Use when the user explicitly asks to update a specific field or sta
 
 # Pipedrive Update Record
 
+## Required Tooling
+
+Requires Pipedrive MCP. Use only `pipedrive_*` tools. Do not use the official Pipedrive connector. If no `pipedrive_*` tools are available, stop and tell the user that the Pipedrive MCP connection must be configured before this skill can be used.
+
 Use this skill only when the user clearly names the record and the field or status to change. Examples: "mets le poste de Jean à CEO", "change le téléphone de ce contact", "passe cette affaire en gagné", "mets cette tâche projet comme terminée".
 
 Do not infer field updates from narrative information. If the user says "Jean est maintenant CEO" without asking to update the record, use the add note workflow instead.

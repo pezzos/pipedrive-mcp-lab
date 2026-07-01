@@ -5,6 +5,10 @@ description: Use when the user asks what to do next, how to follow up, how to pr
 
 # Pipedrive Next Action
 
+## Required Tooling
+
+Requires Pipedrive MCP. Use only `pipedrive_*` tools. Do not use the official Pipedrive connector. If no `pipedrive_*` tools are available, stop and tell the user that the Pipedrive MCP connection must be configured before this skill can be used.
+
 Use this skill for requests like "aide-moi à préparer la prochaine action pour Acme", "que dois-je faire avec Jean ?", "quelles relances sont les plus anciennes ?", or "prépare-moi la prochaine tâche sur cette affaire".
 
 ## Modes

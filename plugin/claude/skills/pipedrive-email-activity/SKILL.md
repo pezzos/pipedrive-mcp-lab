@@ -5,6 +5,10 @@ description: Use when the user asks to draft, prepare, or update an email-like f
 
 # Pipedrive Email Activity
 
+## Required Tooling
+
+Requires Pipedrive MCP. Use only `pipedrive_*` tools. Do not use the official Pipedrive connector. If no `pipedrive_*` tools are available, stop and tell the user that the Pipedrive MCP connection must be configured before this skill can be used.
+
 Use this skill when Claude must compose or refine the content of an email from CRM context. If the user already provided the full activity content and only wants it scheduled, use the Pipedrive add activity workflow instead.
 
 This workflow creates or updates a Pipedrive activity of type `email`. It does not create a real Pipedrive Mailbox draft and it does not send email.

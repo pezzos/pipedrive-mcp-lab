@@ -2,66 +2,12 @@
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "pipedrive-mcp",
   "displayName": "Pipedrive MCP",
-  "version": "0.1.0",
-  "description": "Claude plugin for Pipedrive CRM operations through a local MCP server.",
+  "version": "0.1.3",
+  "description": "Claude Cowork skills for the Pipedrive MCP Desktop Extension.",
   "author": {
     "name": "PezzosLabs"
   },
   "license": "MIT",
   "defaultEnabled": false,
-  "mcpServers": "./.mcp.json",
-  "skills": "./skills/",
-  "userConfig": {
-    "company_domain": {
-      "type": "string",
-      "title": "Pipedrive company domain",
-      "description": "Company subdomain used for https://<company>.pipedrive.com.",
-      "required": true
-    },
-    "base_url": {
-      "type": "string",
-      "title": "Pipedrive base URL",
-      "description": "Optional explicit https://*.pipedrive.com base URL. Leave empty to derive it from the company domain.",
-      "default": ""
-    },
-    "api_token": {
-      "type": "string",
-      "title": "Pipedrive API token",
-      "description": "Pipedrive API token for standard CRM API access. Provide this or an OAuth access token.",
-      "sensitive": true,
-      "default": ""
-    },
-    "access_token": {
-      "type": "string",
-      "title": "Pipedrive OAuth access token",
-      "description": "Optional OAuth access token. Some endpoints, especially Mailbox, may require OAuth scopes.",
-      "sensitive": true,
-      "default": ""
-    },
-    "enable_writes": {
-      "type": "boolean",
-      "title": "Enable write tools",
-      "description": "Register create and update tools. Write calls still default to dry-run.",
-      "default": false
-    },
-    "enable_mailbox_tools": {
-      "type": "boolean",
-      "title": "Enable Mailbox tools",
-      "description": "Register Mailbox tools. Requires write tools to be enabled.",
-      "default": false
-    },
-    "enable_delete_tools": {
-      "type": "boolean",
-      "title": "Enable delete tools",
-      "description": "Register delete tools. Requires write tools to be enabled.",
-      "default": false
-    },
-    "request_timeout_ms": {
-      "type": "number",
-      "title": "Request timeout",
-      "description": "Pipedrive API request timeout in milliseconds.",
-      "default": 10000,
-      "min": 1000
-    }
-  }
+  "skills": "./skills/"
 }
