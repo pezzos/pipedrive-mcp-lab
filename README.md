@@ -4,6 +4,10 @@ Local Model Context Protocol server for Pipedrive CRM operations. It exposes
 read tools by default and can expose write, Mailbox, and delete tools through
 explicit environment flags.
 
+For client installation in Claude Desktop, start with
+[INSTALL.md](INSTALL.md). A French version is available in
+[INSTALL.fr.md](INSTALL.fr.md).
+
 ## What It Provides
 
 - Read tools for deals, persons, organizations, leads, pipelines, stages,
@@ -79,18 +83,21 @@ files live under `plugin/claude/`, and the staged plugin lives under
 `dist/claude-plugin/pipedrive-mcp/`. The repository plugin contains Cowork
 skills only. Install the `.mcpb` Desktop Extension for the editable connector
 settings UI where users enter `company_domain`, API/OAuth token, write flags,
-and timeout. After those settings are saved, the extension synchronizes a
-managed `pipedrive` MCP entry into Claude Desktop config so Cowork can discover
-the `pipedrive_*` tools. That managed entry launches the bundled server with
-`node`, so Node.js must be available to Claude Desktop for Cowork discovery. Do
-not rely on a client-managed `.env` file.
+and timeout. Claude Desktop chat can use the Desktop Extension directly and
+does not require a separate Node.js install because Claude Desktop includes an
+integrated Node.js runtime for extension MCP servers. After those settings are
+saved, the extension also synchronizes a managed `pipedrive` MCP entry into
+Claude Desktop config so Cowork can discover the `pipedrive_*` tools. That
+managed Cowork discovery path launches the bundled server with `node`; if
+Cowork cannot see the tools after a restart, install Node.js LTS from
+nodejs.org and test again. Do not rely on a client-managed `.env` file.
 
 ## Runtime Configuration
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `PIPEDRIVE_COMPANY_DOMAIN` | unset | Company subdomain used to build `https://<company>.pipedrive.com`. |
-| `PIPEDRIVE_BASE_URL` | derived | Optional explicit base URL. Must be `https://*.pipedrive.com` unless mock URLs are enabled. |
+| `PIPEDRIVE_COMPANY_DOMAIN` | unset | Company subdomain used to build `https://<company>.pipedrive.com`. Common inputs such as `acme.pipedrive.com` and `https://acme.pipedrive.com/` are normalized. |
+| `PIPEDRIVE_BASE_URL` | derived | Optional explicit base URL. Leave empty for normal installs. Common Pipedrive host formats are normalized; the final URL must be `https://*.pipedrive.com` unless mock URLs are enabled. |
 | `PIPEDRIVE_API_TOKEN` | unset | Pipedrive API token sent as `x-api-token`. |
 | `PIPEDRIVE_ACCESS_TOKEN` | unset | OAuth bearer token. Takes precedence over API token. |
 | `PIPEDRIVE_ENABLE_WRITES` | `false` | Registers CRM write tools when `true`. |

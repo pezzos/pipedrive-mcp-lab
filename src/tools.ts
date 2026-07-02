@@ -402,7 +402,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function buildServer(config: PipedriveConfig, client = new PipedriveClient(config)) {
   const server = new McpServer({
     name: "pipedrive-mcp",
-    version: "0.1.0",
+    version: "0.1.6",
   });
 
   server.registerTool(
@@ -422,6 +422,7 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
         access_token_configured: Boolean(config.accessToken),
         company_domain_configured: Boolean(config.companyDomain),
         base_url_configured: Boolean(config.baseUrl),
+        base_url_source: config.baseUrlSource,
         mock_base_url_allowed: config.allowMockBaseUrl,
         writes_enabled: config.enableWrites,
         delete_tools_enabled: config.enableWrites && config.enableDeleteTools,

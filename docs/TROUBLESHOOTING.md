@@ -11,6 +11,17 @@ Error mentions `PIPEDRIVE_API_TOKEN or PIPEDRIVE_ACCESS_TOKEN`:
 
 `PIPEDRIVE_BASE_URL` must point to `https://*.pipedrive.com`.
 
+For Claude Desktop Extension installs, leave **Pipedrive base URL** empty unless
+support explicitly gave you a full Pipedrive URL. Put only the company
+subdomain in **Pipedrive company domain**. For example, use `acme`, not
+`https://acme.pipedrive.com`.
+
+If `pipedrive_health_check` succeeds but `pipedrive_get_current_user` fails with
+an invalid `PIPEDRIVE_BASE_URL` error, check both fields:
+
+- **Pipedrive company domain** should contain only the subdomain.
+- **Pipedrive base URL** should usually be empty.
+
 Loopback URLs are accepted only for tests:
 
 ```sh
@@ -119,8 +130,10 @@ Check:
   after saving extension settings.
 - `~/Library/Application Support/Claude/claude_desktop_config.json` contains a
   managed `mcpServers.pipedrive` entry.
-- `node` is available to Claude Desktop. The managed Cowork entry launches the
-  bundled server with `command: "node"`.
+- If Cowork still cannot see the tools, `node` may need to be available to
+  Claude Desktop. The Desktop Extension itself can use Claude Desktop's
+  integrated Node.js runtime, but the managed Cowork discovery entry launches
+  the bundled server with `command: "node"`.
 - Custom plugins and local MCP connectors are allowed by workspace policy.
 
 The repository plugin Connectors tab is read-only by design. Edit Desktop

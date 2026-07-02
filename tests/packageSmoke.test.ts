@@ -32,6 +32,8 @@ test("packed tarball builds from a clean checkout and exposes the published bin"
     const tarball = join(packDir, packed[0].filename);
     const packedFiles = packed[0].files.map((file) => file.path);
     assert.ok(packedFiles.includes("dist/server.js"));
+    assert.ok(packedFiles.includes("INSTALL.md"));
+    assert.ok(packedFiles.includes("INSTALL.fr.md"));
     assert.equal(packedFiles.some((file) => file.startsWith("src/")), false);
     assert.equal(packedFiles.some((file) => file.startsWith("tests/")), false);
 

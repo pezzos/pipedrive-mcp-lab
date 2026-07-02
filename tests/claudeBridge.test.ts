@@ -275,6 +275,7 @@ function config(overrides: Partial<PipedriveConfig> = {}): PipedriveConfig {
     accessToken: undefined,
     companyDomain: "acme",
     baseUrl: "https://acme.pipedrive.com",
+    baseUrlSource: "company_domain",
     allowMockBaseUrl: false,
     enableWrites: true,
     enableDeleteTools: false,

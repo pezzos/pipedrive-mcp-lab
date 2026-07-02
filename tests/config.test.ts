@@ -12,6 +12,7 @@ test("loads production-safe defaults without a token", () => {
   assert.equal(config.accessToken, undefined);
   assert.equal(config.companyDomain, undefined);
   assert.equal(config.baseUrl, "");
+  assert.equal(config.baseUrlSource, "missing");
   assert.equal(config.allowMockBaseUrl, false);
   assert.equal(config.enableWrites, false);
   assert.equal(config.enableDeleteTools, false);
@@ -27,10 +28,47 @@ test("derives the base URL from the company domain", () => {
     PIPEDRIVE_ENABLE_DELETE_TOOLS: "true",
     PIPEDRIVE_ENABLE_MAILBOX_TOOLS: "true",
   });
+  assert.equal(config.companyDomain, "acme");
   assert.equal(config.baseUrl, "https://acme.pipedrive.com");
+  assert.equal(config.baseUrlSource, "company_domain");
   assert.equal(config.enableWrites, true);
   assert.equal(config.enableDeleteTools, true);
   assert.equal(config.enableMailboxTools, true);
+});
+
+test("normalizes common Pipedrive domain and base URL inputs", () => {
+  const fromFullCompanyUrl = loadConfig({
+    PIPEDRIVE_COMPANY_DOMAIN: "https://acme.pipedrive.com/",
+    PIPEDRIVE_API_TOKEN: "token",
+  });
+  assert.equal(fromFullCompanyUrl.companyDomain, "acme");
+  assert.equal(fromFullCompanyUrl.baseUrl, "https://acme.pipedrive.com");
+  assert.equal(fromFullCompanyUrl.baseUrlSource, "company_domain");
+  assert.doesNotThrow(() => requireConfigured(fromFullCompanyUrl));
+
+  const fromCompanyHost = loadConfig({
+    PIPEDRIVE_COMPANY_DOMAIN: "acme.pipedrive.com",
+    PIPEDRIVE_API_TOKEN: "token",
+  });
+  assert.equal(fromCompanyHost.companyDomain, "acme");
+  assert.equal(fromCompanyHost.baseUrl, "https://acme.pipedrive.com");
+  assert.doesNotThrow(() => requireConfigured(fromCompanyHost));
+
+  const fromShortBaseUrl = loadConfig({
+    PIPEDRIVE_BASE_URL: "acme",
+    PIPEDRIVE_API_TOKEN: "token",
+  });
+  assert.equal(fromShortBaseUrl.baseUrl, "https://acme.pipedrive.com");
+  assert.equal(fromShortBaseUrl.baseUrlSource, "explicit");
+  assert.doesNotThrow(() => requireConfigured(fromShortBaseUrl));
+
+  const fromBaseUrlHost = loadConfig({
+    PIPEDRIVE_BASE_URL: "acme.pipedrive.com/",
+    PIPEDRIVE_API_TOKEN: "token",
+  });
+  assert.equal(fromBaseUrlHost.baseUrl, "https://acme.pipedrive.com");
+  assert.equal(fromBaseUrlHost.baseUrlSource, "explicit");
+  assert.doesNotThrow(() => requireConfigured(fromBaseUrlHost));
 });
 
 test("accepts an OAuth access token instead of an API token", () => {

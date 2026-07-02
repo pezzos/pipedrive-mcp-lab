@@ -8,7 +8,9 @@ const artifactRoot = join(repoRoot, "dist", "claude-plugin", "pipedrive-mcp");
 const requiredInputs = [
   join(pluginSourceRoot, ".claude-plugin"),
   join(pluginSourceRoot, "skills"),
-  join(repoRoot, "README.md"),
+  join(pluginSourceRoot, "README.md"),
+  join(repoRoot, "INSTALL.md"),
+  join(repoRoot, "INSTALL.fr.md"),
   join(repoRoot, "LICENSE"),
 ];
 
@@ -23,7 +25,9 @@ mkdirSync(artifactRoot, { recursive: true });
 
 copy(join(pluginSourceRoot, ".claude-plugin"), join(artifactRoot, ".claude-plugin"));
 copySkills(join(pluginSourceRoot, "skills"), join(artifactRoot, "skills"));
-copy(join(repoRoot, "README.md"), join(artifactRoot, "README.md"));
+copy(join(pluginSourceRoot, "README.md"), join(artifactRoot, "README.md"));
+copy(join(repoRoot, "INSTALL.md"), join(artifactRoot, "INSTALL.md"));
+copy(join(repoRoot, "INSTALL.fr.md"), join(artifactRoot, "INSTALL.fr.md"));
 copy(join(repoRoot, "LICENSE"), join(artifactRoot, "LICENSE"));
 
 const pluginDocs = join(repoRoot, "docs", "CLAUDE_COWORK_PLUGIN.md");

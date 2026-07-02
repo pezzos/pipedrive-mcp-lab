@@ -3,6 +3,7 @@ export type PipedriveConfig = {
   accessToken?: string;
   companyDomain?: string;
   baseUrl: string;
+  baseUrlSource: "missing" | "company_domain" | "explicit";
   allowMockBaseUrl: boolean;
   enableWrites: boolean;
   enableDeleteTools: boolean;
@@ -11,10 +12,11 @@ export type PipedriveConfig = {
 };
 
 export function loadConfig(env: NodeJS.ProcessEnv = process.env): PipedriveConfig {
-  const companyDomain = clean(env.PIPEDRIVE_COMPANY_DOMAIN);
+  const companyDomain = normalizeCompanyDomain(clean(env.PIPEDRIVE_COMPANY_DOMAIN));
   const apiToken = clean(env.PIPEDRIVE_API_TOKEN);
   const accessToken = clean(env.PIPEDRIVE_ACCESS_TOKEN);
-  const baseUrl = clean(env.PIPEDRIVE_BASE_URL) ?? defaultBaseUrl(companyDomain);
+  const explicitBaseUrl = normalizeBaseUrl(clean(env.PIPEDRIVE_BASE_URL));
+  const baseUrl = explicitBaseUrl ?? defaultBaseUrl(companyDomain);
   const allowMockBaseUrl = env.PIPEDRIVE_ALLOW_MOCK_BASE_URL === "true";
   const enableWrites = env.PIPEDRIVE_ENABLE_WRITES === "true";
   const enableDeleteTools = env.PIPEDRIVE_ENABLE_DELETE_TOOLS === "true";
@@ -26,6 +28,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): PipedriveConfi
     accessToken,
     companyDomain,
     baseUrl,
+    baseUrlSource: explicitBaseUrl ? "explicit" : companyDomain ? "company_domain" : "missing",
     allowMockBaseUrl,
     enableWrites,
     enableDeleteTools,
@@ -57,11 +60,47 @@ function clean(value: string | undefined): string | undefined {
   return trimmed ? trimmed : undefined;
 }
 
+function normalizeCompanyDomain(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const hostname = hostnameFromMaybeUrl(value);
+  const normalized = stripPipedriveSuffix(hostname);
+  return normalized && /^[a-z0-9-]+$/i.test(normalized) ? normalized : value;
+}
+
+function normalizeBaseUrl(value: string | undefined): string | undefined {
+  if (!value) {
+    return undefined;
+  }
+  const trimmed = value.replace(/\/+$/, "");
+  if (/^[a-z0-9-]+$/i.test(trimmed)) {
+    return defaultBaseUrl(trimmed);
+  }
+  if (/^[a-z0-9-]+\.pipedrive\.com$/i.test(trimmed)) {
+    return `https://${trimmed}`;
+  }
+  return trimmed;
+}
+
 function defaultBaseUrl(companyDomain?: string): string {
   if (!companyDomain) {
     return "";
   }
   return `https://${companyDomain}.pipedrive.com`;
+}
+
+function hostnameFromMaybeUrl(value: string): string {
+  try {
+    const candidate = value.includes("://") ? value : `https://${value}`;
+    return new URL(candidate).hostname.toLowerCase();
+  } catch {
+    return value.toLowerCase().replace(/^https?:\/\//, "").replace(/\/.*$/, "");
+  }
+}
+
+function stripPipedriveSuffix(value: string): string {
+  return value.toLowerCase().endsWith(".pipedrive.com") ? value.slice(0, -".pipedrive.com".length) : value;
 }
 
 function isAllowedBaseUrl(baseUrl: string, allowMockBaseUrl: boolean): boolean {

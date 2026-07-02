@@ -12,10 +12,17 @@ managed `pipedrive` MCP server entry to Claude Desktop's
 tools through the same Desktop MCP path. Users do not need to edit `.env` files
 or JSON config by hand.
 
-The synchronized Desktop MCP entry launches the bundled server with `node`.
-Make sure Node.js is available to Claude Desktop through the user's PATH. The
-Desktop Extension itself may use Claude's built-in Node runtime, but Cowork's
-shared Desktop MCP discovery path uses the standard `mcpServers` command.
+Desktop chat is the simplest validation path because it uses the installed
+Desktop Extension directly. The Desktop Extension can use Claude Desktop's
+integrated Node.js runtime, so users do not need to install Node.js just to run
+the extension in Desktop chat.
+
+Cowork is the preferred advanced workflow for client project spaces and
+persistent working documents, but it has one extra discovery step. The
+synchronized Desktop MCP entry launches the bundled server with `node`. If
+Cowork cannot see the `pipedrive_*` tools after the extension is installed,
+configured, and Claude Desktop is restarted, install Node.js LTS from
+nodejs.org so `node` is available to Claude Desktop, then test Cowork again.
 
 ## Build The Plugin
 

@@ -40,12 +40,18 @@ test("staged Claude plugin artifact is isolated and read-only by default", { tim
   const pluginJsonPath = join(artifactRoot, ".claude-plugin", "plugin.json");
   assert.equal(existsSync(pluginJsonPath), true);
   const pluginJson = JSON.parse(readFileSync(pluginJsonPath, "utf8"));
-  assert.equal(pluginJson.version, "0.1.5");
+  assert.equal(pluginJson.version, "0.1.6");
   assert.equal(pluginJson.skills, "./skills/");
   assert.equal("mcpServers" in pluginJson, false);
   assert.equal("userConfig" in pluginJson, false);
   assert.equal(existsSync(join(artifactRoot, ".mcp.json")), false);
   assert.equal(existsSync(join(artifactRoot, "dist", "plugin-server.js")), false);
+  assert.equal(existsSync(join(artifactRoot, "INSTALL.md")), true);
+  assert.equal(existsSync(join(artifactRoot, "INSTALL.fr.md")), true);
+  const artifactReadme = readFileSync(join(artifactRoot, "README.md"), "utf8");
+  assert.match(artifactReadme, /English installation guide/);
+  assert.match(artifactReadme, /pipedrive-mcp-0\.1\.6\.mcpb/);
+  assert.doesNotMatch(artifactReadme, /npm install/);
   const skillNames = readdirSync(join(artifactRoot, "skills")).sort();
   assert.deepEqual(skillNames, expectedSkillNames);
   for (const skillName of expectedSkillNames) {
