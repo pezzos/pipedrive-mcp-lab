@@ -15,7 +15,7 @@ Start here:
 2. The Desktop Extension file:
 
    ```text
-   https://github.com/pezzos/pipedrive-mcp-claude-plugin/raw/main/pipedrive-mcp-0.1.6.mcpb
+   https://github.com/pezzos/pipedrive-mcp-claude-plugin/raw/main/pipedrive-mcp-latest.mcpb
    ```
 
 Install and test in Claude Desktop chat first. Then validate Claude Cowork if

@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -8,6 +9,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 const readOnlyToolCount = 46;
 const artifactRoot = join(process.cwd(), "dist", "claude-plugin", "pipedrive-mcp");
+const packageVersion = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")).version;
 const expectedSkillNames = [
   "pipedrive-add-activity",
   "pipedrive-add-note",
@@ -40,7 +42,7 @@ test("staged Claude plugin artifact is isolated and read-only by default", { tim
   const pluginJsonPath = join(artifactRoot, ".claude-plugin", "plugin.json");
   assert.equal(existsSync(pluginJsonPath), true);
   const pluginJson = JSON.parse(readFileSync(pluginJsonPath, "utf8"));
-  assert.equal(pluginJson.version, "0.1.6");
+  assert.equal(pluginJson.version, packageVersion);
   assert.equal(pluginJson.skills, "./skills/");
   assert.equal("mcpServers" in pluginJson, false);
   assert.equal("userConfig" in pluginJson, false);
@@ -50,7 +52,7 @@ test("staged Claude plugin artifact is isolated and read-only by default", { tim
   assert.equal(existsSync(join(artifactRoot, "INSTALL.fr.md")), true);
   const artifactReadme = readFileSync(join(artifactRoot, "README.md"), "utf8");
   assert.match(artifactReadme, /English installation guide/);
-  assert.match(artifactReadme, /pipedrive-mcp-0\.1\.6\.mcpb/);
+  assert.match(artifactReadme, /pipedrive-mcp-latest\.mcpb/);
   assert.doesNotMatch(artifactReadme, /npm install/);
   const skillNames = readdirSync(join(artifactRoot, "skills")).sort();
   assert.deepEqual(skillNames, expectedSkillNames);
@@ -67,6 +69,40 @@ test("staged Claude plugin artifact is isolated and read-only by default", { tim
   }
 
   assertCleanArtifact(artifactRoot);
+});
+
+test("Claude plugin release script stages versioned and latest MCPB artifacts", { timeout: 180_000 }, () => {
+  execFileSync("npm", ["run", "build:plugin"], { cwd: process.cwd(), stdio: "pipe" });
+  execFileSync("npm", ["run", "pack:claude-plugin"], { cwd: process.cwd(), stdio: "pipe" });
+
+  const distributionRepo = mkdtempSync(join(tmpdir(), "pipedrive-mcp-distribution-"));
+  try {
+    execFileSync(
+      "node",
+      [
+        "scripts/release-claude-plugin.mjs",
+        "--distribution-repo",
+        distributionRepo,
+        "--skip-check",
+      ],
+      { cwd: process.cwd(), stdio: "pipe" },
+    );
+
+    const versionedMcpb = join(distributionRepo, `pipedrive-mcp-${packageVersion}.mcpb`);
+    const latestMcpb = join(distributionRepo, "pipedrive-mcp-latest.mcpb");
+    assert.equal(existsSync(versionedMcpb), true);
+    assert.equal(existsSync(latestMcpb), true);
+
+    assert.equal(readMcpbManifest(versionedMcpb).version, packageVersion);
+    assert.equal(readMcpbManifest(latestMcpb).version, packageVersion);
+    assert.equal(existsSync(join(distributionRepo, "mcpb", "pipedrive-mcp", "server", "plugin-server.js")), true);
+    assert.equal(existsSync(join(distributionRepo, "skills", "pipedrive-add-note", "SKILL.md")), true);
+
+    const readme = readFileSync(join(distributionRepo, "README.md"), "utf8");
+    assert.match(readme, /pipedrive-mcp-latest\.mcpb/);
+  } finally {
+    rmSync(distributionRepo, { recursive: true, force: true });
+  }
 });
 
 async function listTools(serverPath: string, cwd: string, overrides: Record<string, string | undefined> = {}) {
@@ -126,6 +162,10 @@ function assertCleanArtifact(root: string) {
       `artifact must not include secret-like files outside docs: ${relative}`,
     );
   }
+}
+
+function readMcpbManifest(path: string) {
+  return JSON.parse(execFileSync("unzip", ["-p", path, "manifest.json"], { encoding: "utf8" }));
 }
 
 function* walk(root: string): Generator<string> {

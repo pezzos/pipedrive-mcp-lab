@@ -54,10 +54,10 @@ to allow this private plugin.
 1. Download this file:
 
    ```text
-   https://github.com/pezzos/pipedrive-mcp-claude-plugin/raw/main/pipedrive-mcp-0.1.6.mcpb
+   https://github.com/pezzos/pipedrive-mcp-claude-plugin/raw/main/pipedrive-mcp-latest.mcpb
    ```
 
-2. Open the downloaded file `pipedrive-mcp-0.1.6.mcpb`.
+2. Open the downloaded file `pipedrive-mcp-latest.mcpb`.
 3. Claude Desktop should open the **Pipedrive MCP** extension install screen.
 4. Click **Install** or **Update**.
 5. If Claude asks **Do you want to install Pipedrive MCP?**, click
@@ -71,7 +71,7 @@ If double-clicking the file does not open Claude Desktop:
 2. Open **Settings**.
 3. Open **Desktop app** > **Extensions**.
 4. Click **Install extension**.
-5. Select `pipedrive-mcp-0.1.6.mcpb`.
+5. Select `pipedrive-mcp-latest.mcpb`.
 
 ## 3. Configure Pipedrive
 

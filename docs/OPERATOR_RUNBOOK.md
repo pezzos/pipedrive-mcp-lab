@@ -116,6 +116,27 @@ Before Cowork rollout, confirm custom plugins are allowed, users can install the
 Claude Desktop MCP servers are available to Cowork tasks after a restart or new
 task.
 
+Use the release script to publish the Desktop Extension and plugin repository.
+It builds and validates the local package, syncs the distribution repository,
+creates both a versioned `.mcpb` and `pipedrive-mcp-latest.mcpb`, then verifies
+published downloads after push.
+
+For a local dry run against a checked-out distribution repository:
+
+```sh
+PIPEDRIVE_MCP_PLUGIN_REPO=/path/to/pipedrive-mcp-claude-plugin \
+  npm run prepare:claude-plugin-release
+```
+
+For an actual publication:
+
+```sh
+PIPEDRIVE_MCP_PLUGIN_REPO=/path/to/pipedrive-mcp-claude-plugin \
+  npm run release:claude-plugin
+```
+
+Do not hand-edit the distribution repository for ordinary releases.
+
 ## Upgrading From Lab Version
 
 Remove these environment variables from host configs:
@@ -147,6 +168,7 @@ Required local validation:
 ```sh
 npm run check
 npm run pack:claude-plugin
+PIPEDRIVE_MCP_PLUGIN_REPO=/path/to/pipedrive-mcp-claude-plugin npm run prepare:claude-plugin-release
 claude plugin validate dist/claude-plugin/pipedrive-mcp
 npm pack --dry-run
 ```

@@ -56,10 +56,10 @@ l'administrateur de l'espace Claude d'autoriser ce plugin privé.
 1. Télécharger ce fichier :
 
    ```text
-   https://github.com/pezzos/pipedrive-mcp-claude-plugin/raw/main/pipedrive-mcp-0.1.6.mcpb
+   https://github.com/pezzos/pipedrive-mcp-claude-plugin/raw/main/pipedrive-mcp-latest.mcpb
    ```
 
-2. Ouvrir le fichier téléchargé `pipedrive-mcp-0.1.6.mcpb`.
+2. Ouvrir le fichier téléchargé `pipedrive-mcp-latest.mcpb`.
 3. Claude Desktop doit ouvrir l'écran d'installation de l'extension
    **Pipedrive MCP**.
 4. Cliquer sur **Installer** ou **Mettre à jour**.
@@ -74,7 +74,7 @@ Si le double-clic sur le fichier n'ouvre pas Claude Desktop :
 2. Ouvrir **Paramètres**.
 3. Ouvrir **Application bureau** > **Extensions**.
 4. Cliquer sur **Installer l'extension**.
-5. Sélectionner `pipedrive-mcp-0.1.6.mcpb`.
+5. Sélectionner `pipedrive-mcp-latest.mcpb`.
 
 ## 3. Configurer Pipedrive
 

@@ -1,0 +1,109 @@
+{
+  "manifest_version": "0.3",
+  "name": "pipedrive-mcp",
+  "display_name": "Pipedrive MCP",
+  "version": "0.1.6",
+  "description": "Local MCP server for Pipedrive CRM operations in Claude Desktop.",
+  "long_description": "Pipedrive MCP gives Claude Desktop and Cowork a local connector for Pipedrive CRM read workflows and opt-in write workflows. Configure your Pipedrive company domain and API token in the extension settings after installation. Enter only the company subdomain, not the full Pipedrive URL. After credentials are saved, the extension synchronizes a managed Claude Desktop MCP entry so Cowork can discover the pipedrive_* tools.",
+  "author": {
+    "name": "PezzosLabs"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pezzos/pipedrive-mcp-claude-plugin.git"
+  },
+  "license": "MIT",
+  "keywords": [
+    "pipedrive",
+    "crm",
+    "sales",
+    "mcp"
+  ],
+  "server": {
+    "type": "node",
+    "entry_point": "server/plugin-server.js",
+    "mcp_config": {
+      "command": "node",
+      "args": [
+        "${__dirname}/server/plugin-server.js"
+      ],
+      "env": {
+        "PIPEDRIVE_LOAD_DOTENV": "false",
+        "PIPEDRIVE_COMPANY_DOMAIN": "${user_config.company_domain}",
+        "PIPEDRIVE_BASE_URL": "${user_config.base_url}",
+        "PIPEDRIVE_API_TOKEN": "${user_config.api_token}",
+        "PIPEDRIVE_ACCESS_TOKEN": "${user_config.access_token}",
+        "PIPEDRIVE_ENABLE_WRITES": "${user_config.enable_writes}",
+        "PIPEDRIVE_ENABLE_MAILBOX_TOOLS": "${user_config.enable_mailbox_tools}",
+        "PIPEDRIVE_ENABLE_DELETE_TOOLS": "${user_config.enable_delete_tools}",
+        "PIPEDRIVE_REQUEST_TIMEOUT_MS": "${user_config.request_timeout_ms}"
+      }
+    }
+  },
+  "tools_generated": true,
+  "compatibility": {
+    "claude_desktop": ">=1.0.0",
+    "platforms": [
+      "darwin",
+      "win32",
+      "linux"
+    ],
+    "runtimes": {
+      "node": ">=18.0.0"
+    }
+  },
+  "user_config": {
+    "company_domain": {
+      "type": "string",
+      "title": "Pipedrive company domain",
+      "description": "Company subdomain used for https://<company>.pipedrive.com. Enter only the company name, not the full URL.",
+      "required": true
+    },
+    "base_url": {
+      "type": "string",
+      "title": "Pipedrive base URL",
+      "description": "Optional explicit https://*.pipedrive.com base URL. Leave empty to derive it from the company domain.",
+      "default": ""
+    },
+    "api_token": {
+      "type": "string",
+      "title": "Pipedrive API token",
+      "description": "Pipedrive API token for standard CRM API access. Provide this or an OAuth access token.",
+      "sensitive": true,
+      "required": true,
+      "default": ""
+    },
+    "access_token": {
+      "type": "string",
+      "title": "Pipedrive OAuth access token",
+      "description": "Optional OAuth access token. Some endpoints, especially Mailbox, may require OAuth scopes.",
+      "sensitive": true,
+      "default": ""
+    },
+    "enable_writes": {
+      "type": "boolean",
+      "title": "Enable write tools",
+      "description": "Register create and update tools. Write calls still default to dry-run.",
+      "default": false
+    },
+    "enable_mailbox_tools": {
+      "type": "boolean",
+      "title": "Enable Mailbox tools",
+      "description": "Register Mailbox tools. Requires write tools to be enabled.",
+      "default": false
+    },
+    "enable_delete_tools": {
+      "type": "boolean",
+      "title": "Enable delete tools",
+      "description": "Register delete tools. Requires write tools to be enabled.",
+      "default": false
+    },
+    "request_timeout_ms": {
+      "type": "number",
+      "title": "Request timeout",
+      "description": "Pipedrive API request timeout in milliseconds.",
+      "default": 10000,
+      "min": 1000
+    }
+  }
+}
