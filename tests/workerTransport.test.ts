@@ -96,3 +96,20 @@ test("bundles the Worker for a browser runtime without Node built-ins", async ()
   );
   assert.deepEqual(nodeInputs, []);
 });
+
+test("bundles the shared tool server without pulling in Node environment loading", async () => {
+  const result = await build({
+    entryPoints: ["src/tools.ts"],
+    bundle: true,
+    format: "esm",
+    metafile: true,
+    platform: "browser",
+    target: "es2022",
+    write: false,
+  });
+
+  const inputs = Object.keys(result.metafile?.inputs ?? {});
+  assert.equal(inputs.some((path) => path.includes("src/env.ts")), false);
+  assert.equal(inputs.some((path) => path.includes("node:")), false);
+  assert.equal(inputs.some((path) => path.includes("dotenv")), false);
+});

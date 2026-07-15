@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config as loadDotenv } from "dotenv";
+import type { RuntimeEnvDiagnostics, RuntimeEnvKeyPresence } from "./runtimeDiagnostics.js";
 
 const runtimeEnvKeys = {
   enableWrites: "PIPEDRIVE_ENABLE_WRITES",
@@ -13,16 +14,6 @@ const runtimeEnvKeys = {
 type RuntimeEnvOptions = {
   packageDir?: string;
   env?: NodeJS.ProcessEnv;
-};
-
-type RuntimeEnvDiagnostics = {
-  initialized: boolean;
-  dotenvLoadingEnabled: boolean;
-  dotenvLocalFilePresent: boolean;
-  dotenvLoaded: boolean;
-  dotenvLoadFailed: boolean;
-  preexisting: Record<keyof typeof runtimeEnvKeys, boolean>;
-  current: Record<keyof typeof runtimeEnvKeys, boolean>;
 };
 
 let diagnostics: RuntimeEnvDiagnostics = {
@@ -99,7 +90,7 @@ function defaultPackageDir(): string {
   return dirname(dirname(fileURLToPath(import.meta.url)));
 }
 
-function hasRuntimeEnvKeys(env: NodeJS.ProcessEnv): Record<keyof typeof runtimeEnvKeys, boolean> {
+function hasRuntimeEnvKeys(env: NodeJS.ProcessEnv): RuntimeEnvKeyPresence {
   return {
     enableWrites: hasRuntimeEnvKey(env, runtimeEnvKeys.enableWrites),
     enableDeleteTools: hasRuntimeEnvKey(env, runtimeEnvKeys.enableDeleteTools),

@@ -1,8 +1,11 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod/v4";
 import { PipedriveConfig, requireConfigured } from "./config.js";
-import { getRuntimeEnvDiagnostics } from "./env.js";
 import { PipedriveClient } from "./pipedriveClient.js";
+import {
+  unavailableRuntimeEnvDiagnostics,
+  type RuntimeEnvDiagnostics,
+} from "./runtimeDiagnostics.js";
 
 const pipedriveDateTime = z.string().datetime({ offset: true });
 const pipedriveDate = z
@@ -405,7 +408,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
-export function buildServer(config: PipedriveConfig, client = new PipedriveClient(config)) {
+type BuildServerOptions = {
+  runtimeEnvDiagnostics?: () => RuntimeEnvDiagnostics;
+};
+
+export function buildServer(
+  config: PipedriveConfig,
+  client = new PipedriveClient(config),
+  options: BuildServerOptions = {},
+) {
   const server = new McpServer({
     name: "pipedrive-mcp",
     version: "0.1.7",
@@ -421,7 +432,8 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
       annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: false },
     },
     async () => {
-      const envDiagnostics = getRuntimeEnvDiagnostics();
+      const envDiagnostics =
+        options.runtimeEnvDiagnostics?.() ?? unavailableRuntimeEnvDiagnostics();
       const configuration = configurationStatus(config);
       return jsonResult({
         token_configured: Boolean(config.apiToken || config.accessToken),
