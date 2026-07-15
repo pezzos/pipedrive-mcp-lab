@@ -15,6 +15,9 @@ export type AuditEvent = {
   targetIds?: Record<string, string | number>;
   errorCode?: string;
   policyRevision?: number;
+  policyChanges?: Partial<
+    Record<"writes" | "deletes" | "mailbox", { from: boolean; to: boolean }>
+  >;
 };
 
 export interface AuditSink {

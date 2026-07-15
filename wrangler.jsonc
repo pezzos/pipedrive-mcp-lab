@@ -2,5 +2,23 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "pipedrive-mcp-remote",
   "main": "src/remote/worker.ts",
-  "compatibility_date": "2026-07-15"
+  "compatibility_date": "2026-07-15",
+  "durable_objects": {
+    "bindings": [
+      {
+        "name": "USER_POLICY",
+        "class_name": "UserPolicy"
+      },
+      {
+        "name": "TENANT_SECRETS",
+        "class_name": "TenantSecrets"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["UserPolicy", "TenantSecrets"]
+    }
+  ]
 }
