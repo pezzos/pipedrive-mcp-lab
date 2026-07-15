@@ -64,6 +64,7 @@ test("binds OAuth state to the initiating admin and coalesces refresh", async ()
       pipedriveClientId: "client-fixture",
       pipedriveClientSecret: "credential-fixture",
       encryptionKey: base64Url(Uint8Array.from({ length: 32 }, (_, index) => 255 - index)),
+      auditHmacKey: base64Url(Uint8Array.from({ length: 32 }, (_, index) => index + 1)),
     },
     async (_input, init) => {
       oauthCalls += 1;

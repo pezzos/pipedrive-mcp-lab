@@ -77,7 +77,10 @@ test("audit helpers keep only bounded identifiers and pseudonymize the actor", a
       lead_id: "11111111-1111-4111-8111-111111111111",
     },
   );
-  const actor = await pseudonymizeAccessSub("access-user-1");
+  const actor = await pseudonymizeAccessSub(
+    "access-user-1",
+    base64Url(Uint8Array.from({ length: 32 }, (_, index) => index)),
+  );
   assert.equal(actor.length, 32);
   assert.equal(actor.includes("access-user-1"), false);
 });

@@ -42,29 +42,52 @@ export default {
         audience: config.accessAudience,
       });
     } catch (error) {
+      const code = safeErrorCode(error, "access_denied");
+      context.waitUntil(
+        auditSink.write({
+          v: 1,
+          ts: new Date().toISOString(),
+          requestId: requestId(request),
+          actorId: "anonymous",
+          route: url.pathname,
+          operation: "access.verify",
+          effect: "read",
+          outcome: "denied",
+          httpStatus: 401,
+          latencyMs: 0,
+          errorCode: code,
+        }).catch(() => undefined),
+      );
       return noStoreJson(
-        { code: safeErrorCode(error, "access_denied") },
+        { code },
         { status: 401 },
       );
     }
 
-    if (url.pathname === "/mcp") {
-      return handleRemoteMcp(request, env, identity, context);
-    }
-    if (url.pathname === "/settings") {
-      return handleSettings(request, env, identity, context);
-    }
-    if (url.pathname === "/admin/pipedrive/connect" && request.method === "GET") {
-      if (identity.email !== config.adminEmail) {
-        return noStoreJson({ code: "admin_required" }, { status: 403 });
+    try {
+      if (url.pathname === "/mcp") {
+        return await handleRemoteMcp(request, env, identity, config, context);
       }
-      return handlePipedriveConnect(request, env, identity, config, context);
-    }
-    if (url.pathname === "/oauth/pipedrive/callback" && request.method === "GET") {
-      if (identity.email !== config.adminEmail) {
-        return noStoreJson({ code: "admin_required" }, { status: 403 });
+      if (url.pathname === "/settings") {
+        return await handleSettings(request, env, identity, config, context);
       }
-      return handlePipedriveCallback(request, env, identity, context);
+      if (url.pathname === "/admin/pipedrive/connect" && request.method === "GET") {
+        if (identity.email !== config.adminEmail) {
+          return noStoreJson({ code: "admin_required" }, { status: 403 });
+        }
+        return await handlePipedriveConnect(request, env, identity, config, context);
+      }
+      if (url.pathname === "/oauth/pipedrive/callback" && request.method === "GET") {
+        if (identity.email !== config.adminEmail) {
+          return noStoreJson({ code: "admin_required" }, { status: 403 });
+        }
+        return await handlePipedriveCallback(request, env, identity, config, context);
+      }
+    } catch (error) {
+      const code = safeErrorCode(error, "remote_dependency_unavailable");
+      return url.pathname === "/mcp"
+        ? mcpFailure(code)
+        : noStoreJson({ code }, { status: dependencyStatus(code) });
     }
 
     return new Response("Not found", { status: 404 });
@@ -75,6 +98,7 @@ async function handleRemoteMcp(
   request: Request,
   env: RemoteEnv,
   identity: AccessIdentity,
+  remoteConfig: RemoteConfig,
   context: ExecutionContext,
 ): Promise<Response> {
   const startedAt = Date.now();
@@ -94,20 +118,24 @@ async function handleRemoteMcp(
   const response = await handleMcpRequest(request, () => buildServer(pipedriveConfig));
 
   if (call) {
+    const effect = toolEffect(call.name);
+    const requestedDryRun = effect === "read" ? undefined : (call.dryRun ?? true);
+    const denied = requestedDryRun === false && !policyAllowsCall(call.name, effect, policy);
     const event: AuditEvent = {
       v: 1,
       ts: new Date().toISOString(),
       requestId: requestId(request),
-      actorId: await pseudonymizeAccessSub(identity.sub),
+      actorId: await pseudonymizeAccessSub(identity.sub, remoteConfig.auditHmacKey),
       route: "/mcp",
       operation: call.name,
-      effect: toolEffect(call.name),
-      dryRun: call.dryRun,
-      outcome: await mcpOutcome(response),
+      effect,
+      dryRun: denied ? true : requestedDryRun,
+      outcome: denied ? "denied" : await mcpOutcome(response),
       httpStatus: response.status,
       latencyMs: Date.now() - startedAt,
       targetIds: extractTargetIds(call.arguments),
       policyRevision: policy.revision,
+      errorCode: denied ? policyDenialCode(call.name, effect, policy) : undefined,
     };
     context.waitUntil(auditSink.write(event).catch(() => undefined));
   }
@@ -118,6 +146,7 @@ async function handleSettings(
   request: Request,
   env: RemoteEnv,
   identity: AccessIdentity,
+  config: RemoteConfig,
   context: ExecutionContext,
 ): Promise<Response> {
   const stub = userPolicyStub(env, identity.sub);
@@ -171,7 +200,13 @@ async function handleSettings(
     return html(
       renderSettingsPage({
         email: identity.email,
-        policy: current,
+        policy: {
+          writes: next.writes,
+          deletes: next.deletes,
+          mailbox: next.mailbox,
+          revision: current.revision,
+          updatedAt: current.updatedAt,
+        },
         csrf,
         nonce,
         saved: false,
@@ -198,7 +233,13 @@ async function handleSettings(
   const updated = await updatedResponse.json<UserPolicyRecord>();
   const changes = policyChanges(current, updated);
   context.waitUntil(
-    writePolicyAudit(request, identity.sub, updated.revision, changes).catch(() => undefined),
+    writePolicyAudit(
+      request,
+      identity.sub,
+      config.auditHmacKey,
+      updated.revision,
+      changes,
+    ).catch(() => undefined),
   );
   return Response.redirect(new URL("/settings?saved=1", request.url), 303);
 }
@@ -225,7 +266,7 @@ async function handlePipedriveConnect(
   authorizationUrl.searchParams.set("redirect_uri", redirectUri);
   authorizationUrl.searchParams.set("state", state);
   context.waitUntil(
-    writeOperationAudit(request, identity.sub, "/admin/pipedrive/connect", "oauth.connect", "success", 302)
+    writeOperationAudit(request, identity.sub, config.auditHmacKey, "/admin/pipedrive/connect", "oauth.connect", "success", 302)
       .catch(() => undefined),
   );
   return Response.redirect(authorizationUrl, 302);
@@ -235,6 +276,7 @@ async function handlePipedriveCallback(
   request: Request,
   env: RemoteEnv,
   identity: AccessIdentity,
+  config: RemoteConfig,
   context: ExecutionContext,
 ): Promise<Response> {
   const url = new URL(request.url);
@@ -251,13 +293,13 @@ async function handlePipedriveCallback(
   });
   if (!response.ok) {
     context.waitUntil(
-      writeOperationAudit(request, identity.sub, "/oauth/pipedrive/callback", "oauth.callback", "error", 400)
+      writeOperationAudit(request, identity.sub, config.auditHmacKey, "/oauth/pipedrive/callback", "oauth.callback", "error", 400)
         .catch(() => undefined),
     );
     return html("<h1>Connexion Pipedrive impossible</h1><p>Recommencez depuis la page d’administration.</p>", 400);
   }
   context.waitUntil(
-    writeOperationAudit(request, identity.sub, "/oauth/pipedrive/callback", "oauth.callback", "success", 200)
+    writeOperationAudit(request, identity.sub, config.auditHmacKey, "/oauth/pipedrive/callback", "oauth.callback", "success", 200)
       .catch(() => undefined),
   );
   return html("<h1>Pipedrive est connecté</h1><p>Le serveur peut maintenant renouveler l’accès automatiquement.</p>");
@@ -269,7 +311,14 @@ async function getTenantCredential(env: RemoteEnv): Promise<TenantCredential | u
     return undefined;
   }
   if (!response.ok) {
-    throw new Error("pipedrive_credential_unavailable");
+    let code = "pipedrive_credential_unavailable";
+    try {
+      const body = await response.json<{ code?: string }>();
+      code = body.code ?? code;
+    } catch {
+      // Keep the stable fallback and never surface an internal response body.
+    }
+    throw new Error(code);
   }
   return response.json<TenantCredential>();
 }
@@ -311,6 +360,40 @@ function toolEffect(name: string): AuditEvent["effect"] {
   return "read";
 }
 
+function policyAllowsCall(
+  name: string,
+  effect: AuditEvent["effect"],
+  policy: UserPolicyRecord,
+): boolean {
+  if (effect === "read") {
+    return true;
+  }
+  if (effect === "delete") {
+    return policy.writes && policy.deletes;
+  }
+  if (name === "pipedrive_link_mail_thread") {
+    return policy.writes && policy.mailbox;
+  }
+  return policy.writes;
+}
+
+function policyDenialCode(
+  name: string,
+  effect: AuditEvent["effect"],
+  policy: UserPolicyRecord,
+): string {
+  if (!policy.writes) {
+    return "writes_disabled";
+  }
+  if (effect === "delete" && !policy.deletes) {
+    return "deletes_disabled";
+  }
+  if (name === "pipedrive_link_mail_thread" && !policy.mailbox) {
+    return "mailbox_disabled";
+  }
+  return "permission_denied";
+}
+
 function policyChanges(
   before: UserPolicyRecord,
   after: UserPolicyRecord,
@@ -327,6 +410,7 @@ function policyChanges(
 async function writePolicyAudit(
   request: Request,
   sub: string,
+  auditHmacKey: string,
   revision: number,
   changes: NonNullable<AuditEvent["policyChanges"]>,
 ): Promise<void> {
@@ -334,7 +418,7 @@ async function writePolicyAudit(
     v: 1,
     ts: new Date().toISOString(),
     requestId: requestId(request),
-    actorId: await pseudonymizeAccessSub(sub),
+    actorId: await pseudonymizeAccessSub(sub, auditHmacKey),
     route: "/settings",
     operation: "policy.update",
     effect: "policy",
@@ -349,6 +433,7 @@ async function writePolicyAudit(
 async function writeOperationAudit(
   request: Request,
   sub: string,
+  auditHmacKey: string,
   route: string,
   operation: string,
   outcome: "success" | "error",
@@ -358,7 +443,7 @@ async function writeOperationAudit(
     v: 1,
     ts: new Date().toISOString(),
     requestId: requestId(request),
-    actorId: await pseudonymizeAccessSub(sub),
+    actorId: await pseudonymizeAccessSub(sub, auditHmacKey),
     route,
     operation,
     effect: "oauth",
@@ -415,6 +500,25 @@ function noStoreJson(body: unknown, init: ResponseInit = {}): Response {
   headers.set("cache-control", "no-store");
   headers.set("content-type", "application/json");
   return new Response(JSON.stringify(body), { ...init, headers });
+}
+
+function mcpFailure(code: string): Response {
+  return noStoreJson(
+    {
+      jsonrpc: "2.0",
+      error: {
+        code: -32000,
+        message: "Remote MCP dependency unavailable",
+        data: { code },
+      },
+      id: null,
+    },
+    { status: dependencyStatus(code) },
+  );
+}
+
+function dependencyStatus(code: string): number {
+  return code === "pipedrive_reconnect_required" ? 409 : 503;
 }
 
 function safeErrorCode(error: unknown, fallback: string): string {

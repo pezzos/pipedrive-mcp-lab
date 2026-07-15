@@ -5,6 +5,7 @@ export interface RemoteEnv {
   PIPEDRIVE_OAUTH_CLIENT_ID: string;
   PIPEDRIVE_OAUTH_CLIENT_SECRET: string;
   PIPEDRIVE_OAUTH_ENCRYPTION_KEY: string;
+  AUDIT_HMAC_KEY: string;
   USER_POLICY: DurableObjectNamespace;
   TENANT_SECRETS: DurableObjectNamespace;
 }
@@ -16,6 +17,7 @@ export type RemoteConfig = {
   pipedriveClientId: string;
   pipedriveClientSecret: string;
   encryptionKey: string;
+  auditHmacKey: string;
 };
 
 export function loadRemoteConfig(env: RemoteEnv): RemoteConfig {
@@ -34,6 +36,7 @@ export function loadRemoteConfig(env: RemoteEnv): RemoteConfig {
     env.PIPEDRIVE_OAUTH_ENCRYPTION_KEY,
     "PIPEDRIVE_OAUTH_ENCRYPTION_KEY",
   );
+  const auditHmacKey = required(env.AUDIT_HMAC_KEY, "AUDIT_HMAC_KEY");
 
   return {
     accessIssuer,
@@ -42,6 +45,7 @@ export function loadRemoteConfig(env: RemoteEnv): RemoteConfig {
     pipedriveClientId,
     pipedriveClientSecret,
     encryptionKey,
+    auditHmacKey,
   };
 }
 

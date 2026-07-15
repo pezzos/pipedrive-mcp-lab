@@ -1,7 +1,7 @@
 import type { RemoteEnv } from "./env.js";
 
 const POLICY_KEY = "policy";
-const CSRF_PREFIX = "csrf:";
+const CSRF_KEY = "csrf";
 const CSRF_TTL_MS = 10 * 60_000;
 
 export type UserPolicyRecord = {
@@ -27,6 +27,7 @@ export interface KeyValueStorage {
 }
 
 type CsrfRecord = {
+  digest: string;
   expiresAt: number;
 };
 
@@ -43,7 +44,8 @@ export class UserPolicyStore {
   async issueCsrf(): Promise<string> {
     const value = randomBase64Url(32);
     const digest = await hash(value);
-    await this.storage.put<CsrfRecord>(`${CSRF_PREFIX}${digest}`, {
+    await this.storage.put<CsrfRecord>(CSRF_KEY, {
+      digest,
       expiresAt: this.now() + CSRF_TTL_MS,
     });
     return value;
@@ -54,11 +56,15 @@ export class UserPolicyStore {
     if (typeof csrf !== "string" || csrf.length < 32 || csrf.length > 256) {
       throw new Error("csrf_invalid");
     }
-    const csrfKey = `${CSRF_PREFIX}${await hash(csrf)}`;
+    const csrfDigest = await hash(csrf);
     return this.storage.transaction(async (transaction) => {
-      const csrfRecord = await transaction.get<CsrfRecord>(csrfKey);
-      await transaction.delete(csrfKey);
-      if (!csrfRecord || csrfRecord.expiresAt < this.now()) {
+      const csrfRecord = await transaction.get<CsrfRecord>(CSRF_KEY);
+      await transaction.delete(CSRF_KEY);
+      if (
+        !csrfRecord ||
+        csrfRecord.expiresAt < this.now() ||
+        csrfRecord.digest !== csrfDigest
+      ) {
         throw new Error("csrf_invalid");
       }
 

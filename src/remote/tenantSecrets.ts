@@ -3,7 +3,7 @@ import type { RemoteConfig, RemoteEnv } from "./env.js";
 import type { KeyValueStorage } from "./policy.js";
 
 const MATERIAL_KEY = "oauth-material";
-const STATE_PREFIX = "oauth-state:";
+const STATE_KEY = "oauth-state";
 const STATE_TTL_MS = 10 * 60_000;
 const REFRESH_SKEW_MS = 60_000;
 const TOKEN_ENDPOINT = "https://oauth.pipedrive.com/oauth/token";
@@ -22,6 +22,7 @@ type EncryptedEnvelope = {
 };
 
 type StateRecord = {
+  digest: string;
   adminSub: string;
   redirectUriHash: string;
   expiresAtMs: number;
@@ -56,7 +57,8 @@ export class TenantSecretsCore {
     validateRedirectUri(redirectUri);
     const state = randomBase64Url(32);
     const stateHash = await hash(state);
-    await this.storage.put<StateRecord>(`${STATE_PREFIX}${stateHash}`, {
+    await this.storage.put<StateRecord>(STATE_KEY, {
+      digest: stateHash,
       adminSub,
       redirectUriHash: await hash(redirectUri),
       expiresAtMs: this.now() + STATE_TTL_MS,
@@ -74,12 +76,13 @@ export class TenantSecretsCore {
     validateBounded(state, 256, "oauth_state_invalid");
     validateBounded(code, 4096, "oauth_code_invalid");
     validateRedirectUri(redirectUri);
-    const stateKey = `${STATE_PREFIX}${await hash(state)}`;
+    const stateHash = await hash(state);
     await this.storage.transaction(async (transaction) => {
-      const record = await transaction.get<StateRecord>(stateKey);
-      await transaction.delete(stateKey);
+      const record = await transaction.get<StateRecord>(STATE_KEY);
+      await transaction.delete(STATE_KEY);
       if (
         !record ||
+        record.digest !== stateHash ||
         record.expiresAtMs < this.now() ||
         record.adminSub !== adminSub ||
         record.redirectUriHash !== await hash(redirectUri)
@@ -189,6 +192,7 @@ export class TenantSecrets {
         pipedriveClientId: env.PIPEDRIVE_OAUTH_CLIENT_ID,
         pipedriveClientSecret: env.PIPEDRIVE_OAUTH_CLIENT_SECRET,
         encryptionKey: env.PIPEDRIVE_OAUTH_ENCRYPTION_KEY,
+        auditHmacKey: env.AUDIT_HMAC_KEY,
       },
     );
   }

@@ -30,9 +30,23 @@ export class ConsoleAuditSink implements AuditSink {
   }
 }
 
-export async function pseudonymizeAccessSub(sub: string): Promise<string> {
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(sub));
-  return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0"))
+export async function pseudonymizeAccessSub(
+  sub: string,
+  encodedKey: string,
+): Promise<string> {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    base64UrlToBytes(encodedKey),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const signature = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(sub),
+  );
+  return Array.from(new Uint8Array(signature), (byte) => byte.toString(16).padStart(2, "0"))
     .join("")
     .slice(0, 32);
 }
@@ -56,4 +70,15 @@ export function extractTargetIds(value: unknown): Record<string, string | number
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function base64UrlToBytes(value: string): Uint8Array<ArrayBuffer> {
+  const normalized = value.replaceAll("-", "+").replaceAll("_", "/");
+  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
+  const binary = atob(padded);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  if (bytes.byteLength < 32) {
+    throw new Error("audit_hmac_key_invalid");
+  }
+  return bytes;
 }
