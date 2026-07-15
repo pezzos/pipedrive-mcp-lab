@@ -76,19 +76,7 @@ with older audit events.
 
 ## Sandbox Setup
 
-1. Create a Pipedrive Developer Sandbox and an OAuth application with only the
-   scopes required by the tools being tested. Register
-   `https://<worker-host>/oauth/pipedrive/callback` as its callback.
-2. Create a Cloudflare Access **MCP server** application on the same Cloudflare
-   account as the Worker. Enable Managed OAuth and restrict the Access policy
-   to the intended users.
-3. Add the redirect URIs required by the target Claude clients. A practical
-   starting point is a 5–15 minute Access token and a 1–2 week grant; select the
-   exact values to match the client's security policy.
-4. Set the Worker variables and secrets listed above.
-   SQLite-backed Durable Objects are available on Cloudflare Workers Free and
-   Paid plans; review the applicable quotas and costs before production.
-5. Validate and deploy the artifact:
+1. Validate and deploy the Worker once to create the Cloudflare resource:
 
    ```sh
    npm ci
@@ -97,10 +85,31 @@ with older audit events.
    npx wrangler deploy
    ```
 
-6. Sign in through Access as `REMOTE_ADMIN_EMAIL`, then visit
+2. Attach a dedicated Custom Domain such as
+   `pipedrive-mcp-sandbox.example.com`: open **Workers & Pages**, select
+   `pipedrive-mcp-remote`, then **Settings > Domains & Routes > Add > Custom
+   Domain**. The parent domain must be an active zone in the same account.
+3. In Zero Trust, open **Access controls > Applications > Create new
+   application**, select **Self-hosted and private**, and add the complete
+   Worker hostname as a public hostname with no path restriction. Add an Allow
+   policy for the intended users and save. Cloudflare documentation sometimes
+   calls this an MCP server application; the dashboard creation tile is the
+   self-hosted application type for a customer-managed Worker.
+4. Edit that Access application, open **Advanced settings**, and enable
+   **Managed OAuth**. Add only the redirect URIs required by the target Claude
+   clients. A practical starting point is a 5–15 minute Access token and a 1–2
+   week grant; select the exact values to match the client's security policy.
+5. Create a Pipedrive Developer Sandbox and an OAuth application with only the
+   scopes required by the tools being tested. Register
+   `https://<worker-host>/oauth/pipedrive/callback` as its callback.
+6. Copy the Access Application Audience and set the Worker variables and
+   secrets listed above, then deploy again. SQLite-backed Durable Objects are
+   available on Cloudflare Workers Free and Paid plans; review the applicable
+   quotas and costs before production.
+7. Sign in through Access as `REMOTE_ADMIN_EMAIL`, then visit
    `https://<worker-host>/admin/pipedrive/connect`. Complete Pipedrive consent
    once.
-7. Give users the remote MCP URL `https://<worker-host>/mcp`. Each user signs
+8. Give users the remote MCP URL `https://<worker-host>/mcp`. Each user signs
    in through Access and can review their own policy at
    `https://<worker-host>/settings`.
 
