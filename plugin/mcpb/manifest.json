@@ -88,7 +88,7 @@
     "enable_mailbox_tools": {
       "type": "boolean",
       "title": "Enable Mailbox tools",
-      "description": "Register Mailbox tools. Requires write tools to be enabled.",
+      "description": "Register Mailbox read tools. Linking a thread also requires write tools.",
       "default": false
     },
     "enable_delete_tools": {

@@ -15,9 +15,9 @@ For client installation in Claude Desktop, start with
   projects, project tasks, and custom field discovery.
 - Write tools for creating and updating commercial records when
   `PIPEDRIVE_ENABLE_WRITES=true`.
-- Mailbox read/link tools only when both `PIPEDRIVE_ENABLE_WRITES=true` and
-  `PIPEDRIVE_ENABLE_MAILBOX_TOOLS=true`. Mailbox access may require an OAuth
-  access token with the right Pipedrive scopes.
+- Mailbox read tools when `PIPEDRIVE_ENABLE_MAILBOX_TOOLS=true`. Linking a
+  mail thread additionally requires `PIPEDRIVE_ENABLE_WRITES=true`. Mailbox
+  access may require an OAuth access token with the right Pipedrive scopes.
 - Delete tools only when both `PIPEDRIVE_ENABLE_WRITES=true` and
   `PIPEDRIVE_ENABLE_DELETE_TOOLS=true`.
 - Email activities with `type="email"` linked to a person, deal, organization
@@ -168,7 +168,9 @@ Restart Claude Desktop after editing the file.
 ## Safety Defaults
 
 - CRM write tools are not registered unless `PIPEDRIVE_ENABLE_WRITES=true`.
-- Mailbox tools are not registered unless `PIPEDRIVE_ENABLE_MAILBOX_TOOLS=true` as well.
+- Mailbox reads are not registered unless
+  `PIPEDRIVE_ENABLE_MAILBOX_TOOLS=true`; linking a thread also requires
+  `PIPEDRIVE_ENABLE_WRITES=true`.
 - Delete tools are not registered unless `PIPEDRIVE_ENABLE_DELETE_TOOLS=true` as well.
 - Write tools default to `dry_run=true`.
 - Dry-run responses redact common sensitive fields.

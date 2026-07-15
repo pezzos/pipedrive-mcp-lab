@@ -447,7 +447,8 @@ export function buildServer(
         mock_base_url_allowed: config.allowMockBaseUrl,
         writes_enabled: config.enableWrites,
         delete_tools_enabled: config.enableWrites && config.enableDeleteTools,
-        mailbox_tools_enabled: config.enableWrites && config.enableMailboxTools,
+        mailbox_tools_enabled: config.enableMailboxTools,
+        mailbox_link_enabled: config.enableWrites && config.enableMailboxTools,
         request_timeout_ms: config.requestTimeoutMs,
         runtime_env_diagnostics_initialized: envDiagnostics.initialized,
         dotenv_loading_enabled: envDiagnostics.dotenvLoadingEnabled,
@@ -930,7 +931,7 @@ export function buildServer(
     async ({ deal_id, ...args }) => jsonResult(await client.get(`/api/v1/deals/${deal_id}/files`, args)),
   );
 
-  if (config.enableWrites && config.enableMailboxTools) {
+  if (config.enableMailboxTools) {
   server.registerTool(
     "pipedrive_list_deal_mail_messages",
     {
@@ -1020,6 +1021,7 @@ export function buildServer(
       ),
   );
 
+  if (config.enableWrites) {
   server.registerTool(
     "pipedrive_link_mail_thread",
     {
@@ -1046,6 +1048,7 @@ export function buildServer(
       return jsonResult(await client.putForm(`/api/v1/mailbox/mailThreads/${mail_thread_id}`, payload));
     },
   );
+  }
   }
 
   server.registerTool(

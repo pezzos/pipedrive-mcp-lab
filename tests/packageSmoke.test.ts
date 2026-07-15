@@ -45,10 +45,11 @@ test("packed tarball builds from a clean checkout and exposes the published bin"
       { cwd: installDir, encoding: "utf-8", stdio: "pipe" },
     );
     assert.deepEqual(JSON.parse(smokeOutput), [
-      { profile: "read-only", toolCount: 46, hasMailbox: false, hasDelete: false },
-      { profile: "writes", toolCount: 73, hasMailbox: false, hasDelete: false },
-      { profile: "writes-mailbox", toolCount: 80, hasMailbox: true, hasDelete: false },
-      { profile: "writes-mailbox-delete", toolCount: 88, hasMailbox: true, hasDelete: true },
+      { profile: "read-only", toolCount: 46, hasMailbox: false, hasMailboxLink: false, hasDelete: false },
+      { profile: "mailbox-read-only", toolCount: 52, hasMailbox: true, hasMailboxLink: false, hasDelete: false },
+      { profile: "writes", toolCount: 73, hasMailbox: false, hasMailboxLink: false, hasDelete: false },
+      { profile: "writes-mailbox", toolCount: 80, hasMailbox: true, hasMailboxLink: true, hasDelete: false },
+      { profile: "writes-mailbox-delete", toolCount: 88, hasMailbox: true, hasMailboxLink: true, hasDelete: true },
     ]);
   } finally {
     rmSync(workRoot, { recursive: true, force: true });
@@ -61,6 +62,10 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 const profiles = [
   ["read-only", { PIPEDRIVE_ENABLE_WRITES: "false" }],
+  ["mailbox-read-only", {
+    PIPEDRIVE_ENABLE_WRITES: "false",
+    PIPEDRIVE_ENABLE_MAILBOX_TOOLS: "true",
+  }],
   ["writes", { PIPEDRIVE_ENABLE_WRITES: "true" }],
   ["writes-mailbox", {
     PIPEDRIVE_ENABLE_WRITES: "true",
@@ -93,6 +98,7 @@ for (const [profile, flags] of profiles) {
     profile,
     toolCount: tools.length,
     hasMailbox: tools.includes("pipedrive_mailbox_probe"),
+    hasMailboxLink: tools.includes("pipedrive_link_mail_thread"),
     hasDelete: tools.includes("pipedrive_delete_deal"),
   });
   await client.close();
