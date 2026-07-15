@@ -6,9 +6,10 @@ not a complete Pipedrive API contract.
 ## Scope
 
 - Evidence source: mocked stdio tests and prior controlled Pipedrive validation.
-- Coverage limit: product line items, pagination, rate-limit behavior, Mailbox
-  draft/send/reply, file upload/download, reports, automations, webhooks, OAuth
-  refresh flows, and remote hosting remain outside this mapping note.
+- Coverage limit: product line items, pagination, Mailbox draft/send/reply,
+  file upload/download, reports, automations, and webhooks remain outside this
+  mapping note. Bounded read retries and remote OAuth refresh are implemented
+  but are operational behavior rather than endpoint mappings.
 - Safety: customer CRM payloads should not be copied into tests or docs.
 
 ## Person Email And Phone
@@ -32,10 +33,10 @@ payloads:
 
 ## Mailbox v1
 
-The MCP exposes Pipedrive Mailbox as a read/link surface only when writes and
-Mailbox tools are both enabled. It does not create drafts, send email, or reply
-to email because the documented Mailbox API does not provide a reliable endpoint
-for those operations.
+The MCP exposes Pipedrive Mailbox reads when Mailbox is enabled. Linking a mail
+thread additionally requires writes. It does not create drafts, send email, or
+reply to email because the documented Mailbox API does not provide a reliable
+endpoint for those operations.
 
 Current tool mapping:
 
@@ -56,8 +57,8 @@ Current tool mapping:
 Mailbox reads may return sensitive email metadata or body content. Body reads
 require `include_body=true`; the default is `false`. Some Pipedrive accounts may
 require `PIPEDRIVE_ACCESS_TOKEN` with Mailbox scopes instead of an API token.
-This MCP accepts externally supplied OAuth tokens but does not obtain or refresh
-them.
+The local server accepts externally supplied OAuth tokens. The remote Worker
+obtains and refreshes one encrypted tenant OAuth grant.
 
 ## Activity Person Links
 

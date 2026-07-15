@@ -1,8 +1,9 @@
 # Pipedrive MCP Claude Plugin
 
-This plugin adds Pipedrive CRM skills to Claude. It must be installed together
-with the Pipedrive MCP Desktop Extension, which provides the local Pipedrive
-connector and the settings screen for the Pipedrive domain and API token.
+This plugin adds Pipedrive CRM skills to Claude. Pair it with either the local
+Pipedrive MCP Desktop Extension or the deployed remote MCP connector. The local
+extension owns its credential settings; the remote connector uses Cloudflare
+Access and per-user permission settings.
 
 Start here:
 
@@ -21,9 +22,10 @@ Start here:
 Install and test in Claude Desktop chat. The `.mcpb` extension uses Claude
 Desktop's integrated Node.js runtime; a separate Node.js install is not needed.
 
-This local package is not available in Cowork. Anthropic's current
-documentation says local servers from `claude_desktop_config.json` are not
-available there. A remote MCP connector is required for that surface.
+The local package is not available in Cowork. Use the version `0.2.0` remote
+connector there: add the admin-provided `/mcp` URL, complete Cloudflare Access
+login, and use `/settings` to manage only your own capabilities. No Pipedrive
+token is entered by the user.
 
 Do not use Claude's official Pipedrive connector for this workflow. Use only
 the `pipedrive_*` tools provided by Pipedrive MCP; the official connector's

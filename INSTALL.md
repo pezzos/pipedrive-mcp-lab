@@ -1,7 +1,8 @@
 # Installing Pipedrive MCP in Claude Desktop
 
-This guide is for a non-technical user. Install and test in Claude Desktop
-chat. This local package is not available in Cowork.
+This guide is for a non-technical user. For Claude Desktop-only local use,
+follow the extension steps below. For Cowork, web, mobile, or the managed
+client setup, use the remote connector instructions at the end.
 
 ## Before You Start
 
@@ -133,14 +134,21 @@ Expected result:
 If this test fails, check the extension settings and the extension logs in
 Claude Desktop. Do not install Node.js as a workaround.
 
-## Cowork Availability
+## Remote Connector For Cowork, Web, And Mobile
 
-This local Desktop Extension is not available in Cowork. A legacy managed
-`claude_desktop_config.json` entry from version `0.1.6` or earlier is not
-available there either. Anthropic's
-current documentation states that local Desktop-configured MCP servers are not
-available in Cowork or `claude.ai`. A separately hosted remote MCP connector is
-required for reliable Cowork, web, and mobile access.
+The administrator supplies one URL ending in `/mcp`. Add it as a custom remote
+connector in Claude, then complete the Cloudflare Access login. Do not enter a
+Pipedrive token: the administrator connects the shared Pipedrive account once,
+and the service refreshes its OAuth access automatically.
+
+New users start read-only. Open the companion URL ending in `/settings` to
+enable only your own Writes, Deletes, or Mailbox permissions. Real writes still
+require `dry_run=false`; the model cannot change these settings.
+
+No routine action is required after connection. Claude asks for a new login if
+the configured Access grant expires or is revoked. If Pipedrive revokes its
+grant, the administrator reconnects it. The local Desktop Extension and any
+legacy `claude_desktop_config.json` entry remain unavailable in Cowork.
 
 These platform statements were checked on 2026-07-15 against Anthropic's
 [local MCP server guide](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop),

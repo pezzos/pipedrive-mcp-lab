@@ -50,6 +50,8 @@ test("staged Claude plugin artifact is isolated and read-only by default", { tim
   assert.equal(existsSync(join(artifactRoot, "dist", "plugin-server.js")), false);
   assert.equal(existsSync(join(artifactRoot, "INSTALL.md")), true);
   assert.equal(existsSync(join(artifactRoot, "INSTALL.fr.md")), true);
+  assert.equal(existsSync(join(artifactRoot, "docs", "CLAUDE_DELIVERY.md")), true);
+  assert.equal(existsSync(join(artifactRoot, "docs", "REMOTE_MCP_CLOUDFLARE.md")), true);
   const artifactReadme = readFileSync(join(artifactRoot, "README.md"), "utf8");
   assert.match(artifactReadme, /English installation guide/);
   assert.match(artifactReadme, /pipedrive-mcp-latest\.mcpb/);
@@ -306,6 +308,15 @@ function assertCleanArtifact(root: string) {
       false,
       `artifact must not include secret-like files outside docs: ${relative}`,
     );
+    const content = readFileSync(file, "utf8");
+    for (const pattern of [
+      /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,
+      /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/,
+      /cf-access-jwt-assertion\s*:\s*\S+/i,
+      /^\s*(?:PIPEDRIVE_OAUTH_CLIENT_SECRET|PIPEDRIVE_OAUTH_ENCRYPTION_KEY|AUDIT_HMAC_KEY)\s*=\s*\S+/m,
+    ]) {
+      assert.equal(pattern.test(content), false, `artifact must not include sensitive content: ${relative}`);
+    }
   }
 }
 

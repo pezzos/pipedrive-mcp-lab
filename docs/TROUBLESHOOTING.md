@@ -63,9 +63,9 @@ make sure writes are enabled in the server environment.
 
 ## Mailbox Access Fails
 
-Some Pipedrive accounts require OAuth scopes for Mailbox endpoints. Try an
-externally supplied `PIPEDRIVE_ACCESS_TOKEN`. This MCP does not perform OAuth
-login or refresh.
+Some Pipedrive accounts require OAuth scopes for Mailbox endpoints. The local
+server accepts an externally supplied `PIPEDRIVE_ACCESS_TOKEN`; the remote
+Worker obtains and refreshes OAuth after the admin connects Pipedrive.
 
 Use `pipedrive_mailbox_probe` before reading thread or message content.
 
@@ -141,16 +141,41 @@ server in Claude Code.
 
 ## Pipedrive Tools Are Missing In Cowork
 
-This is expected for the local package. Anthropic's current documentation says
-servers configured locally in `claude_desktop_config.json` are not available in
-Cowork or `claude.ai`. Restarting Claude Desktop or installing Node.js does not
-turn the local extension into a remote connector. Reliable Cowork, web, and
-mobile availability requires a separately hosted remote MCP connector.
+The local `.mcpb` is unavailable in Cowork and `claude.ai`. Connect the deployed
+remote URL ending in `/mcp`; restarting Claude Desktop or installing Node.js
+cannot turn the local extension into a remote connector. If the remote
+connector is already present, complete the Cloudflare Access login and verify
+that the user is allowed by the Access policy.
 
 This platform behavior was checked on 2026-07-15 against Anthropic's
 [local MCP server guide](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop),
 [remote MCP connector guide](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp), and
 [desktop versus web connector guide](https://support.claude.com/en/articles/11725091-when-to-use-desktop-and-web-connectors).
+
+## Remote Connector Errors
+
+- `access_denied` or `access_configuration_invalid`: verify Worker variables,
+  Access policy, issuer, and audience.
+- `access_token_missing` or `access_token_invalid`: reconnect the Claude
+  connector and verify that the user remains allowed by Access.
+- `access_jwks_unavailable` or `access_jwks_invalid`: check Access availability
+  and its certificate endpoint; do not bypass JWT validation.
+- `policy_unavailable`: verify the `USER_POLICY` Durable Object binding. Do not
+  bypass the policy or enable tools globally.
+- `pipedrive_not_connected`: the named admin visits
+  `/admin/pipedrive/connect` and completes Pipedrive consent.
+- `pipedrive_reconnect_required`: the Pipedrive grant was revoked or could not
+  be refreshed; the named admin reconnects it.
+- `oauth_material_invalid`: reconnect Pipedrive after encryption-key rotation
+  or unreadable stored OAuth material.
+- `pipedrive_oauth_failed` or `pipedrive_credential_unavailable`: check
+  Pipedrive OAuth availability and Worker errors, then reconnect only if the
+  grant is no longer usable.
+
+Start with `/healthz`. A healthy response proves that the Worker route is
+running, not that Access, Durable Objects, or Pipedrive are correctly
+configured. Use request IDs and pseudonymous actor IDs for correlation; never
+copy JWTs, OAuth tokens, encryption keys, or CRM payloads into logs or tickets.
 
 ## An Old Pipedrive Server Still Shows As Disconnected
 

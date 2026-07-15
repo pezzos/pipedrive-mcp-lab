@@ -1,9 +1,10 @@
-import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
 import { basename, join } from "node:path";
 
 const repoRoot = process.cwd();
 const pluginSourceRoot = join(repoRoot, "plugin", "claude");
 const artifactRoot = join(repoRoot, "dist", "claude-plugin", "pipedrive-mcp");
+const bundledDocs = ["CLAUDE_DELIVERY.md", "REMOTE_MCP_CLOUDFLARE.md"];
 
 const requiredInputs = [
   join(pluginSourceRoot, ".claude-plugin"),
@@ -12,6 +13,7 @@ const requiredInputs = [
   join(repoRoot, "INSTALL.md"),
   join(repoRoot, "INSTALL.fr.md"),
   join(repoRoot, "LICENSE"),
+  ...bundledDocs.map((docName) => join(repoRoot, "docs", docName)),
 ];
 
 for (const input of requiredInputs) {
@@ -30,9 +32,8 @@ copy(join(repoRoot, "INSTALL.md"), join(artifactRoot, "INSTALL.md"));
 copy(join(repoRoot, "INSTALL.fr.md"), join(artifactRoot, "INSTALL.fr.md"));
 copy(join(repoRoot, "LICENSE"), join(artifactRoot, "LICENSE"));
 
-const pluginDocs = join(repoRoot, "docs", "CLAUDE_DELIVERY.md");
-if (existsSync(pluginDocs)) {
-  copy(pluginDocs, join(artifactRoot, "docs", "CLAUDE_DELIVERY.md"));
+for (const docName of bundledDocs) {
+  copy(join(repoRoot, "docs", docName), join(artifactRoot, "docs", docName));
 }
 
 assertCleanArtifact(artifactRoot);
@@ -85,6 +86,25 @@ function assertCleanArtifact(root) {
     }
     if (/secret|token|credential/i.test(name) && !relative.startsWith("docs/")) {
       throw new Error(`Suspicious secret-like file in Claude plugin artifact: ${relative}`);
+    }
+    assertNoSensitiveContent(file, relative);
+  }
+}
+
+function assertNoSensitiveContent(file, relative) {
+  const content = readFileSync(file, "utf8");
+  const forbiddenPatterns = [
+    ["private key", /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/],
+    ["JWT", /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/],
+    ["Access assertion", /cf-access-jwt-assertion\s*:\s*\S+/i],
+    [
+      "configured remote secret",
+      /^\s*(?:PIPEDRIVE_OAUTH_CLIENT_SECRET|PIPEDRIVE_OAUTH_ENCRYPTION_KEY|AUDIT_HMAC_KEY)\s*=\s*\S+/m,
+    ],
+  ];
+  for (const [label, pattern] of forbiddenPatterns) {
+    if (pattern.test(content)) {
+      throw new Error(`Suspicious ${label} content in Claude plugin artifact: ${relative}`);
     }
   }
 }

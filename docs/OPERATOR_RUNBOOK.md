@@ -1,6 +1,8 @@
 # Operator Runbook
 
 This runbook covers local and private-client operation of `pipedrive-mcp`.
+For the Cloudflare Worker, Access, and Pipedrive OAuth procedure, use the
+[remote MCP runbook](REMOTE_MCP_CLOUDFLARE.md).
 
 ## Install And Build
 
@@ -70,17 +72,18 @@ Delete calls still default to `dry_run=true`.
 
 ## Mailbox
 
-Mailbox tools are hidden unless both flags are enabled because mailbox linking
-is a write operation and mailbox reads can expose sensitive email metadata:
+Mailbox read tools are hidden unless the Mailbox flag is enabled. Linking a
+thread additionally requires writes because it changes Pipedrive:
 
 ```sh
-PIPEDRIVE_ENABLE_WRITES=true
 PIPEDRIVE_ENABLE_MAILBOX_TOOLS=true
 ```
 
-Some accounts may require OAuth scopes for Mailbox. Provide
-`PIPEDRIVE_ACCESS_TOKEN` when API-token access is rejected. This MCP does not
-perform OAuth authorization or token refresh.
+Add `PIPEDRIVE_ENABLE_WRITES=true` only when mail linking is required.
+
+Some accounts may require OAuth scopes for Mailbox. The local server accepts an
+externally supplied `PIPEDRIVE_ACCESS_TOKEN`; the remote Worker obtains and
+refreshes the tenant OAuth grant.
 
 Mailbox draft creation, sending, and replies are not supported by this MCP
 version. To create an email to-do, use `pipedrive_create_activity` with
@@ -112,6 +115,12 @@ its integrated Node.js runtime for this extension. Version `0.1.7` removes the
 legacy `claude_desktop_config.json` bridge because Desktop does not need it and
 Cowork cannot consume it. Upgrades preserve any old client configuration; use
 the troubleshooting procedure to review a stale marked entry.
+
+For Cowork, web, and mobile delivery, deploy the remote Worker and provide its
+`/mcp` URL instead of the `.mcpb`. Users authenticate through Cloudflare Access
+and manage only their own permissions at `/settings`; the admin completes
+Pipedrive OAuth once. The local and remote delivery paths share the same tools
+and safety defaults but do not share credential storage.
 
 The source server, MCPB manifest, skills, and marketplace now live in this one
 canonical repository. The existing `pipedrive-mcp-claude-plugin` repository is
@@ -177,6 +186,7 @@ Required local validation:
 
 ```sh
 npm run check
+npm run benchmark:server
 npm run pack:claude-plugin
 npm run prepare:claude-plugin-release
 claude plugin validate .

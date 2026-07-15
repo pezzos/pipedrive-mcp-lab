@@ -105,9 +105,9 @@ async function handleRemoteMcp(
   const policy = await getUserPolicy(env, identity.sub);
   const credential = await getTenantCredential(env);
   const pipedriveConfig: PipedriveConfig = {
-    accessToken: credential?.accessCredential,
-    baseUrl: credential?.apiDomain ?? "",
-    baseUrlSource: credential ? "explicit" : "missing",
+    accessToken: credential.accessCredential,
+    baseUrl: credential.apiDomain,
+    baseUrlSource: "explicit",
     allowMockBaseUrl: false,
     enableWrites: policy.writes,
     enableDeleteTools: policy.deletes,
@@ -305,11 +305,8 @@ async function handlePipedriveCallback(
   return html("<h1>Pipedrive est connecté</h1><p>Le serveur peut maintenant renouveler l’accès automatiquement.</p>");
 }
 
-async function getTenantCredential(env: RemoteEnv): Promise<TenantCredential | undefined> {
+async function getTenantCredential(env: RemoteEnv): Promise<TenantCredential> {
   const response = await tenantSecretsStub(env).fetch("https://tenant.internal/credential");
-  if (response.status === 404) {
-    return undefined;
-  }
   if (!response.ok) {
     let code = "pipedrive_credential_unavailable";
     try {

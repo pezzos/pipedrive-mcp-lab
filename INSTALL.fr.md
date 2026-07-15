@@ -1,7 +1,9 @@
 # Installation de Pipedrive MCP dans Claude Desktop
 
-Ce guide est destiné à un utilisateur non technique. Installez et testez dans
-le chat Claude Desktop. Ce paquet local n'est pas disponible dans Cowork.
+Ce guide est destiné à un utilisateur non technique. Pour un usage local limité
+à Claude Desktop, suivre les étapes de l'extension ci-dessous. Pour Cowork, le
+web, le mobile ou l'installation gérée du client, utiliser les instructions du
+connecteur distant à la fin.
 
 ## Avant de commencer
 
@@ -138,14 +140,24 @@ Résultat attendu :
 Si ce test échoue, vérifier les réglages et les logs de l'extension dans Claude
 Desktop. Ne pas installer Node.js comme contournement.
 
-## Disponibilité dans Cowork
+## Connecteur distant pour Cowork, le web et le mobile
 
-Cette extension Desktop locale n'est pas disponible dans Cowork. Une ancienne
-entrée gérée dans `claude_desktop_config.json`, créée par la version `0.1.6` ou
-antérieure, n'y est pas disponible non plus. La documentation Anthropic actuelle indique que les serveurs MCP
-locaux configurés dans Claude Desktop ne sont pas disponibles dans Cowork ni
-sur `claude.ai`. Un connecteur MCP distant hébergé séparément est nécessaire
-pour une disponibilité fiable dans Cowork, sur le web et sur mobile.
+L'administrateur fournit une URL se terminant par `/mcp`. L'ajouter comme
+connecteur distant personnalisé dans Claude, puis terminer la connexion
+Cloudflare Access. Ne pas saisir de token Pipedrive : l'administrateur connecte
+une fois le compte Pipedrive partagé et le service renouvelle ensuite l'accès
+OAuth automatiquement.
+
+Tout nouvel utilisateur commence en lecture seule. Ouvrir l'URL associée se
+terminant par `/settings` pour activer uniquement ses propres autorisations
+Écritures, Suppressions ou Mailbox. Une écriture réelle exige toujours
+`dry_run=false` ; le modèle ne peut pas modifier ces réglages.
+
+Aucune action récurrente n'est nécessaire après la connexion. Claude redemande
+une identification si la session Access configurée expire ou est révoquée. Si
+Pipedrive révoque son autorisation, l'administrateur le reconnecte. L'extension
+Desktop locale et toute ancienne entrée `claude_desktop_config.json` restent
+indisponibles dans Cowork.
 
 Ces informations ont été vérifiées le 15 juillet 2026 dans le
 [guide des serveurs MCP locaux](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop), le

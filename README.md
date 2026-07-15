@@ -1,8 +1,8 @@
 # Pipedrive MCP
 
-Local Model Context Protocol server for Pipedrive CRM operations. It exposes
-read tools by default and can expose write, Mailbox, and delete tools through
-explicit environment flags.
+Model Context Protocol server for Pipedrive CRM operations, delivered either as
+a local Claude Desktop Extension or as a remote Cloudflare Worker. It exposes
+read tools by default and gates writes, Mailbox, and deletes explicitly.
 
 For client installation in Claude Desktop, start with
 [INSTALL.md](INSTALL.md). A French version is available in
@@ -24,9 +24,10 @@ For client installation in Claude Desktop, start with
   or lead. These are activities, not Mailbox drafts.
 - Dry-run support on write tools through `dry_run=true`, which is the default.
 
-Mailbox draft creation, email sending, OAuth refresh, file upload/download,
-reports, automations, webhooks, and remote hosting are not implemented in this
-version.
+The remote Worker performs Pipedrive OAuth login and refresh. The local server
+continues to accept an externally supplied token. Mailbox draft creation, email
+sending, file upload/download, reports, automations, and webhooks are not
+implemented.
 
 ## Quick Start
 
@@ -40,7 +41,8 @@ npm run pack:claude-plugin
 claude plugin validate dist/claude-plugin/pipedrive-mcp
 ```
 
-See [Claude delivery](docs/CLAUDE_DELIVERY.md).
+See [Claude delivery](docs/CLAUDE_DELIVERY.md). For Cowork, web, mobile, or a
+managed client rollout, use the [Cloudflare remote MCP guide](docs/REMOTE_MCP_CLOUDFLARE.md).
 
 For a plain MCP host or repository checkout:
 
@@ -93,9 +95,9 @@ The Desktop Extension now runs directly without copying credentials into
 managed entry there; see [Troubleshooting](docs/TROUBLESHOOTING.md) if an old
 duplicate still appears as disconnected. Anthropic's current documentation
 says locally configured Desktop MCP servers are not available in Cowork or
-`claude.ai`. Reliable Cowork support therefore requires a remote MCP connector,
-which is not implemented in this version. Do not install Node.js as a Cowork
-workaround, and do not rely on a client-managed `.env` file.
+`claude.ai`. Version `0.2.0` adds the remote Cloudflare Worker for those
+surfaces. Do not install Node.js as a Cowork workaround, and do not rely on a
+client-managed `.env` file.
 
 ## Runtime Configuration
 
@@ -106,7 +108,7 @@ workaround, and do not rely on a client-managed `.env` file.
 | `PIPEDRIVE_API_TOKEN` | unset | Pipedrive API token sent as `x-api-token`. |
 | `PIPEDRIVE_ACCESS_TOKEN` | unset | OAuth bearer token. Takes precedence over API token. |
 | `PIPEDRIVE_ENABLE_WRITES` | `false` | Registers CRM write tools when `true`. |
-| `PIPEDRIVE_ENABLE_MAILBOX_TOOLS` | `false` | Registers Mailbox tools when writes are also enabled. |
+| `PIPEDRIVE_ENABLE_MAILBOX_TOOLS` | `false` | Registers Mailbox read tools. Mail linking additionally requires writes. |
 | `PIPEDRIVE_ENABLE_DELETE_TOOLS` | `false` | Registers delete tools when writes are also enabled. |
 | `PIPEDRIVE_LOAD_DOTENV` | `true` | Loads local `.env`; set `false` for controlled host environments. |
 | `PIPEDRIVE_REQUEST_TIMEOUT_MS` | `10000` | Fetch timeout for Pipedrive API calls. |
@@ -181,7 +183,8 @@ Restart Claude Desktop after editing the file.
   them into `claude_desktop_config.json`; see [Claude delivery](docs/CLAUDE_DELIVERY.md).
 
 See [Operator Runbook](docs/OPERATOR_RUNBOOK.md), [Client Examples](docs/MCP_CLIENT_EXAMPLES.md),
-[Troubleshooting](docs/TROUBLESHOOTING.md), and [API Mapping Notes](docs/API_MAPPING.md).
+[Troubleshooting](docs/TROUBLESHOOTING.md), [Remote MCP](docs/REMOTE_MCP_CLOUDFLARE.md),
+and [API Mapping Notes](docs/API_MAPPING.md).
 
 Platform statements were checked on 2026-07-15 against Anthropic's
 [local MCP server guide](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop),

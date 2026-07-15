@@ -8,6 +8,19 @@ import worker from "../src/remote/worker.js";
 const issuer = "https://team.cloudflareaccess.com";
 const audience = "worker-audience";
 
+test("Worker exposes healthz before Access or Pipedrive connection", async () => {
+  const response = await worker.fetch(
+    new Request("https://mcp.example.test/healthz"),
+    remoteEnv(failingNamespace()),
+    executionContext().value,
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(await response.json(), {
+    status: "ok",
+    transport: "streamable-http",
+  });
+});
+
 test("Worker audits and rejects a request without an Access assertion", async () => {
   const logs: string[] = [];
   const originalLog = console.log;
@@ -124,7 +137,7 @@ test("Worker maps a policy Durable Object failure to a JSON-RPC response", async
   });
 });
 
-test("Worker audits a real-write attempt blocked by the user's policy", async () => {
+test("Worker fails fast when the admin has not connected Pipedrive", async () => {
   const fixture = await accessFixture("user@example.com");
   const policyNamespace = namespaceFor(async () =>
     Response.json({
@@ -137,6 +150,44 @@ test("Worker audits a real-write attempt blocked by the user's policy", async ()
   );
   const tenantNamespace = namespaceFor(async () =>
     Response.json({ code: "pipedrive_not_connected" }, { status: 404 }),
+  );
+  await withJwks(fixture.jwk, async () => {
+    const response = await worker.fetch(
+      authorizedRequest("https://mcp.example.test/mcp", fixture.assertion, {
+        method: "POST",
+        headers: {
+          accept: "application/json, text/event-stream",
+          "content-type": "application/json",
+          "mcp-protocol-version": "2025-06-18",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+      }),
+      remoteEnv(policyNamespace, tenantNamespace),
+      executionContext().value,
+    );
+    assert.equal(response.status, 503);
+    const payload = await response.json() as { error: { data: { code: string } } };
+    assert.equal(payload.error.data.code, "pipedrive_not_connected");
+  });
+});
+
+test("Worker audits a real-write attempt blocked by the user's policy", async () => {
+  const fixture = await accessFixture("user@example.com");
+  const policyNamespace = namespaceFor(async () =>
+    Response.json({
+      writes: false,
+      deletes: false,
+      mailbox: false,
+      revision: 0,
+      updatedAt: "1970-01-01T00:00:00.000Z",
+    }),
+  );
+  const tenantNamespace = namespaceFor(async () =>
+    Response.json({
+      accessCredential: "oauth-access-fixture",
+      apiDomain: "https://acme.pipedrive.com",
+      expiresAtMs: Date.now() + 60_000,
+    }),
   );
   const logs: string[] = [];
   const originalLog = console.log;
