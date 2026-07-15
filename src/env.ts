@@ -20,6 +20,7 @@ type RuntimeEnvDiagnostics = {
   dotenvLoadingEnabled: boolean;
   dotenvLocalFilePresent: boolean;
   dotenvLoaded: boolean;
+  dotenvLoadFailed: boolean;
   preexisting: Record<keyof typeof runtimeEnvKeys, boolean>;
   current: Record<keyof typeof runtimeEnvKeys, boolean>;
 };
@@ -29,6 +30,7 @@ let diagnostics: RuntimeEnvDiagnostics = {
   dotenvLoadingEnabled: process.env.PIPEDRIVE_LOAD_DOTENV?.toLowerCase() !== "false",
   dotenvLocalFilePresent: false,
   dotenvLoaded: false,
+  dotenvLoadFailed: false,
   preexisting: hasRuntimeEnvKeys(process.env),
   current: hasRuntimeEnvKeys(process.env),
 };
@@ -43,6 +45,7 @@ export function loadRuntimeEnv(options: RuntimeEnvOptions = {}): void {
     dotenvLoadingEnabled,
     dotenvLocalFilePresent: false,
     dotenvLoaded: false,
+    dotenvLoadFailed: false,
     preexisting,
     current: hasRuntimeEnvKeys(env),
   };
@@ -70,7 +73,12 @@ export function loadRuntimeEnv(options: RuntimeEnvOptions = {}): void {
     processEnv: env,
   });
   if (result.error) {
-    throw new Error(`Failed to load runtime .env file: ${formatError(result.error)}`);
+    diagnostics = {
+      ...diagnostics,
+      dotenvLoadFailed: true,
+      current: hasRuntimeEnvKeys(env),
+    };
+    return;
   }
   diagnostics = {
     ...diagnostics,
@@ -89,10 +97,6 @@ export function getRuntimeEnvDiagnostics(): RuntimeEnvDiagnostics {
 
 function defaultPackageDir(): string {
   return dirname(dirname(fileURLToPath(import.meta.url)));
-}
-
-function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 function hasRuntimeEnvKeys(env: NodeJS.ProcessEnv): Record<keyof typeof runtimeEnvKeys, boolean> {

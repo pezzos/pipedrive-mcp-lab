@@ -30,8 +30,8 @@ version.
 
 ## Quick Start
 
-For Claude Cowork or Claude Code plugin delivery, build the skills plugin
-artifact:
+For Claude plugin delivery or local Claude Code pilot testing of the skills,
+build the skills plugin artifact:
 
 ```sh
 npm install
@@ -40,7 +40,7 @@ npm run pack:claude-plugin
 claude plugin validate dist/claude-plugin/pipedrive-mcp
 ```
 
-See [Claude Cowork Plugin](docs/CLAUDE_COWORK_PLUGIN.md).
+See [Claude delivery](docs/CLAUDE_DELIVERY.md).
 
 For a plain MCP host or repository checkout:
 
@@ -78,19 +78,24 @@ Build the server first, then configure the MCP host to run either
 Claude Desktop examples are below; additional profiles are in
 [MCP client examples](docs/MCP_CLIENT_EXAMPLES.md).
 
-The Claude plugin path is separate from the plain MCP host path. Plugin source
-files live under `plugin/claude/`, and the staged plugin lives under
-`dist/claude-plugin/pipedrive-mcp/`. The repository plugin contains Cowork
-skills only. Install the `.mcpb` Desktop Extension for the editable connector
+This repository is the canonical source for the server, Desktop Extension, and
+Claude plugin. Plugin source files live under `plugin/claude/`, the monorepo
+marketplace is declared in `.claude-plugin/marketplace.json`, and staged output
+lives under `dist/`. The repository plugin contains skills only. Install the
+`.mcpb` Desktop Extension for the editable connector
 settings UI where users enter `company_domain`, API/OAuth token, write flags,
 and timeout. Claude Desktop chat can use the Desktop Extension directly and
 does not require a separate Node.js install because Claude Desktop includes an
-integrated Node.js runtime for extension MCP servers. After those settings are
-saved, the extension also synchronizes a managed `pipedrive` MCP entry into
-Claude Desktop config so Cowork can discover the `pipedrive_*` tools. That
-managed Cowork discovery path launches the bundled server with `node`; if
-Cowork cannot see the tools after a restart, install Node.js LTS from
-nodejs.org and test again. Do not rely on a client-managed `.env` file.
+integrated Node.js runtime for extension MCP servers.
+
+The Desktop Extension now runs directly without copying credentials into
+`claude_desktop_config.json`. Versions through `0.1.6` could create a legacy
+managed entry there; see [Troubleshooting](docs/TROUBLESHOOTING.md) if an old
+duplicate still appears as disconnected. Anthropic's current documentation
+says locally configured Desktop MCP servers are not available in Cowork or
+`claude.ai`. Reliable Cowork support therefore requires a remote MCP connector,
+which is not implemented in this version. Do not install Node.js as a Cowork
+workaround, and do not rely on a client-managed `.env` file.
 
 ## Runtime Configuration
 
@@ -170,6 +175,13 @@ Restart Claude Desktop after editing the file.
 - `validate_links=true` reads linked records before sending a write.
 - API tokens are sent in headers, not URLs, and token-like values are redacted
   from handled API errors.
+- The current extension keeps credentials in its settings and no longer copies
+  them into `claude_desktop_config.json`; see [Claude delivery](docs/CLAUDE_DELIVERY.md).
 
 See [Operator Runbook](docs/OPERATOR_RUNBOOK.md), [Client Examples](docs/MCP_CLIENT_EXAMPLES.md),
 [Troubleshooting](docs/TROUBLESHOOTING.md), and [API Mapping Notes](docs/API_MAPPING.md).
+
+Platform statements were checked on 2026-07-15 against Anthropic's
+[local MCP server guide](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop),
+[remote MCP connector guide](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp), and
+[desktop versus web connector guide](https://support.claude.com/en/articles/11725091-when-to-use-desktop-and-web-connectors).

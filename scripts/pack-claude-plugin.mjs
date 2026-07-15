@@ -30,9 +30,9 @@ copy(join(repoRoot, "INSTALL.md"), join(artifactRoot, "INSTALL.md"));
 copy(join(repoRoot, "INSTALL.fr.md"), join(artifactRoot, "INSTALL.fr.md"));
 copy(join(repoRoot, "LICENSE"), join(artifactRoot, "LICENSE"));
 
-const pluginDocs = join(repoRoot, "docs", "CLAUDE_COWORK_PLUGIN.md");
+const pluginDocs = join(repoRoot, "docs", "CLAUDE_DELIVERY.md");
 if (existsSync(pluginDocs)) {
-  copy(pluginDocs, join(artifactRoot, "docs", "CLAUDE_COWORK_PLUGIN.md"));
+  copy(pluginDocs, join(artifactRoot, "docs", "CLAUDE_DELIVERY.md"));
 }
 
 assertCleanArtifact(artifactRoot);

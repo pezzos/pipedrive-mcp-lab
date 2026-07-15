@@ -12,7 +12,7 @@ npm run build
 
 Use `node dist/server.js` as the MCP command.
 
-For Claude Cowork or Claude Code plugin delivery:
+For Claude plugin or Claude Code skills delivery:
 
 ```sh
 npm run pack:claude-plugin
@@ -43,7 +43,8 @@ Operational flags:
   mocked tests.
 
 Only the local `.env` next to the package is loaded. Parent `.env` files are
-ignored.
+ignored. An unreadable optional `.env` no longer prevents MCP startup;
+`pipedrive_health_check` reports `dotenv_load_failed=true` for diagnosis.
 
 ## Write Operation
 
@@ -100,42 +101,51 @@ validation prompts.
 
 ## Private Claude Plugin Delivery
 
-Use `npm run pack:claude-plugin` to stage a Cowork/Claude Code skills plugin.
+Use `npm run pack:claude-plugin` to stage the skills plugin.
 Routine delivery should use a private plugin repository or private Claude plugin
 marketplace. Use `claude --plugin-dir` only for local pilot testing.
 
-The Claude repository plugin contains skills only. The editable connector is the
-Pipedrive MCP Desktop Extension (`.mcpb`), where users configure
-`company_domain`, API/OAuth token, write flags, and timeout. After the extension
-starts with complete credentials, it writes a managed `mcpServers.pipedrive`
-entry into Claude Desktop config for Cowork discovery. The plugin Connectors
-screen is read-only and must not be used as the credential entry point.
+The Claude repository plugin contains skills only. The editable connector is
+the Pipedrive MCP Desktop Extension (`.mcpb`), where users configure
+`company_domain`, API/OAuth token, write flags, and timeout. Claude Desktop uses
+its integrated Node.js runtime for this extension. Version `0.1.7` removes the
+legacy `claude_desktop_config.json` bridge because Desktop does not need it and
+Cowork cannot consume it. Upgrades preserve any old client configuration; use
+the troubleshooting procedure to review a stale marked entry.
 
-Before Cowork rollout, confirm custom plugins are allowed, users can install the
-`.mcpb` extension, users can edit extension settings after install, and local
-Claude Desktop MCP servers are available to Cowork tasks after a restart or new
-task.
+The source server, MCPB manifest, skills, and marketplace now live in this one
+canonical repository. The existing `pipedrive-mcp-claude-plugin` repository is
+kept as a generated compatibility distribution so installed client URLs do not
+change.
 
 Use the release script to publish the Desktop Extension and plugin repository.
 It builds and validates the local package, syncs the distribution repository,
 creates both a versioned `.mcpb` and `pipedrive-mcp-latest.mcpb`, then verifies
 published downloads after push.
 
-For a local dry run against a checked-out distribution repository:
+For local preparation, no second checkout is required:
 
 ```sh
-PIPEDRIVE_MCP_PLUGIN_REPO=/path/to/pipedrive-mcp-claude-plugin \
-  npm run prepare:claude-plugin-release
+npm run prepare:claude-plugin-release
 ```
+
+The complete distribution is generated under
+`dist/release/pipedrive-mcp-claude-plugin/`. An explicit existing checkout is
+still supported through `--distribution-repo` or
+`PIPEDRIVE_MCP_PLUGIN_REPO` for backward compatibility.
 
 For an actual publication:
 
 ```sh
-PIPEDRIVE_MCP_PLUGIN_REPO=/path/to/pipedrive-mcp-claude-plugin \
+PIPEDRIVE_MCP_PLUGIN_GIT_URL=https://github.com/pezzos/pipedrive-mcp-claude-plugin.git \
   npm run release:claude-plugin
 ```
 
-Do not hand-edit the distribution repository for ordinary releases.
+Publication clones the compatibility repository into a temporary directory,
+generates and validates the distribution, refuses to overwrite a released
+version with different content, commits only actual changes, pushes `main`, and
+verifies the published downloads. Do not hand-edit the distribution repository
+for ordinary releases.
 
 ## Upgrading From Lab Version
 
@@ -168,7 +178,8 @@ Required local validation:
 ```sh
 npm run check
 npm run pack:claude-plugin
-PIPEDRIVE_MCP_PLUGIN_REPO=/path/to/pipedrive-mcp-claude-plugin npm run prepare:claude-plugin-release
+npm run prepare:claude-plugin-release
+claude plugin validate .
 claude plugin validate dist/claude-plugin/pipedrive-mcp
 npm pack --dry-run
 ```
@@ -176,3 +187,10 @@ npm pack --dry-run
 Do not run live writes as part of ordinary validation. If live credentials are
 already configured, limit manual checks to read-only tools unless an operator
 explicitly approves a write test.
+
+Platform behavior was checked on 2026-07-15 against Anthropic's
+[local MCP server guide](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop),
+[remote MCP connector guide](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp),
+[connector surface guide](https://support.claude.com/en/articles/11725091-when-to-use-desktop-and-web-connectors).
+The monorepo marketplace layout was checked separately against Anthropic's
+[plugin marketplace documentation](https://code.claude.com/docs/en/plugin-marketplaces).

@@ -175,3 +175,144 @@ test("redacts generic secret markers from API error messages", async () => {
     return true;
   });
 });
+
+test("applies the request timeout while reading the response body", async () => {
+  const fetchMock = (async (_url: URL, init?: RequestInit) => {
+    const stream = new ReadableStream({
+      start(controller) {
+        init?.signal?.addEventListener("abort", () => controller.error(new DOMException("Aborted", "AbortError")));
+      },
+    });
+    return new Response(stream, { status: 200 });
+  }) as typeof fetch;
+  const client = new PipedriveClient(config({ requestTimeoutMs: 10 }), fetchMock);
+
+  await assert.rejects(() => client.get("/api/v2/deals"), /timed out/);
+});
+
+test("retries transient GET responses and transport failures", async () => {
+  let transientAttempts = 0;
+  const transientFetch = (async () => {
+    transientAttempts += 1;
+    if (transientAttempts === 1) {
+      return new Response(JSON.stringify({ error: "temporarily unavailable" }), { status: 503 });
+    }
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  }) as typeof fetch;
+  const transientClient = new PipedriveClient(config(), transientFetch);
+  assert.deepEqual(await transientClient.get("/api/v2/deals"), { success: true });
+  assert.equal(transientAttempts, 2);
+
+  let networkAttempts = 0;
+  const networkFetch = (async () => {
+    networkAttempts += 1;
+    if (networkAttempts === 1) {
+      throw new TypeError("temporary network failure");
+    }
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  }) as typeof fetch;
+  const networkClient = new PipedriveClient(config(), networkFetch);
+  assert.deepEqual(await networkClient.get("/api/v2/deals"), { success: true });
+  assert.equal(networkAttempts, 2);
+});
+
+test("honors a numeric Retry-After delay before retrying a GET", async () => {
+  let attempts = 0;
+  const fetchMock = (async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      return new Response(JSON.stringify({ error: "rate limited" }), {
+        status: 429,
+        headers: { "retry-after": "0.001" },
+      });
+    }
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  }) as typeof fetch;
+  const client = new PipedriveClient(config(), fetchMock);
+
+  assert.deepEqual(await client.get("/api/v2/deals"), { success: true });
+  assert.equal(attempts, 2);
+});
+
+test("does not retry before a Retry-After delay above the safe MCP wait", async () => {
+  let attempts = 0;
+  const fetchMock = (async () => {
+    attempts += 1;
+    return new Response(JSON.stringify({ error: "rate limited" }), {
+      status: 429,
+      headers: { "retry-after": "30" },
+    });
+  }) as typeof fetch;
+  const client = new PipedriveClient(config(), fetchMock);
+
+  await assert.rejects(() => client.get("/api/v2/deals"), /429/);
+  assert.equal(attempts, 1);
+});
+
+test("falls back to bounded backoff for an invalid Retry-After header", async () => {
+  let attempts = 0;
+  const fetchMock = (async () => {
+    attempts += 1;
+    if (attempts === 1) {
+      return new Response(JSON.stringify({ error: "rate limited" }), {
+        status: 429,
+        headers: { "retry-after": "not-a-delay" },
+      });
+    }
+    return new Response(JSON.stringify({ success: true }), { status: 200 });
+  }) as typeof fetch;
+  const client = new PipedriveClient(config(), fetchMock);
+
+  assert.deepEqual(await client.get("/api/v2/deals"), { success: true });
+  assert.equal(attempts, 2);
+});
+
+test("stops after three attempts for a persistently transient GET failure", async () => {
+  let attempts = 0;
+  const fetchMock = (async () => {
+    attempts += 1;
+    return new Response(JSON.stringify({ error: "temporarily unavailable" }), { status: 503 });
+  }) as typeof fetch;
+  const client = new PipedriveClient(config(), fetchMock);
+
+  await assert.rejects(() => client.get("/api/v2/deals"), /503/);
+  assert.equal(attempts, 3);
+});
+
+test("stops after three attempts for a persistent GET transport failure", async () => {
+  let attempts = 0;
+  const fetchMock = (async () => {
+    attempts += 1;
+    throw new TypeError("persistent network failure");
+  }) as typeof fetch;
+  const client = new PipedriveClient(config(), fetchMock);
+
+  await assert.rejects(() => client.get("/api/v2/deals"), /persistent network failure/);
+  assert.equal(attempts, 3);
+});
+
+test("does not retry write requests automatically", async () => {
+  let attempts = 0;
+  const fetchMock = (async () => {
+    attempts += 1;
+    return new Response(JSON.stringify({ error: "temporarily unavailable" }), { status: 503 });
+  }) as typeof fetch;
+  const client = new PipedriveClient(config(), fetchMock);
+
+  await assert.rejects(() => client.post("/api/v2/deals", { title: "Deal" }), /503/);
+  assert.equal(attempts, 1);
+});
+
+function config(overrides: Record<string, unknown> = {}) {
+  return {
+    apiToken: "test-token",
+    companyDomain: "acme",
+    baseUrl: "https://acme.pipedrive.com",
+    baseUrlSource: "company_domain" as const,
+    enableWrites: false,
+    enableDeleteTools: false,
+    enableMailboxTools: false,
+    requestTimeoutMs: 10000,
+    ...overrides,
+  };
+}

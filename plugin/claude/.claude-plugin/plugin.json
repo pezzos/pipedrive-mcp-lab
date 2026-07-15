@@ -2,8 +2,8 @@
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "pipedrive-mcp",
   "displayName": "Pipedrive MCP",
-  "version": "0.1.6",
-  "description": "Claude Cowork skills for the Pipedrive MCP Desktop Extension.",
+  "version": "0.1.7",
+  "description": "Claude skills for the Pipedrive MCP Desktop Extension.",
   "author": {
     "name": "PezzosLabs"
   },

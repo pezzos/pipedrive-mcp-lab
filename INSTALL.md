@@ -1,8 +1,7 @@
 # Installing Pipedrive MCP in Claude Desktop
 
-This guide is for a non-technical user. Install and test in Claude Desktop chat
-first. Then validate Claude Cowork if you want project workspaces and persistent
-working documents.
+This guide is for a non-technical user. Install and test in Claude Desktop
+chat. This local package is not available in Cowork.
 
 ## Before You Start
 
@@ -13,9 +12,8 @@ You need:
 - The company's Pipedrive domain.
   - Example: for `https://acme.pipedrive.com`, enter only `acme`.
 
-You normally do not need to install Node.js. Claude Desktop includes Node.js for
-Desktop Extensions. Install Node.js only if the Cowork test at the end cannot
-find the Pipedrive tools after a full Claude Desktop restart.
+You do not need to install Node.js. Claude Desktop includes the runtime used by
+Desktop Extensions.
 
 ## What You Will Install
 
@@ -26,6 +24,11 @@ There are two pieces:
   the settings screen where you enter the Pipedrive domain and API token.
 
 Both pieces are required.
+
+Do not use Claude's official Pipedrive connector for this workflow. The
+instructions and safety defaults here apply only to the custom `pipedrive_*`
+tools installed by this package, not to the official connector's different
+tools and behavior.
 
 ## 1. Install The Claude Plugin
 
@@ -99,8 +102,8 @@ To change these settings later:
 2. Open **Desktop app** > **Extensions**.
 3. Open the **Pipedrive MCP** extension settings.
 
-Do not configure this in the Claude Cowork plugin **Connectors** screen. That
-screen can be read-only. The editable settings are in the Desktop Extension.
+Do not configure this in a plugin **Connectors** screen. The editable settings
+are in the Desktop Extension.
 
 ## 4. Restart Claude Desktop
 
@@ -127,36 +130,19 @@ Expected result:
   Pipedrive API.
 - Write tools remain disabled while **Enable write tools** is disabled.
 
-If this test fails, check the extension settings before trying Cowork.
+If this test fails, check the extension settings and the extension logs in
+Claude Desktop. Do not install Node.js as a workaround.
 
-## 6. Validate In Claude Cowork
+## Cowork Availability
 
-Use Cowork after the Desktop chat test works.
+This local Desktop Extension is not available in Cowork. A legacy managed
+`claude_desktop_config.json` entry from version `0.1.6` or earlier is not
+available there either. Anthropic's
+current documentation states that local Desktop-configured MCP servers are not
+available in Cowork or `claude.ai`. A separately hosted remote MCP connector is
+required for reliable Cowork, web, and mobile access.
 
-1. Open a new Cowork task.
-2. Ask:
-
-   ```text
-   Validate Pipedrive MCP in Cowork without any write. First run pipedrive_health_check, then run pipedrive_get_current_user as a read-only API smoke test. Use only pipedrive_* tools.
-   ```
-
-3. If Claude asks permission to use a Pipedrive MCP tool, open the permission
-   menu and choose **Allow once** for the first test. Claude may ask once for
-   each tool.
-
-Expected result:
-
-- Claude shows the `pipedrive` connector or can use the `pipedrive_*` tools.
-- `pipedrive_health_check` says the Pipedrive domain and token are configured.
-- `pipedrive_get_current_user` confirms live API connectivity.
-- Write tools remain disabled while **Enable write tools** is disabled.
-
-If Cowork cannot find the tools:
-
-1. Fully quit Claude Desktop.
-2. Open Claude Desktop again.
-3. Start a new Cowork task and test again.
-4. If the tools are still unavailable, install Node.js LTS from
-   <https://nodejs.org>, restart Claude Desktop, and test again.
-
-Do not use Claude's official Pipedrive connector for this workflow.
+These platform statements were checked on 2026-07-15 against Anthropic's
+[local MCP server guide](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop),
+[remote MCP connector guide](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp), and
+[desktop versus web connector guide](https://support.claude.com/en/articles/11725091-when-to-use-desktop-and-web-connectors).

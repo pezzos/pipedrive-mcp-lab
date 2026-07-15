@@ -1,0 +1,19 @@
+{
+  "name": "pezzoslabs-pipedrive",
+  "description": "PezzosLabs plugins for Pipedrive workflows.",
+  "owner": {
+    "name": "PezzosLabs"
+  },
+  "plugins": [
+    {
+      "name": "pipedrive-mcp",
+      "source": "./plugin/claude",
+      "description": "Pipedrive skills for the Pipedrive MCP connector.",
+      "version": "0.1.7",
+      "author": {
+        "name": "PezzosLabs"
+      },
+      "license": "MIT"
+    }
+  ]
+}

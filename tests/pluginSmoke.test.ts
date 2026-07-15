@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import test from "node:test";
@@ -95,14 +95,159 @@ test("Claude plugin release script stages versioned and latest MCPB artifacts", 
 
     assert.equal(readMcpbManifest(versionedMcpb).version, packageVersion);
     assert.equal(readMcpbManifest(latestMcpb).version, packageVersion);
+    assert.notEqual(readMcpbManifest(versionedMcpb).user_config.api_token.required, true);
     assert.equal(existsSync(join(distributionRepo, "mcpb", "pipedrive-mcp", "server", "plugin-server.js")), true);
     assert.equal(existsSync(join(distributionRepo, "skills", "pipedrive-add-note", "SKILL.md")), true);
+    const marketplace = JSON.parse(readFileSync(join(distributionRepo, ".claude-plugin", "marketplace.json"), "utf8"));
+    assert.equal(marketplace.plugins[0].name, "pipedrive-mcp");
+    assert.equal(marketplace.plugins[0].source, ".");
+    assert.equal(marketplace.plugins[0].version, packageVersion);
 
     const readme = readFileSync(join(distributionRepo, "README.md"), "utf8");
     assert.match(readme, /pipedrive-mcp-latest\.mcpb/);
   } finally {
     rmSync(distributionRepo, { recursive: true, force: true });
   }
+});
+
+test("Claude plugin release preparation defaults to a generated directory inside dist", { timeout: 180_000 }, () => {
+  execFileSync("npm", ["run", "build:plugin"], { cwd: process.cwd(), stdio: "pipe" });
+  execFileSync("npm", ["run", "pack:claude-plugin"], { cwd: process.cwd(), stdio: "pipe" });
+
+  const distributionRoot = join(process.cwd(), "dist", "release", "pipedrive-mcp-claude-plugin");
+  execFileSync("node", ["scripts/release-claude-plugin.mjs", "--skip-check"], {
+    cwd: process.cwd(),
+    stdio: "pipe",
+  });
+
+  assert.equal(existsSync(join(distributionRoot, `pipedrive-mcp-${packageVersion}.mcpb`)), true);
+  assert.equal(existsSync(join(distributionRoot, "pipedrive-mcp-latest.mcpb")), true);
+  assert.equal(existsSync(join(distributionRoot, "skills", "pipedrive-add-note", "SKILL.md")), true);
+  const marketplace = JSON.parse(readFileSync(join(distributionRoot, ".claude-plugin", "marketplace.json"), "utf8"));
+  assert.equal(marketplace.plugins[0].source, ".");
+  assert.equal(marketplace.plugins[0].version, packageVersion);
+});
+
+test("Claude plugin publication can use a disposable clone of the distribution repository", { timeout: 180_000 }, () => {
+  execFileSync("npm", ["run", "build:plugin"], { cwd: process.cwd(), stdio: "pipe" });
+  execFileSync("npm", ["run", "pack:claude-plugin"], { cwd: process.cwd(), stdio: "pipe" });
+
+  const root = mkdtempSync(join(tmpdir(), "pipedrive-mcp-publish-test-"));
+  const remote = join(root, "distribution.git");
+  const seed = join(root, "seed");
+  const verificationClone = join(root, "verification");
+  const gitIdentity = {
+    ...process.env,
+    GIT_AUTHOR_NAME: "Pipedrive MCP Tests",
+    GIT_AUTHOR_EMAIL: "tests@example.invalid",
+    GIT_COMMITTER_NAME: "Pipedrive MCP Tests",
+    GIT_COMMITTER_EMAIL: "tests@example.invalid",
+  };
+
+  try {
+    execFileSync("git", ["init", "--bare", "--initial-branch=main", remote], { stdio: "pipe" });
+    mkdirSync(seed);
+    execFileSync("git", ["init", "--initial-branch=main"], { cwd: seed, stdio: "pipe" });
+    mkdirSync(join(seed, ".claude-plugin"));
+    writeFileSync(
+      join(seed, ".claude-plugin", "marketplace.json"),
+      `${JSON.stringify({ name: "pezzoslabs-pipedrive", plugins: [{ name: "pipedrive-mcp", version: "0.0.0" }] }, null, 2)}\n`,
+      "utf8",
+    );
+    execFileSync("git", ["add", "."], { cwd: seed, env: gitIdentity, stdio: "pipe" });
+    execFileSync("git", ["commit", "-m", "seed distribution"], { cwd: seed, env: gitIdentity, stdio: "pipe" });
+    execFileSync("git", ["remote", "add", "origin", remote], { cwd: seed, stdio: "pipe" });
+    execFileSync("git", ["push", "-u", "origin", "main"], { cwd: seed, stdio: "pipe" });
+
+    execFileSync(
+      "node",
+      [
+        "scripts/release-claude-plugin.mjs",
+        "--publish",
+        "--distribution-git-url",
+        remote,
+        "--skip-check",
+        "--skip-remote-verify",
+      ],
+      { cwd: process.cwd(), env: gitIdentity, stdio: "pipe" },
+    );
+
+    execFileSync("git", ["clone", "--branch", "main", remote, verificationClone], { stdio: "pipe" });
+    const versionedMcpb = join(verificationClone, `pipedrive-mcp-${packageVersion}.mcpb`);
+    const latestMcpb = join(verificationClone, "pipedrive-mcp-latest.mcpb");
+    assert.equal(existsSync(versionedMcpb), true);
+    assert.equal(existsSync(latestMcpb), true);
+    assert.equal(readFileSync(versionedMcpb).equals(readFileSync(latestMcpb)), true);
+    const marketplace = JSON.parse(readFileSync(join(verificationClone, ".claude-plugin", "marketplace.json"), "utf8"));
+    assert.equal(marketplace.plugins[0].source, ".");
+    assert.equal(marketplace.plugins[0].version, packageVersion);
+
+    const commitCount = gitCommitCount(remote);
+    execFileSync(
+      "node",
+      [
+        "scripts/release-claude-plugin.mjs",
+        "--publish",
+        "--distribution-git-url",
+        remote,
+        "--skip-check",
+        "--skip-remote-verify",
+      ],
+      { cwd: process.cwd(), env: gitIdentity, stdio: "pipe" },
+    );
+    assert.equal(gitCommitCount(remote), commitCount, "an identical release must not create another commit");
+
+    const pluginServerPath = join(process.cwd(), "dist", "plugin-server.js");
+    const originalPluginServer = readFileSync(pluginServerPath);
+    try {
+      writeFileSync(pluginServerPath, Buffer.concat([originalPluginServer, Buffer.from("\n// changed without version bump\n")]));
+      assert.throws(
+        () =>
+          execFileSync(
+            "node",
+            [
+              "scripts/release-claude-plugin.mjs",
+              "--publish",
+              "--distribution-git-url",
+              remote,
+              "--skip-check",
+              "--skip-remote-verify",
+            ],
+            { cwd: process.cwd(), env: gitIdentity, stdio: "pipe" },
+          ),
+        /different content|bump the release version/,
+      );
+      assert.equal(gitCommitCount(remote), commitCount, "a rejected overwrite must leave the remote unchanged");
+    } finally {
+      writeFileSync(pluginServerPath, originalPluginServer);
+    }
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("Claude plugin release script rejects ambiguous boolean and unknown options", () => {
+  assert.throws(
+    () => execFileSync("node", ["scripts/release-claude-plugin.mjs", "--publish", "false"], { cwd: process.cwd(), stdio: "pipe" }),
+    /does not accept a value/,
+  );
+  assert.throws(
+    () => execFileSync("node", ["scripts/release-claude-plugin.mjs", "--unknown"], { cwd: process.cwd(), stdio: "pipe" }),
+    /Unknown option/,
+  );
+});
+
+test("legacy bridge cleanup guidance pins the v0.1.6 managed-entry marker", () => {
+  const fixture = JSON.parse(
+    readFileSync(join(process.cwd(), "tests", "fixtures", "claude-desktop-config-v0.1.6.json"), "utf8"),
+  );
+  assert.equal(
+    fixture.mcpServers.pipedrive.env.PIPEDRIVE_MANAGED_BY_PIPEDRIVE_MCP_EXTENSION,
+    "true",
+  );
+  const troubleshooting = readFileSync(join(process.cwd(), "docs", "TROUBLESHOOTING.md"), "utf8");
+  assert.match(troubleshooting, /PIPEDRIVE_MANAGED_BY_PIPEDRIVE_MCP_EXTENSION/);
+  assert.match(troubleshooting, /Do not remove an unmarked Pipedrive entry/);
 });
 
 async function listTools(serverPath: string, cwd: string, overrides: Record<string, string | undefined> = {}) {
@@ -166,6 +311,10 @@ function assertCleanArtifact(root: string) {
 
 function readMcpbManifest(path: string) {
   return JSON.parse(execFileSync("unzip", ["-p", path, "manifest.json"], { encoding: "utf8" }));
+}
+
+function gitCommitCount(remote: string): number {
+  return Number(execFileSync("git", ["--git-dir", remote, "rev-list", "--count", "main"], { encoding: "utf8" }).trim());
 }
 
 function* walk(root: string): Generator<string> {

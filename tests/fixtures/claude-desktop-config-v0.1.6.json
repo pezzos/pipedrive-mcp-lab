@@ -1,0 +1,15 @@
+{
+  "mcpServers": {
+    "pipedrive": {
+      "command": "node",
+      "args": [
+        "/example/Claude Extensions/local.mcpb.pipedrive-mcp/server/plugin-server.js"
+      ],
+      "env": {
+        "PIPEDRIVE_API_TOKEN": "fixture-token-not-a-secret",
+        "PIPEDRIVE_SYNC_CLAUDE_DESKTOP_CONFIG": "false",
+        "PIPEDRIVE_MANAGED_BY_PIPEDRIVE_MCP_EXTENSION": "true"
+      }
+    }
+  }
+}

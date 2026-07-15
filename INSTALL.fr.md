@@ -1,8 +1,7 @@
 # Installation de Pipedrive MCP dans Claude Desktop
 
-Ce guide est destiné à un utilisateur non technique. Installez et testez
-d'abord dans le chat Claude Desktop. Validez ensuite Claude Cowork si vous
-voulez utiliser des espaces projet et des documents de travail persistants.
+Ce guide est destiné à un utilisateur non technique. Installez et testez dans
+le chat Claude Desktop. Ce paquet local n'est pas disponible dans Cowork.
 
 ## Avant de commencer
 
@@ -13,10 +12,8 @@ Vous avez besoin de :
 - Le domaine Pipedrive de l'entreprise.
   - Exemple : pour `https://acme.pipedrive.com`, saisir uniquement `acme`.
 
-Vous n'avez normalement pas besoin d'installer Node.js. Claude Desktop inclut
-Node.js pour les extensions Desktop. Installez Node.js seulement si le test
-Cowork à la fin ne trouve pas les outils Pipedrive après un redémarrage complet
-de Claude Desktop.
+Vous n'avez pas besoin d'installer Node.js. Claude Desktop inclut le runtime
+utilisé par les extensions Desktop.
 
 ## Ce que vous allez installer
 
@@ -28,6 +25,11 @@ Il y a deux éléments :
   API.
 
 Les deux éléments sont nécessaires.
+
+N'utilisez pas le connecteur Pipedrive officiel de Claude pour ce workflow. Les
+instructions et sécurités décrites ici s'appliquent uniquement aux outils
+personnalisés `pipedrive_*` installés par ce paquet, pas aux outils et au
+comportement différents du connecteur officiel.
 
 ## 1. Installer le plugin Claude
 
@@ -102,9 +104,8 @@ Pour modifier ces réglages plus tard :
 2. Ouvrir **Application bureau** > **Extensions**.
 3. Ouvrir les réglages de l'extension **Pipedrive MCP**.
 
-Ne configurez pas cela dans l'écran **Connecteurs** du plugin Claude Cowork. Cet
-écran peut être en lecture seule. Les réglages modifiables sont dans
-l'extension Desktop.
+Ne configurez pas cela dans l'écran **Connecteurs** d'un plugin. Les réglages
+modifiables sont dans l'extension Desktop.
 
 ## 4. Redémarrer Claude Desktop
 
@@ -134,39 +135,19 @@ Résultat attendu :
 - Les outils d'écriture restent désactivés tant que **Enable write tools** est
   désactivé.
 
-Si ce test échoue, vérifier les réglages de l'extension avant d'essayer Cowork.
+Si ce test échoue, vérifier les réglages et les logs de l'extension dans Claude
+Desktop. Ne pas installer Node.js comme contournement.
 
-## 6. Valider dans Claude Cowork
+## Disponibilité dans Cowork
 
-Utiliser Cowork après que le test dans le chat Desktop fonctionne.
+Cette extension Desktop locale n'est pas disponible dans Cowork. Une ancienne
+entrée gérée dans `claude_desktop_config.json`, créée par la version `0.1.6` ou
+antérieure, n'y est pas disponible non plus. La documentation Anthropic actuelle indique que les serveurs MCP
+locaux configurés dans Claude Desktop ne sont pas disponibles dans Cowork ni
+sur `claude.ai`. Un connecteur MCP distant hébergé séparément est nécessaire
+pour une disponibilité fiable dans Cowork, sur le web et sur mobile.
 
-1. Ouvrir une nouvelle tâche Cowork.
-2. Demander :
-
-   ```text
-   Valide Pipedrive MCP dans Cowork sans faire d'écriture. Lance d'abord pipedrive_health_check, puis pipedrive_get_current_user comme test API en lecture seule. Utilise uniquement les outils pipedrive_*.
-   ```
-
-3. Si Claude demande l'autorisation d'utiliser un outil Pipedrive MCP, ouvrir
-   le menu d'autorisation et choisir **Autoriser une fois** pour le premier
-   test. Claude peut demander une autorisation par outil.
-
-Résultat attendu :
-
-- Claude affiche le connecteur `pipedrive` ou peut utiliser les outils
-  `pipedrive_*`.
-- `pipedrive_health_check` indique que le domaine Pipedrive et le token sont
-  configurés.
-- `pipedrive_get_current_user` confirme la connectivité API réelle.
-- Les outils d'écriture restent désactivés tant que **Enable write tools** est
-  désactivé.
-
-Si Cowork ne trouve pas les outils :
-
-1. Quitter complètement Claude Desktop.
-2. Ouvrir Claude Desktop à nouveau.
-3. Démarrer une nouvelle tâche Cowork et retester.
-4. Si les outils restent indisponibles, installer Node.js LTS depuis
-   <https://nodejs.org>, redémarrer Claude Desktop, puis retester.
-
-Ne pas utiliser le connecteur officiel Pipedrive de Claude pour ce workflow.
+Ces informations ont été vérifiées le 15 juillet 2026 dans le
+[guide des serveurs MCP locaux](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop), le
+[guide des connecteurs MCP distants](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp) et le
+[comparatif connecteurs Desktop/web](https://support.claude.com/en/articles/11725091-when-to-use-desktop-and-web-connectors) d'Anthropic.

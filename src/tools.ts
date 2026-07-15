@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod/v4";
-import { PipedriveConfig } from "./config.js";
+import { PipedriveConfig, requireConfigured } from "./config.js";
 import { getRuntimeEnvDiagnostics } from "./env.js";
 import { PipedriveClient } from "./pipedriveClient.js";
 
@@ -212,6 +212,12 @@ function requireOneDefinedField(body: Record<string, unknown>, fields: string[],
   }
 }
 
+function requireUpdatePayload(payload: Record<string | symbol, unknown>, label: string) {
+  if (Reflect.ownKeys(payload).every((key) => payload[key] === undefined)) {
+    throw new Error(`${label} requires at least one field to update`);
+  }
+}
+
 function normalizeTaskResponse(response: unknown): unknown {
   if (!isRecord(response)) {
     return response;
@@ -402,7 +408,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function buildServer(config: PipedriveConfig, client = new PipedriveClient(config)) {
   const server = new McpServer({
     name: "pipedrive-mcp",
-    version: "0.1.6",
+    version: "0.1.7",
   });
 
   server.registerTool(
@@ -416,6 +422,7 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
     },
     async () => {
       const envDiagnostics = getRuntimeEnvDiagnostics();
+      const configuration = configurationStatus(config);
       return jsonResult({
         token_configured: Boolean(config.apiToken || config.accessToken),
         api_token_configured: Boolean(config.apiToken),
@@ -423,6 +430,8 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
         company_domain_configured: Boolean(config.companyDomain),
         base_url_configured: Boolean(config.baseUrl),
         base_url_source: config.baseUrlSource,
+        configuration_valid: configuration.valid,
+        configuration_error: configuration.error,
         mock_base_url_allowed: config.allowMockBaseUrl,
         writes_enabled: config.enableWrites,
         delete_tools_enabled: config.enableWrites && config.enableDeleteTools,
@@ -432,6 +441,7 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
         dotenv_loading_enabled: envDiagnostics.dotenvLoadingEnabled,
         dotenv_local_file_present: envDiagnostics.dotenvLocalFilePresent,
         dotenv_loaded: envDiagnostics.dotenvLoaded,
+        dotenv_load_failed: envDiagnostics.dotenvLoadFailed,
         runtime_env_preexisting_enable_writes: envDiagnostics.preexisting.enableWrites,
         runtime_env_preexisting_enable_delete_tools: envDiagnostics.preexisting.enableDeleteTools,
         runtime_env_preexisting_enable_mailbox_tools: envDiagnostics.preexisting.enableMailboxTools,
@@ -1297,6 +1307,7 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
     },
     async ({ project_id, dry_run, validate_links, ...body }) => {
       const payload = projectPayload(body);
+      requireUpdatePayload(payload, "pipedrive_update_project");
       const refs = [
         projectRef(project_id),
         boardRef(body.board_id),
@@ -1429,6 +1440,7 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
     },
     async ({ task_id, dry_run, validate_links, ...body }) => {
       const payload = taskPayload(body);
+      requireUpdatePayload(payload, "pipedrive_update_task");
       const refs = [taskRef(task_id), projectRef(body.project_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
       const milestoneDueDateNeedsRead = body.milestone === true && body.due_date === undefined;
@@ -1569,6 +1581,7 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
     },
     async ({ deal_id, dry_run, validate_links, custom_fields, ...body }) => {
       const payload = withCustomFields(body, custom_fields);
+      requireUpdatePayload(payload, "pipedrive_update_deal");
       const refs = [dealRef(deal_id), personRef(body.person_id), organizationRef(body.org_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
       const dryRunResult = guardedWriteResult(config, { dry_run }, payload, { validated_links });
@@ -1779,6 +1792,7 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
     },
     async ({ person_id, dry_run, validate_links, custom_fields, ...body }) => {
       const payload = withCustomFields(personPayload(body), custom_fields);
+      requireUpdatePayload(payload, "pipedrive_update_person");
       const refs = [personRef(person_id), organizationRef(body.org_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
       const dryRunResult = guardedWriteResult(config, { dry_run }, payload, { validated_links });
@@ -1829,6 +1843,7 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
     },
     async ({ organization_id, dry_run, validate_links, custom_fields, ...body }) => {
       const payload = withCustomFields(body, custom_fields);
+      requireUpdatePayload(payload, "pipedrive_update_organization");
       const refs = [organizationRef(organization_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
       const dryRunResult = guardedWriteResult(config, { dry_run }, payload, { validated_links });
@@ -1889,6 +1904,7 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
     },
     async ({ lead_id, dry_run, validate_links, custom_fields, organization_id, person_id, ...body }) => {
       const payload = withCustomFields(leadPayload({ ...body, person_id, organization_id }), custom_fields);
+      requireUpdatePayload(payload, "pipedrive_update_lead");
       const refs = [leadRef(lead_id), personRef(person_id), organizationRef(organization_id)];
       const validated_links = await validateLinksIfRequested(client, validate_links, refs);
       const dryRunResult = guardedWriteResult(config, { dry_run }, payload, { validated_links });
@@ -1995,6 +2011,7 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
     },
     async ({ activity_id, dry_run, validate_links, ...body }) => {
       const payload = activityPayload(body);
+      requireUpdatePayload(payload, "pipedrive_update_activity");
       const refs = [
         activityRef(activity_id),
         dealRef(body.deal_id),
@@ -2303,6 +2320,18 @@ export function buildServer(config: PipedriveConfig, client = new PipedriveClien
   }
 
   return server;
+}
+
+function configurationStatus(config: PipedriveConfig): { valid: boolean; error?: string } {
+  try {
+    requireConfigured(config);
+    return { valid: true };
+  } catch (error) {
+    return {
+      valid: false,
+      error: error instanceof Error ? error.message : "Invalid Pipedrive configuration",
+    };
+  }
 }
 
 export function jsonResult(value: unknown) {

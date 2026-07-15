@@ -4,7 +4,9 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   readFileSync,
+  renameSync,
   rmSync,
   writeFileSync,
 } from "node:fs";
@@ -17,55 +19,102 @@ const args = parseArgs(process.argv.slice(2));
 const version = args.version ?? packageJson.version;
 const publish = Boolean(args.publish);
 const skipCheck = Boolean(args["skip-check"]);
-const distributionRepo = resolve(
-  args["distribution-repo"] ??
-    process.env.PIPEDRIVE_MCP_PLUGIN_REPO ??
-    join(repoRoot, "..", "pipedrive-mcp-claude-plugin"),
-);
+const skipRemoteVerify = Boolean(args["skip-remote-verify"]);
+const requestedDistributionRepo = args["distribution-repo"] ?? process.env.PIPEDRIVE_MCP_PLUGIN_REPO;
+const distributionGitUrl =
+  args["distribution-git-url"] ??
+  process.env.PIPEDRIVE_MCP_PLUGIN_GIT_URL ??
+  "https://github.com/pezzos/pipedrive-mcp-claude-plugin.git";
 const remoteUrlBase =
   args["remote-url-base"] ?? "https://github.com/pezzos/pipedrive-mcp-claude-plugin/raw/main";
 
 const pluginArtifactRoot = join(repoRoot, "dist", "claude-plugin", "pipedrive-mcp");
 const pluginServerPath = join(repoRoot, "dist", "plugin-server.js");
 const mcpbManifestPath = join(repoRoot, "plugin", "mcpb", "manifest.json");
+const marketplaceManifestPath = join(repoRoot, ".claude-plugin", "marketplace.json");
 
 main();
 
 function main() {
   assertVersion(version);
   assertSourceVersions(version);
+  const target = resolveDistributionTarget();
+  try {
+    if (target.recreate) {
+      rmSync(target.path, { recursive: true, force: true });
+      mkdirSync(target.path, { recursive: true });
+    } else if (!existsSync(target.path)) {
+      throw new Error(`Distribution repository not found: ${target.path}`);
+    }
 
-  if (!existsSync(distributionRepo)) {
-    throw new Error(
-      `Distribution repository not found: ${distributionRepo}. Set PIPEDRIVE_MCP_PLUGIN_REPO or pass --distribution-repo.`,
-    );
+    if (publish && !isGitRepo(target.path)) {
+      throw new Error(`Cannot publish because distribution repository is not a git repo: ${target.path}`);
+    }
+    if (isGitRepo(target.path)) {
+      assertCleanGit(target.path);
+    }
+
+    if (!skipCheck) {
+      run("npm", ["run", "check"], { cwd: repoRoot });
+      run("npm", ["run", "pack:claude-plugin"], { cwd: repoRoot });
+    } else {
+      assertRequiredBuildOutputs();
+    }
+
+    syncDistributionRepo(target.path, version);
+
+    const versionedMcpb = join(target.path, `pipedrive-mcp-${version}.mcpb`);
+    const latestMcpb = join(target.path, "pipedrive-mcp-latest.mcpb");
+    validateMcpb(versionedMcpb, version);
+    validateMcpb(latestMcpb, version);
+
+    if (publish) {
+      commitAndPush(target.path, version);
+      if (!skipRemoteVerify) {
+        verifyRemoteMcpb(`${remoteUrlBase}/pipedrive-mcp-${version}.mcpb`, version);
+        verifyRemoteMcpb(`${remoteUrlBase}/pipedrive-mcp-latest.mcpb`, version);
+      }
+    }
+
+    console.log(`Claude plugin release artifact ready: ${versionedMcpb}`);
+    console.log(`Claude plugin latest alias ready: ${latestMcpb}`);
+  } finally {
+    target.cleanup();
+  }
+}
+
+function resolveDistributionTarget() {
+  if (requestedDistributionRepo) {
+    return {
+      path: resolve(requestedDistributionRepo),
+      recreate: false,
+      cleanup: () => undefined,
+    };
   }
 
-  if (isGitRepo(distributionRepo)) {
-    assertCleanGit(distributionRepo);
+  if (!publish) {
+    return {
+      path: join(repoRoot, "dist", "release", "pipedrive-mcp-claude-plugin"),
+      recreate: true,
+      cleanup: () => undefined,
+    };
   }
 
-  if (!skipCheck) {
-    run("npm", ["run", "check"], { cwd: repoRoot });
-  } else {
-    assertRequiredBuildOutputs();
+  const cloneRoot = mkdtempSync(join(tmpdir(), "pipedrive-mcp-distribution-clone-"));
+  const clonePath = join(cloneRoot, "repository");
+  try {
+    run("git", ["clone", "--branch", "main", "--single-branch", distributionGitUrl, clonePath], {
+      cwd: repoRoot,
+    });
+  } catch (error) {
+    rmSync(cloneRoot, { recursive: true, force: true });
+    throw error;
   }
-
-  syncDistributionRepo(distributionRepo, version);
-
-  const versionedMcpb = join(distributionRepo, `pipedrive-mcp-${version}.mcpb`);
-  const latestMcpb = join(distributionRepo, "pipedrive-mcp-latest.mcpb");
-  validateMcpb(versionedMcpb, version);
-  validateMcpb(latestMcpb, version);
-
-  if (publish) {
-    commitAndPush(distributionRepo, version);
-    verifyRemoteMcpb(`${remoteUrlBase}/pipedrive-mcp-${version}.mcpb`, version);
-    verifyRemoteMcpb(`${remoteUrlBase}/pipedrive-mcp-latest.mcpb`, version);
-  }
-
-  console.log(`Claude plugin release artifact ready: ${versionedMcpb}`);
-  console.log(`Claude plugin latest alias ready: ${latestMcpb}`);
+  return {
+    path: clonePath,
+    recreate: false,
+    cleanup: () => rmSync(cloneRoot, { recursive: true, force: true }),
+  };
 }
 
 function assertVersion(value) {
@@ -76,8 +125,17 @@ function assertVersion(value) {
 
 function assertSourceVersions(expectedVersion) {
   assertJsonVersion(join(repoRoot, "package.json"), expectedVersion);
+  assertMarketplaceVersion(marketplaceManifestPath, expectedVersion);
   assertJsonVersion(join(repoRoot, "plugin", "claude", ".claude-plugin", "plugin.json"), expectedVersion);
   assertJsonVersion(mcpbManifestPath, expectedVersion);
+}
+
+function assertMarketplaceVersion(path, expectedVersion) {
+  const marketplace = readJson(path);
+  const plugin = marketplace.plugins?.find((candidate) => candidate?.name === "pipedrive-mcp");
+  if (plugin?.version !== expectedVersion) {
+    throw new Error(`${path} has Pipedrive plugin version ${plugin?.version}; expected ${expectedVersion}`);
+  }
 }
 
 function assertJsonVersion(path, expectedVersion) {
@@ -109,7 +167,7 @@ function syncDistributionRepo(targetRepo, releaseVersion) {
   copyFile(join(pluginArtifactRoot, "INSTALL.fr.md"), join(targetRepo, "INSTALL.fr.md"));
   copyFile(join(pluginArtifactRoot, "LICENSE"), join(targetRepo, "LICENSE"));
 
-  updateMarketplace(join(targetRepo, ".claude-plugin", "marketplace.json"), releaseVersion);
+  writeDistributionMarketplace(join(targetRepo, ".claude-plugin", "marketplace.json"), releaseVersion);
 
   mkdirSync(mcpbServerDir, { recursive: true });
   const manifest = readJson(mcpbManifestPath);
@@ -117,23 +175,51 @@ function syncDistributionRepo(targetRepo, releaseVersion) {
   writeJson(join(mcpbSourceRoot, "manifest.json"), manifest);
   copyFile(pluginServerPath, join(mcpbServerDir, "plugin-server.js"));
 
-  buildMcpb(mcpbSourceRoot, versionedMcpb);
+  buildVersionedMcpb(mcpbSourceRoot, versionedMcpb, releaseVersion);
   copyFile(versionedMcpb, latestMcpb);
 }
 
-function updateMarketplace(path, releaseVersion) {
-  if (!existsSync(path)) {
-    return;
+function writeDistributionMarketplace(path, releaseVersion) {
+  const marketplace = readJson(marketplaceManifestPath);
+  const matches = marketplace.plugins?.filter((plugin) => plugin?.name === "pipedrive-mcp") ?? [];
+  if (matches.length !== 1) {
+    throw new Error(`${marketplaceManifestPath} must contain exactly one pipedrive-mcp plugin`);
   }
-  const marketplace = readJson(path);
-  if (Array.isArray(marketplace.plugins)) {
-    for (const plugin of marketplace.plugins) {
-      if (plugin?.name === "pipedrive-mcp") {
-        plugin.version = releaseVersion;
-      }
-    }
-  }
+  matches[0].source = ".";
+  matches[0].version = releaseVersion;
   writeJson(path, marketplace);
+}
+
+function buildVersionedMcpb(sourceRoot, outputPath, expectedVersion) {
+  const candidatePath = `${outputPath}.candidate-${process.pid}`;
+  try {
+    buildMcpb(sourceRoot, candidatePath);
+    validateMcpb(candidatePath, expectedVersion);
+    if (existsSync(outputPath)) {
+      if (!mcpbPayloadEquals(outputPath, candidatePath)) {
+        throw new Error(
+          `${basename(outputPath)} already exists with different content; bump the release version instead of overwriting it`,
+        );
+      }
+      return;
+    }
+    renameSync(candidatePath, outputPath);
+  } finally {
+    rmSync(candidatePath, { force: true });
+  }
+}
+
+function mcpbPayloadEquals(left, right) {
+  return ["manifest.json", "server/plugin-server.js"].every((member) =>
+    readMcpbMember(left, member).equals(readMcpbMember(right, member)),
+  );
+}
+
+function readMcpbMember(path, member) {
+  return execFileSync("unzip", ["-p", path, member], {
+    cwd: repoRoot,
+    stdio: ["ignore", "pipe", "pipe"],
+  });
 }
 
 function buildMcpb(sourceRoot, outputPath) {
@@ -210,7 +296,12 @@ function assertCleanGit(path) {
 }
 
 function isGitRepo(path) {
-  return existsSync(join(path, ".git"));
+  try {
+    const topLevel = run("git", ["rev-parse", "--show-toplevel"], { cwd: path }).trim();
+    return realpathSync(topLevel) === realpathSync(path);
+  } catch {
+    return false;
+  }
 }
 
 function copyDirectoryExact(source, target) {
@@ -242,6 +333,8 @@ function run(command, commandArgs, options) {
 }
 
 function parseArgs(rawArgs) {
+  const booleanArgs = new Set(["publish", "skip-check", "skip-remote-verify"]);
+  const valueArgs = new Set(["version", "distribution-repo", "distribution-git-url", "remote-url-base"]);
   const parsed = {};
   for (let index = 0; index < rawArgs.length; index += 1) {
     const raw = rawArgs[index];
@@ -249,13 +342,22 @@ function parseArgs(rawArgs) {
       throw new Error(`Unexpected positional argument: ${raw}`);
     }
     const key = raw.slice(2);
-    const next = rawArgs[index + 1];
-    if (!next || next.startsWith("--")) {
-      parsed[key] = true;
-    } else {
-      parsed[key] = next;
-      index += 1;
+    if (!booleanArgs.has(key) && !valueArgs.has(key)) {
+      throw new Error(`Unknown option: --${key}`);
     }
+    const next = rawArgs[index + 1];
+    if (booleanArgs.has(key)) {
+      if (next && !next.startsWith("--")) {
+        throw new Error(`--${key} does not accept a value`);
+      }
+      parsed[key] = true;
+      continue;
+    }
+    if (!next || next.startsWith("--")) {
+      throw new Error(`--${key} requires a value`);
+    }
+    parsed[key] = next;
+    index += 1;
   }
   return parsed;
 }

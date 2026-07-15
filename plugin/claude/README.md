@@ -18,8 +18,16 @@ Start here:
    https://github.com/pezzos/pipedrive-mcp-claude-plugin/raw/main/pipedrive-mcp-latest.mcpb
    ```
 
-Install and test in Claude Desktop chat first. Then validate Claude Cowork if
-you want project workspaces and persistent working documents.
+Install and test in Claude Desktop chat. The `.mcpb` extension uses Claude
+Desktop's integrated Node.js runtime; a separate Node.js install is not needed.
+
+This local package is not available in Cowork. Anthropic's current
+documentation says local servers from `claude_desktop_config.json` are not
+available there. A remote MCP connector is required for that surface.
 
 Do not use Claude's official Pipedrive connector for this workflow. Use only
-the `pipedrive_*` tools provided by Pipedrive MCP.
+the `pipedrive_*` tools provided by Pipedrive MCP; the official connector's
+different tools do not share this package's safety defaults.
+
+Platform details and their verification sources are maintained in the
+[Claude delivery guide](docs/CLAUDE_DELIVERY.md).
