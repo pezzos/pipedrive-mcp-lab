@@ -1,0 +1,42 @@
+{
+  "objective": "Implement locally a production-ready Cloudflare remote MCP foundation for one client, with Cloudflare Access identity, Pipedrive OAuth, per-user self-managed permissions, safe defaults, redacted audit metadata, and sandbox-to-production promotion guidance.",
+  "intent": "continue",
+  "objective_clear": true,
+  "documentation_complete": true,
+  "local_work_only": true,
+  "live_mutation": false,
+  "live_grant": false,
+  "read_only_or_plan_only": false,
+  "recovery_budget": 2,
+  "decisions": [
+    {
+      "surface": "internal_architecture",
+      "owner": "agent",
+      "redefines_acceptance": false
+    },
+    {
+      "surface": "private_module_boundary",
+      "owner": "agent",
+      "redefines_acceptance": false
+    },
+    {
+      "surface": "test_tooling",
+      "owner": "agent",
+      "redefines_acceptance": false
+    }
+  ],
+  "dirty_files": [
+    {
+      "path": ".DS_Store",
+      "ownership": "user-owned",
+      "relation": "disjoint",
+      "index": "unstaged"
+    },
+    {
+      "path": ".codex-workflow-loop/",
+      "ownership": "run-owned",
+      "relation": "disjoint",
+      "index": "untracked"
+    }
+  ]
+}
