@@ -112,7 +112,7 @@ testing.
 
 The paid plugin contains the seven skills and exactly one remote HTTP connector
 in its root `.mcp.json`. Pro, Max, Team, and Enterprise users install that
-plugin. Free users import selected files from `standalone-skills/` and add the
+plugin. Free users import selected ZIP assets from the latest GitHub Release and add the
 same remote `/mcp` URL manually. Each archive must contain one top-level skill
 folder with its `SKILL.md`, and no connector or credentials.
 
@@ -137,10 +137,10 @@ kept as a generated compatibility distribution so installed client URLs do not
 change.
 
 Use the release script to publish the Desktop Extension and plugin repository.
-It builds and validates the local package, syncs the distribution repository,
-creates both a versioned `.mcpb` and `pipedrive-mcp-latest.mcpb`, generates
-versioned and `latest` standalone skill ZIPs, then verifies published downloads
-after push.
+It builds and validates the local package, syncs an archive-free distribution
+repository, creates both a versioned `.mcpb` and `pipedrive-mcp-latest.mcpb`,
+generates versioned and `latest` standalone skill ZIPs, uploads those archives
+as GitHub Release assets, then verifies the published downloads after push.
 
 For local preparation, no second checkout is required:
 
@@ -148,9 +148,10 @@ For local preparation, no second checkout is required:
 npm run prepare:claude-plugin-release
 ```
 
-The complete distribution is generated under
-`dist/release/pipedrive-mcp-claude-plugin/`. An explicit existing checkout is
-still supported through `--distribution-repo` or
+The marketplace snapshot is generated under
+`dist/release/pipedrive-mcp-claude-plugin/`; it must contain no archives. GitHub
+Release assets are staged separately under `dist/release/assets/`. An explicit
+existing checkout is still supported through `--distribution-repo` or
 `PIPEDRIVE_MCP_PLUGIN_REPO` for backward compatibility.
 
 For an actual publication:
@@ -162,9 +163,11 @@ PIPEDRIVE_MCP_PLUGIN_GIT_URL=https://github.com/pezzos/pipedrive-mcp-claude-plug
 
 Publication clones the compatibility repository into a temporary directory,
 generates and validates the distribution, refuses to overwrite a released
-version with different content, commits only actual changes, pushes `main`, and
-verifies the published downloads. Do not hand-edit the distribution repository
-for ordinary releases.
+version with different content, commits only actual changes, pushes the selected
+branch, publishes GitHub Release assets, and verifies their downloads. Use
+`--distribution-git-branch <branch> --skip-release-assets --skip-remote-verify`
+for a disposable staging installation test. Do not hand-edit the distribution
+repository for ordinary releases.
 
 ## Upgrading From Lab Version
 

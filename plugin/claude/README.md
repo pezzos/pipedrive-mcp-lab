@@ -21,11 +21,12 @@ does not share this package's safety defaults.
 Do not activate the local `.mcpb` Desktop Extension or a legacy
 `claude_desktop_config.json` Pipedrive entry at the same time. Those alternative
 local connectors expose the same tool names and can create duplicates.
-The compatibility distribution names the local fallback
-`pipedrive-mcp-latest.mcpb`.
+The compatibility distribution publishes the local fallback
+`pipedrive-mcp-latest.mcpb` as a GitHub Release asset.
 
-Free-plan users install individual ZIP files from `standalone-skills/` and add
-the remote connector manually instead of installing this plugin.
+Free-plan users download individual ZIP files from the
+[latest GitHub Release](https://github.com/pezzos/pipedrive-mcp-claude-plugin/releases/latest)
+and add the remote connector manually instead of installing this plugin.
 
 Start here:
 
@@ -33,5 +34,5 @@ Start here:
 - [Guide d'installation en français](INSTALL.fr.md)
 - [Claude delivery details](docs/CLAUDE_DELIVERY.md)
 
-Version `0.3.1` is a sandbox pilot. Production promotion and a production MCP
+Version `0.3.3` is a sandbox pilot. Production promotion and a production MCP
 hostname require a separate operator-approved release.

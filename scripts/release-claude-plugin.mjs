@@ -2,9 +2,12 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
   cpSync,
+  closeSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
+  openSync,
+  readSync,
   realpathSync,
   readFileSync,
   renameSync,
@@ -22,17 +25,25 @@ const version = args.version ?? packageJson.version;
 const publish = Boolean(args.publish);
 const skipCheck = Boolean(args["skip-check"]);
 const skipRemoteVerify = Boolean(args["skip-remote-verify"]);
+const skipReleaseAssets = Boolean(args["skip-release-assets"]);
 const requestedDistributionRepo = args["distribution-repo"] ?? process.env.PIPEDRIVE_MCP_PLUGIN_REPO;
 const distributionGitUrl =
   args["distribution-git-url"] ??
   process.env.PIPEDRIVE_MCP_PLUGIN_GIT_URL ??
   "https://github.com/pezzos/pipedrive-mcp-claude-plugin.git";
-const remoteUrlBase =
-  args["remote-url-base"] ?? "https://github.com/pezzos/pipedrive-mcp-claude-plugin/raw/main";
+const distributionGitBranch = args["distribution-git-branch"] ?? process.env.PIPEDRIVE_MCP_PLUGIN_GIT_BRANCH ?? "main";
+const releaseRepo =
+  args["release-repo"] ?? process.env.PIPEDRIVE_MCP_PLUGIN_RELEASE_REPO ?? "pezzos/pipedrive-mcp-claude-plugin";
+const releaseTag = args["release-tag"] ?? `v${version}`;
+const releaseDownloadBase =
+  args["release-download-base"] ?? `https://github.com/${releaseRepo}/releases/download/${releaseTag}`;
+const latestReleaseDownloadBase =
+  args["latest-release-download-base"] ?? `https://github.com/${releaseRepo}/releases/latest/download`;
 
 const pluginArtifactRoot = join(repoRoot, "dist", "claude-plugin", "pipedrive-mcp");
 const standaloneSkillsRoot = join(repoRoot, "dist", "claude-skills");
 const pluginServerPath = join(repoRoot, "dist", "plugin-server.js");
+const releaseAssetsRoot = join(repoRoot, "dist", "release", "assets");
 const mcpbManifestPath = join(repoRoot, "plugin", "mcpb", "manifest.json");
 const marketplaceManifestPath = join(repoRoot, ".claude-plugin", "marketplace.json");
 
@@ -41,6 +52,15 @@ main();
 function main() {
   assertVersion(version);
   assertSourceVersions(version);
+  if (publish && distributionGitBranch !== "main" && !skipReleaseAssets) {
+    throw new Error("Publishing GitHub Release assets from a non-main distribution branch is forbidden; pass --skip-release-assets for staging");
+  }
+  if (publish && distributionGitBranch === "main" && skipReleaseAssets) {
+    throw new Error("Skipping GitHub Release assets on the main distribution branch is forbidden");
+  }
+  if (publish && skipReleaseAssets && !skipRemoteVerify) {
+    throw new Error("--skip-release-assets requires --skip-remote-verify for staging");
+  }
   const target = resolveDistributionTarget();
   try {
     if (target.recreate) {
@@ -55,6 +75,9 @@ function main() {
     }
     if (isGitRepo(target.path)) {
       assertCleanGit(target.path);
+      if (publish) {
+        assertDistributionBranch(target.path);
+      }
     }
 
     if (!skipCheck) {
@@ -64,25 +87,26 @@ function main() {
       assertRequiredBuildOutputs();
     }
 
+    assertStandaloneBuildOutputs();
+    const releaseAssets = buildReleaseAssets(version);
     assertExistingVersionCompatible(target.path, version);
     syncDistributionRepo(target.path, version);
-
-    const versionedMcpb = join(target.path, `pipedrive-mcp-${version}.mcpb`);
-    const latestMcpb = join(target.path, "pipedrive-mcp-latest.mcpb");
-    validateMcpb(versionedMcpb, version);
-    validateMcpb(latestMcpb, version);
+    assertArchiveFreeDistribution(target.path);
 
     if (publish) {
       commitAndPush(target.path, version);
+      if (!skipReleaseAssets) {
+        publishGitHubReleaseAssets(releaseAssets, version);
+      }
       if (!skipRemoteVerify) {
-        verifyRemoteMcpb(`${remoteUrlBase}/pipedrive-mcp-${version}.mcpb`, version);
-        verifyRemoteMcpb(`${remoteUrlBase}/pipedrive-mcp-latest.mcpb`, version);
-        verifyRemoteStandaloneSkills(remoteUrlBase);
+        verifyRemoteMcpb(`${releaseDownloadBase}/pipedrive-mcp-${version}.mcpb`, version);
+        verifyRemoteMcpb(`${latestReleaseDownloadBase}/pipedrive-mcp-latest.mcpb`, version);
+        verifyRemoteStandaloneSkills(releaseDownloadBase);
       }
     }
 
-    console.log(`Claude plugin release artifact ready: ${versionedMcpb}`);
-    console.log(`Claude plugin latest alias ready: ${latestMcpb}`);
+    console.log(`Archive-free Claude marketplace ready: ${target.path}`);
+    console.log(`Claude release assets ready: ${releaseAssetsRoot}`);
   } finally {
     target.cleanup();
   }
@@ -108,7 +132,7 @@ function resolveDistributionTarget() {
   const cloneRoot = mkdtempSync(join(tmpdir(), "pipedrive-mcp-distribution-clone-"));
   const clonePath = join(cloneRoot, "repository");
   try {
-    run("git", ["clone", "--branch", "main", "--single-branch", distributionGitUrl, clonePath], {
+    run("git", ["clone", "--branch", distributionGitBranch, "--single-branch", distributionGitUrl, clonePath], {
       cwd: repoRoot,
     });
   } catch (error) {
@@ -163,32 +187,82 @@ function assertRequiredBuildOutputs() {
   }
 }
 
-function syncDistributionRepo(targetRepo, releaseVersion) {
-  const mcpbSourceRoot = join(targetRepo, "mcpb", "pipedrive-mcp");
+function assertStandaloneBuildOutputs() {
+  const manifest = readJson(join(standaloneSkillsRoot, "manifest.json"));
+  if (manifest.version !== version) {
+    throw new Error(`Standalone skills manifest version ${manifest.version}; expected ${version}`);
+  }
+  for (const skill of manifest.skills ?? []) {
+    const versioned = join(standaloneSkillsRoot, skill.versioned);
+    const latest = join(standaloneSkillsRoot, skill.latest);
+    if (!existsSync(versioned) || !existsSync(latest)) {
+      throw new Error(`Missing standalone skill artifacts for ${skill.name}`);
+    }
+    if (normalizedZipDigest(versioned) !== skill.content_sha256) {
+      throw new Error(`${skill.versioned} differs from standalone-skills manifest content_sha256`);
+    }
+    if (normalizedZipDigest(latest) !== skill.content_sha256) {
+      throw new Error(`${skill.latest} differs from ${skill.versioned}`);
+    }
+  }
+}
+
+function buildReleaseAssets(releaseVersion) {
+  rmSync(releaseAssetsRoot, { recursive: true, force: true });
+  mkdirSync(releaseAssetsRoot, { recursive: true });
+  const mcpbSourceRoot = join(releaseAssetsRoot, "mcpb-source");
   const mcpbServerDir = join(mcpbSourceRoot, "server");
-  const versionedMcpb = join(targetRepo, `pipedrive-mcp-${releaseVersion}.mcpb`);
-  const latestMcpb = join(targetRepo, "pipedrive-mcp-latest.mcpb");
-
-  copyDirectoryExact(join(pluginArtifactRoot, "skills"), join(targetRepo, "skills"));
-  copyDirectoryExact(join(pluginArtifactRoot, "docs"), join(targetRepo, "docs"));
-  copyDirectoryExact(standaloneSkillsRoot, join(targetRepo, "standalone-skills"));
-  copyFile(join(pluginArtifactRoot, ".claude-plugin", "plugin.json"), join(targetRepo, ".claude-plugin", "plugin.json"));
-  copyFile(join(pluginArtifactRoot, ".mcp.json"), join(targetRepo, ".mcp.json"));
-  copyFile(join(pluginArtifactRoot, "README.md"), join(targetRepo, "README.md"));
-  copyFile(join(pluginArtifactRoot, "INSTALL.md"), join(targetRepo, "INSTALL.md"));
-  copyFile(join(pluginArtifactRoot, "INSTALL.fr.md"), join(targetRepo, "INSTALL.fr.md"));
-  copyFile(join(pluginArtifactRoot, "LICENSE"), join(targetRepo, "LICENSE"));
-
-  writeDistributionMarketplace(join(targetRepo, ".claude-plugin", "marketplace.json"), releaseVersion);
-
   mkdirSync(mcpbServerDir, { recursive: true });
   const manifest = readJson(mcpbManifestPath);
   manifest.version = releaseVersion;
   writeJson(join(mcpbSourceRoot, "manifest.json"), manifest);
   copyFile(pluginServerPath, join(mcpbServerDir, "plugin-server.js"));
 
+  const versionedMcpb = join(releaseAssetsRoot, `pipedrive-mcp-${releaseVersion}.mcpb`);
+  const latestMcpb = join(releaseAssetsRoot, "pipedrive-mcp-latest.mcpb");
   buildVersionedMcpb(mcpbSourceRoot, versionedMcpb, releaseVersion);
   copyFile(versionedMcpb, latestMcpb);
+  validateMcpb(versionedMcpb, releaseVersion);
+  validateMcpb(latestMcpb, releaseVersion);
+  rmSync(mcpbSourceRoot, { recursive: true, force: true });
+
+  const standaloneManifest = readJson(join(standaloneSkillsRoot, "manifest.json"));
+  const assetPaths = [versionedMcpb, latestMcpb];
+  for (const skill of standaloneManifest.skills ?? []) {
+    for (const filename of [skill.versioned, skill.latest]) {
+      const target = join(releaseAssetsRoot, filename);
+      copyFile(join(standaloneSkillsRoot, filename), target);
+      assetPaths.push(target);
+    }
+  }
+  const releaseManifest = decorateStandaloneManifest(standaloneManifest);
+  const releaseManifestPath = join(releaseAssetsRoot, "standalone-skills-manifest.json");
+  writeJson(releaseManifestPath, releaseManifest);
+  assetPaths.push(releaseManifestPath);
+  return assetPaths;
+}
+
+function syncDistributionRepo(targetRepo, releaseVersion) {
+  const distributionPluginRoot = join(targetRepo, "plugin");
+
+  copyDirectoryExact(pluginArtifactRoot, distributionPluginRoot);
+  assertInstallablePluginTree(distributionPluginRoot);
+  copyDirectoryExact(join(pluginArtifactRoot, "docs"), join(targetRepo, "docs"));
+  syncStandaloneMetadata(join(targetRepo, "standalone-skills"));
+  copyFile(join(pluginArtifactRoot, "README.md"), join(targetRepo, "README.md"));
+  copyFile(join(pluginArtifactRoot, "INSTALL.md"), join(targetRepo, "INSTALL.md"));
+  copyFile(join(pluginArtifactRoot, "INSTALL.fr.md"), join(targetRepo, "INSTALL.fr.md"));
+  copyFile(join(pluginArtifactRoot, "LICENSE"), join(targetRepo, "LICENSE"));
+
+  // Migrate releases that previously exposed the whole repository as the
+  // plugin. These paths made standalone ZIPs and MCPBs nested plugin archives.
+  rmSync(join(targetRepo, "skills"), { recursive: true, force: true });
+  rmSync(join(targetRepo, ".mcp.json"), { force: true });
+  rmSync(join(targetRepo, ".claude-plugin", "plugin.json"), { force: true });
+  rmSync(join(targetRepo, "mcpb"), { recursive: true, force: true });
+
+  writeDistributionMarketplace(join(targetRepo, ".claude-plugin", "marketplace.json"), releaseVersion);
+  removeArchivePayloads(targetRepo);
 }
 
 function assertExistingVersionCompatible(targetRepo, releaseVersion) {
@@ -197,30 +271,27 @@ function assertExistingVersionCompatible(targetRepo, releaseVersion) {
     return;
   }
   const marketplace = readJson(marketplacePath);
-  const currentVersion = marketplace.plugins?.find((plugin) => plugin?.name === "pipedrive-mcp")?.version;
+  const currentPlugin = marketplace.plugins?.find((plugin) => plugin?.name === "pipedrive-mcp");
+  const currentVersion = currentPlugin?.version;
   if (currentVersion !== releaseVersion) {
     return;
+  }
+  if (currentPlugin.source !== "./plugin") {
+    throw new Error(`Marketplace source ${currentPlugin.source}; expected ./plugin for release ${releaseVersion}`);
   }
 
   for (const source of walk(pluginArtifactRoot)) {
     const relativePath = relative(pluginArtifactRoot, source);
-    const target = join(targetRepo, relativePath);
+    const target = join(targetRepo, "plugin", relativePath);
     if (!existsSync(target) || !readFileSync(source).equals(readFileSync(target))) {
       throw new Error(`${relativePath} already exists with different content; bump the release version instead of overwriting it`);
     }
   }
 
-  const manifest = readJson(join(standaloneSkillsRoot, "manifest.json"));
   const targetManifest = join(targetRepo, "standalone-skills", "manifest.json");
-  if (!existsSync(targetManifest) || !readFileSync(join(standaloneSkillsRoot, "manifest.json")).equals(readFileSync(targetManifest))) {
+  const expectedManifest = `${JSON.stringify(decorateStandaloneManifest(readJson(join(standaloneSkillsRoot, "manifest.json"))), null, 2)}\n`;
+  if (!existsSync(targetManifest) || readFileSync(targetManifest, "utf8") !== expectedManifest) {
     throw new Error("standalone-skills/manifest.json already exists with different content; bump the release version instead of overwriting it");
-  }
-  for (const skill of manifest.skills ?? []) {
-    const source = join(standaloneSkillsRoot, skill.versioned);
-    const target = join(targetRepo, "standalone-skills", skill.versioned);
-    if (!existsSync(target) || normalizedZipDigest(source) !== normalizedZipDigest(target)) {
-      throw new Error(`${skill.versioned} already exists with different content; bump the release version instead of overwriting it`);
-    }
   }
 }
 
@@ -230,12 +301,98 @@ function writeDistributionMarketplace(path, releaseVersion) {
   if (matches.length !== 1) {
     throw new Error(`${marketplaceManifestPath} must contain exactly one pipedrive-mcp plugin`);
   }
-  // Claude's remote marketplace backend only recognizes repository-local
-  // plugin paths when they are explicitly relative ("./"). A bare "." is
-  // accepted by the local CLI validator but rejected during Desktop sync.
-  matches[0].source = "./";
+  // The hosted installer scans the repository snapshot before applying source.
+  // Keep the plugin isolated and the whole branch archive-free.
+  matches[0].source = "./plugin";
   matches[0].version = releaseVersion;
   writeJson(path, marketplace);
+}
+
+function syncStandaloneMetadata(targetRoot) {
+  rmSync(targetRoot, { recursive: true, force: true });
+  mkdirSync(targetRoot, { recursive: true });
+  const manifest = decorateStandaloneManifest(readJson(join(standaloneSkillsRoot, "manifest.json")));
+  writeJson(join(targetRoot, "manifest.json"), manifest);
+  writeFileSync(
+    join(targetRoot, "README.md"),
+    [
+      "# Standalone Claude skills",
+      "",
+      "Download the individual ZIP files from the GitHub Release linked in `manifest.json`.",
+      "Archives are intentionally not committed to this marketplace branch because Claude rejects nested ZIP payloads.",
+      "",
+    ].join("\n"),
+    "utf8",
+  );
+}
+
+function decorateStandaloneManifest(manifest) {
+  return {
+    ...manifest,
+    release_tag: releaseTag,
+    release_url: `https://github.com/${releaseRepo}/releases/tag/${releaseTag}`,
+    skills: (manifest.skills ?? []).map((skill) => ({
+      ...skill,
+      download_url: `${releaseDownloadBase}/${skill.versioned}`,
+      latest_download_url: `${latestReleaseDownloadBase}/${skill.latest}`,
+    })),
+  };
+}
+
+function assertInstallablePluginTree(root) {
+  for (const file of walk(root)) {
+    const relativePath = relative(root, file);
+    if (hasForbiddenArchiveExtension(relativePath)) {
+      throw new Error(`Nested archive is forbidden in installable plugin: ${relativePath}`);
+    }
+    if (hasZipSignature(file)) {
+      throw new Error(`ZIP payload is forbidden in installable plugin: ${relativePath}`);
+    }
+  }
+}
+
+function removeArchivePayloads(root) {
+  for (const file of walk(root)) {
+    const relativePath = relative(root, file);
+    if (relativePath === ".git" || relativePath.startsWith(`.git/`)) {
+      continue;
+    }
+    if (hasForbiddenArchiveExtension(relativePath) || hasZipSignature(file)) {
+      rmSync(file, { force: true });
+    }
+  }
+}
+
+function assertArchiveFreeDistribution(root) {
+  for (const file of walk(root)) {
+    const relativePath = relative(root, file);
+    if (relativePath === ".git" || relativePath.startsWith(`.git/`)) {
+      continue;
+    }
+    if (hasForbiddenArchiveExtension(relativePath)) {
+      throw new Error(`Archive is forbidden in marketplace repository: ${relativePath}`);
+    }
+    if (hasZipSignature(file)) {
+      throw new Error(`ZIP payload is forbidden in marketplace repository: ${relativePath}`);
+    }
+  }
+}
+
+function hasForbiddenArchiveExtension(path) {
+  return /\.(?:zip|mcpb|tgz|tar|gz)$/i.test(path);
+}
+
+function hasZipSignature(path) {
+  const descriptor = openSync(path, "r");
+  const header = Buffer.alloc(4);
+  try {
+    if (readSync(descriptor, header, 0, header.length, 0) !== header.length) {
+      return false;
+    }
+  } finally {
+    closeSync(descriptor);
+  }
+  return ["504b0304", "504b0506", "504b0708"].includes(header.toString("hex"));
 }
 
 function buildVersionedMcpb(sourceRoot, outputPath, expectedVersion) {
@@ -307,6 +464,71 @@ function validateMcpb(path, expectedVersion) {
   }
 }
 
+function publishGitHubReleaseAssets(assetPaths, releaseVersion) {
+  let release;
+  try {
+    release = JSON.parse(
+      run("gh", ["release", "view", releaseTag, "--repo", releaseRepo, "--json", "assets,tagName"], { cwd: repoRoot }),
+    );
+  } catch (error) {
+    const details = `${error?.stderr ?? ""}\n${error?.message ?? ""}`;
+    if (!/release not found|not found.*release/i.test(details)) {
+      throw error;
+    }
+    run(
+      "gh",
+      [
+        "release",
+        "create",
+        releaseTag,
+        "--repo",
+        releaseRepo,
+        "--target",
+        distributionGitBranch,
+        "--title",
+        `Pipedrive MCP ${releaseVersion}`,
+        "--notes",
+        "Claude plugin fallback and standalone skill downloads. The marketplace branch itself intentionally contains no archives.",
+      ],
+      { cwd: repoRoot },
+    );
+    release = { assets: [], tagName: releaseTag };
+  }
+
+  const existingNames = new Set((release.assets ?? []).map((asset) => asset.name));
+  const verificationDir = mkdtempSync(join(tmpdir(), "pipedrive-mcp-existing-release-"));
+  try {
+    for (const assetPath of assetPaths) {
+      const name = basename(assetPath);
+      if (existingNames.has(name)) {
+        run(
+          "gh",
+          ["release", "download", releaseTag, "--repo", releaseRepo, "--pattern", name, "--dir", verificationDir],
+          { cwd: repoRoot },
+        );
+        const publishedPath = join(verificationDir, name);
+        if (!releaseAssetEquals(assetPath, publishedPath)) {
+          throw new Error(`${name} already exists with different content; bump the release version instead of overwriting it`);
+        }
+        continue;
+      }
+      run("gh", ["release", "upload", releaseTag, assetPath, "--repo", releaseRepo], { cwd: repoRoot });
+    }
+  } finally {
+    rmSync(verificationDir, { recursive: true, force: true });
+  }
+}
+
+function releaseAssetEquals(localPath, publishedPath) {
+  if (localPath.endsWith(".mcpb")) {
+    return mcpbPayloadEquals(localPath, publishedPath);
+  }
+  if (localPath.endsWith(".zip")) {
+    return normalizedZipDigest(localPath) === normalizedZipDigest(publishedPath);
+  }
+  return readFileSync(localPath).equals(readFileSync(publishedPath));
+}
+
 function verifyRemoteMcpb(url, expectedVersion) {
   const tempDir = mkdtempSync(join(tmpdir(), "pipedrive-mcp-release-"));
   const target = join(tempDir, basename(url));
@@ -324,7 +546,7 @@ function verifyRemoteStandaloneSkills(urlBase) {
   try {
     for (const skill of manifest.skills ?? []) {
       const target = join(tempDir, skill.versioned);
-      run("curl", ["-fsSL", `${urlBase}/standalone-skills/${skill.versioned}`, "-o", target], { cwd: repoRoot });
+      run("curl", ["-fsSL", `${urlBase}/${skill.versioned}`, "-o", target], { cwd: repoRoot });
       if (normalizedZipDigest(target) !== skill.content_sha256) {
         throw new Error(`Published standalone skill differs from its manifest: ${skill.versioned}`);
       }
@@ -352,26 +574,33 @@ function commitAndPush(targetRepo, releaseVersion) {
         "-m",
         [
           "# Why",
-          "# - Publish the paid cross-surface plugin, standalone skills, and Desktop fallback.",
-          "# - Keep versioned artifacts and latest aliases in sync.",
+          "# - Publish an archive-free marketplace snapshot accepted by Claude's hosted installer.",
+          "# - Keep standalone ZIPs and the Desktop fallback outside the repository tree.",
           "# What",
-          `# - Generate pipedrive-mcp-${releaseVersion}.mcpb and pipedrive-mcp-latest.mcpb.`,
-          "# - Sync the remote plugin, standalone skill ZIPs, docs, and MCPB manifest from the source repo.",
+          "# - Sync the isolated remote plugin, docs, and standalone download metadata.",
+          "# - Remove historical ZIP, MCPB, and disguised ZIP payloads from the branch snapshot.",
           "# Tests",
-          "# - local MCPB manifest validation",
-          "# - remote MCPB and standalone skill download validation after push",
+          "# - whole-repository archive scan",
+          "# - GitHub Release asset validation after push",
         ].join("\n"),
       ],
       { cwd: targetRepo },
     );
   }
-  run("git", ["push", "origin", "main"], { cwd: targetRepo });
+  run("git", ["push", "origin", distributionGitBranch], { cwd: targetRepo });
 }
 
 function assertCleanGit(path) {
   const status = run("git", ["status", "--porcelain"], { cwd: path }).trim();
   if (status) {
     throw new Error(`Distribution repository has uncommitted changes:\n${status}`);
+  }
+}
+
+function assertDistributionBranch(path) {
+  const currentBranch = run("git", ["branch", "--show-current"], { cwd: path }).trim();
+  if (currentBranch !== distributionGitBranch) {
+    throw new Error(`Distribution repository is on branch ${currentBranch || "<detached>"}; expected ${distributionGitBranch}`);
   }
 }
 
@@ -413,8 +642,17 @@ function run(command, commandArgs, options) {
 }
 
 function parseArgs(rawArgs) {
-  const booleanArgs = new Set(["publish", "skip-check", "skip-remote-verify"]);
-  const valueArgs = new Set(["version", "distribution-repo", "distribution-git-url", "remote-url-base"]);
+  const booleanArgs = new Set(["publish", "skip-check", "skip-remote-verify", "skip-release-assets"]);
+  const valueArgs = new Set([
+    "version",
+    "distribution-repo",
+    "distribution-git-url",
+    "distribution-git-branch",
+    "release-repo",
+    "release-tag",
+    "release-download-base",
+    "latest-release-download-base",
+  ]);
   const parsed = {};
   for (let index = 0; index < rawArgs.length; index += 1) {
     const raw = rawArgs[index];
