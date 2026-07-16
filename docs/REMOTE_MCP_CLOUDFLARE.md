@@ -108,7 +108,8 @@ with older audit events.
    quotas and costs before production.
 7. Sign in through Access as `REMOTE_ADMIN_EMAIL`, then visit
    `https://<worker-host>/admin/pipedrive/connect`. Complete Pipedrive consent
-   once.
+   once. If a callback fails, start a fresh connection from this URL; OAuth
+   state and authorization codes are one-shot and must not be replayed.
 8. Give users the remote MCP URL `https://<worker-host>/mcp`. Each user signs
    in through Access and can review their own policy at
    `https://<worker-host>/settings`.
@@ -153,6 +154,11 @@ console; console output alone is not a production retention strategy.
 
 ## Incident Guide
 
+OAuth administration error pages expose only a stable error code and a Worker
+request ID. Use both to correlate the structured audit event; raw provider
+responses, authorization codes, state values, and exception messages are
+intentionally omitted.
+
 | Symptom or code | Action |
 | --- | --- |
 | `/healthz` fails | Check Worker deployment and Cloudflare status before investigating Pipedrive. |
@@ -162,8 +168,18 @@ console; console output alone is not a production retention strategy.
 | `policy_unavailable` | Check the `USER_POLICY` Durable Object binding and recent Worker errors. Do not bypass the policy. |
 | `pipedrive_not_connected` | The admin completes `/admin/pipedrive/connect`. |
 | `pipedrive_reconnect_required` | The admin reconnects Pipedrive; investigate revocation or OAuth app changes. |
+| `oauth_authorization_denied` | The admin denied Pipedrive consent. Start a fresh connection only if authorization is still intended. |
+| `oauth_state_invalid` or `oauth_code_invalid` | The callback expired, was already used, or does not match its initiator. Start again at `/admin/pipedrive/connect`; never replay the callback URL. |
+| `oauth_redirect_invalid` | Verify the Worker custom domain and that the exact callback URL is registered in the Pipedrive application. |
+| `oauth_encryption_key_invalid` | Verify that `PIPEDRIVE_OAUTH_ENCRYPTION_KEY` decodes to exactly 32 bytes. Correct the secret before starting a fresh connection. Replacing a previously valid key makes stored OAuth material unreadable and therefore requires reconnection. |
+| `oauth_encryption_failed` | Treat as a Worker crypto/runtime failure. Correlate the request ID and retry after checking Worker status; do not rotate a valid key speculatively. |
 | `oauth_material_invalid` | After encryption-key rotation or corrupted storage, reconnect Pipedrive to replace the unreadable material. |
-| `pipedrive_oauth_failed` or `pipedrive_credential_unavailable` | Check Pipedrive OAuth availability and Worker errors, then reconnect only if the grant is no longer usable. |
+| `pipedrive_oauth_unavailable` | Check Pipedrive OAuth and network availability, then retry from a fresh connection. |
+| `pipedrive_oauth_invalid_response` or `invalid_pipedrive_api_domain` | Verify the Pipedrive OAuth application, environment, callback, and provider response contract. Do not persist or trust an unexpected API domain. |
+| `pipedrive_oauth_failed` or `pipedrive_credential_unavailable` | Check the Pipedrive application credentials, callback, scopes, and Worker audit event, then reconnect only if the grant is no longer usable. |
+| `tenant_request_invalid` | The Worker-to-Durable-Object request was malformed. Treat this as a deployment/version mismatch and redeploy one coherent artifact. |
+| `tenant_storage_unavailable` | Check Durable Object health, bindings, and Cloudflare status; retry without changing OAuth secrets. |
+| `tenant_internal_error` | Correlate the request ID with Worker logs and inspect the deployment. This deliberately hides an unclassified internal failure; do not rotate secrets based on this code alone. |
 | Repeated Pipedrive 401/403 | Confirm OAuth scopes and production/sandbox app alignment before reconnecting. |
 
 Do not log or paste Access assertions, OAuth codes, refresh tokens, encryption

@@ -3,6 +3,7 @@
   "name": "pipedrive-mcp-remote",
   "main": "src/remote/worker.ts",
   "compatibility_date": "2026-07-15",
+  "keep_vars": true,
   "durable_objects": {
     "bindings": [
       {

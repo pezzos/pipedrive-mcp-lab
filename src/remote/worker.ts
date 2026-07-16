@@ -9,6 +9,13 @@ import {
 } from "./audit.js";
 import { loadRemoteConfig, type RemoteConfig, type RemoteEnv } from "./env.js";
 import {
+  normalizeRemoteOAuthErrorCode,
+  remoteOAuthDependencyStatus,
+  remoteOAuthErrorMessage,
+  remoteOAuthErrorStatus,
+  type RemoteOAuthErrorCode,
+} from "./oauthErrors.js";
+import {
   getUserPolicy,
   userPolicyStub,
   UserPolicy,
@@ -258,7 +265,21 @@ async function handlePipedriveConnect(
     body: JSON.stringify({ adminSub: identity.sub, redirectUri }),
   });
   if (!response.ok) {
-    return noStoreJson({ code: "pipedrive_connect_failed" }, { status: 503 });
+    const code = await tenantFailureCode(response, "pipedrive_connect_failed");
+    const status = remoteOAuthErrorStatus(code);
+    context.waitUntil(
+      writeOperationAudit(
+        request,
+        identity.sub,
+        config.auditHmacKey,
+        "/admin/pipedrive/connect",
+        "oauth.connect",
+        "error",
+        status,
+        code,
+      ).catch(() => undefined),
+    );
+    return oauthFailurePage("Connexion Pipedrive impossible", code, requestId(request), status);
   }
   const { state } = await response.json<{ state: string }>();
   const authorizationUrl = new URL("https://oauth.pipedrive.com/oauth/authorize");
@@ -280,6 +301,33 @@ async function handlePipedriveCallback(
   context: ExecutionContext,
 ): Promise<Response> {
   const url = new URL(request.url);
+  if (url.searchParams.has("error")) {
+    const redirectUri = new URL("/oauth/pipedrive/callback", request.url).toString();
+    await tenantSecretsStub(env).fetch("https://tenant.internal/state/discard", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        adminSub: identity.sub,
+        state: url.searchParams.get("state") ?? "",
+        redirectUri,
+      }),
+    }).catch(() => undefined);
+    const code = "oauth_authorization_denied";
+    const status = remoteOAuthErrorStatus(code);
+    context.waitUntil(
+      writeOperationAudit(
+        request,
+        identity.sub,
+        config.auditHmacKey,
+        "/oauth/pipedrive/callback",
+        "oauth.callback",
+        "error",
+        status,
+        code,
+      ).catch(() => undefined),
+    );
+    return oauthFailurePage("Autorisation Pipedrive refusée", code, requestId(request), status);
+  }
   const redirectUri = new URL("/oauth/pipedrive/callback", request.url).toString();
   const response = await tenantSecretsStub(env).fetch("https://tenant.internal/exchange", {
     method: "POST",
@@ -292,11 +340,22 @@ async function handlePipedriveCallback(
     }),
   });
   if (!response.ok) {
+    const code = await tenantFailureCode(response);
+    const status = remoteOAuthErrorStatus(code);
     context.waitUntil(
-      writeOperationAudit(request, identity.sub, config.auditHmacKey, "/oauth/pipedrive/callback", "oauth.callback", "error", 400)
+      writeOperationAudit(
+        request,
+        identity.sub,
+        config.auditHmacKey,
+        "/oauth/pipedrive/callback",
+        "oauth.callback",
+        "error",
+        status,
+        code,
+      )
         .catch(() => undefined),
     );
-    return html("<h1>Connexion Pipedrive impossible</h1><p>Recommencez depuis la page d’administration.</p>", 400);
+    return oauthFailurePage("Connexion Pipedrive impossible", code, requestId(request), status);
   }
   context.waitUntil(
     writeOperationAudit(request, identity.sub, config.auditHmacKey, "/oauth/pipedrive/callback", "oauth.callback", "success", 200)
@@ -308,13 +367,7 @@ async function handlePipedriveCallback(
 async function getTenantCredential(env: RemoteEnv): Promise<TenantCredential> {
   const response = await tenantSecretsStub(env).fetch("https://tenant.internal/credential");
   if (!response.ok) {
-    let code = "pipedrive_credential_unavailable";
-    try {
-      const body = await response.json<{ code?: string }>();
-      code = body.code ?? code;
-    } catch {
-      // Keep the stable fallback and never surface an internal response body.
-    }
+    const code = await tenantFailureCode(response, "pipedrive_credential_unavailable");
     throw new Error(code);
   }
   return response.json<TenantCredential>();
@@ -435,6 +488,7 @@ async function writeOperationAudit(
   operation: string,
   outcome: "success" | "error",
   httpStatus: number,
+  errorCode?: RemoteOAuthErrorCode,
 ): Promise<void> {
   await auditSink.write({
     v: 1,
@@ -447,6 +501,7 @@ async function writeOperationAudit(
     outcome,
     httpStatus,
     latencyMs: 0,
+    errorCode,
   });
 }
 
@@ -483,6 +538,42 @@ function html(body: string, status = 200, nonce?: string): Response {
   });
 }
 
+async function tenantFailureCode(
+  response: Response,
+  fallback: RemoteOAuthErrorCode = "tenant_internal_error",
+): Promise<RemoteOAuthErrorCode> {
+  try {
+    const body = await response.json<{ code?: unknown }>();
+    return normalizeRemoteOAuthErrorCode(body?.code, fallback);
+  } catch {
+    return fallback;
+  }
+}
+
+function oauthFailurePage(
+  title: string,
+  code: RemoteOAuthErrorCode,
+  correlationId: string,
+  status: number,
+): Response {
+  return html(
+    `<h1>${escapeHtml(title)}</h1>` +
+      `<p>${escapeHtml(remoteOAuthErrorMessage(code))}</p>` +
+      `<p>Code : <code>${escapeHtml(code)}</code></p>` +
+      `<p>Identifiant de requête : <code>${escapeHtml(correlationId)}</code></p>`,
+    status,
+  );
+}
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 function styleNonce(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(18));
   let binary = "";
@@ -515,7 +606,8 @@ function mcpFailure(code: string): Response {
 }
 
 function dependencyStatus(code: string): number {
-  return code === "pipedrive_reconnect_required" ? 409 : 503;
+  const normalized = normalizeRemoteOAuthErrorCode(code);
+  return remoteOAuthDependencyStatus(normalized);
 }
 
 function safeErrorCode(error: unknown, fallback: string): string {

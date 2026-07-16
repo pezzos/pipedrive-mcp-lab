@@ -1,5 +1,9 @@
 import { normalizePipedriveApiDomain } from "./apiDomain.js";
 import type { RemoteConfig, RemoteEnv } from "./env.js";
+import {
+  normalizeRemoteOAuthErrorCode,
+  remoteOAuthErrorStatus,
+} from "./oauthErrors.js";
 import type { KeyValueStorage } from "./policy.js";
 
 const MATERIAL_KEY = "oauth-material";
@@ -55,14 +59,19 @@ export class TenantSecretsCore {
   async createState(adminSub: string, redirectUri: string): Promise<string> {
     validateBounded(adminSub, 256, "oauth_state_invalid");
     validateRedirectUri(redirectUri);
+    await assertEncryptionKeyUsable(this.config.encryptionKey);
     const state = randomBase64Url(32);
     const stateHash = await hash(state);
-    await this.storage.put<StateRecord>(STATE_KEY, {
-      digest: stateHash,
-      adminSub,
-      redirectUriHash: await hash(redirectUri),
-      expiresAtMs: this.now() + STATE_TTL_MS,
-    });
+    try {
+      await this.storage.put<StateRecord>(STATE_KEY, {
+        digest: stateHash,
+        adminSub,
+        redirectUriHash: await hash(redirectUri),
+        expiresAtMs: this.now() + STATE_TTL_MS,
+      });
+    } catch {
+      throw new Error("tenant_storage_unavailable");
+    }
     return state;
   }
 
@@ -76,20 +85,8 @@ export class TenantSecretsCore {
     validateBounded(state, 256, "oauth_state_invalid");
     validateBounded(code, 4096, "oauth_code_invalid");
     validateRedirectUri(redirectUri);
-    const stateHash = await hash(state);
-    await this.storage.transaction(async (transaction) => {
-      const record = await transaction.get<StateRecord>(STATE_KEY);
-      await transaction.delete(STATE_KEY);
-      if (
-        !record ||
-        record.digest !== stateHash ||
-        record.expiresAtMs < this.now() ||
-        record.adminSub !== adminSub ||
-        record.redirectUriHash !== await hash(redirectUri)
-      ) {
-        throw new Error("oauth_state_invalid");
-      }
-    });
+    await assertEncryptionKeyUsable(this.config.encryptionKey);
+    await this.consumeState(adminSub, state, redirectUri);
 
     const parsed = await this.requestOAuth({
       grant_type: "authorization_code",
@@ -99,6 +96,41 @@ export class TenantSecretsCore {
     const material = parseOAuthMaterial(parsed, this.now());
     await this.persist(material);
     return publicCredential(material);
+  }
+
+  async discardState(adminSub: string, state: string, redirectUri: string): Promise<void> {
+    validateBounded(adminSub, 256, "oauth_state_invalid");
+    validateBounded(state, 256, "oauth_state_invalid");
+    validateRedirectUri(redirectUri);
+    await this.consumeState(adminSub, state, redirectUri);
+  }
+
+  private async consumeState(
+    adminSub: string,
+    state: string,
+    redirectUri: string,
+  ): Promise<void> {
+    const stateHash = await hash(state);
+    const redirectUriHash = await hash(redirectUri);
+    let record: StateRecord | undefined;
+    try {
+      record = await this.storage.transaction(async (transaction) => {
+        const current = await transaction.get<StateRecord>(STATE_KEY);
+        await transaction.delete(STATE_KEY);
+        return current;
+      });
+    } catch {
+      throw new Error("tenant_storage_unavailable");
+    }
+    if (
+      !record ||
+      record.digest !== stateHash ||
+      record.expiresAtMs <= this.now() ||
+      record.adminSub !== adminSub ||
+      record.redirectUriHash !== redirectUriHash
+    ) {
+      throw new Error("oauth_state_invalid");
+    }
   }
 
   async getCredential(): Promise<TenantCredential> {
@@ -142,20 +174,25 @@ export class TenantSecretsCore {
     const authorization = btoa(
       `${this.config.pipedriveClientId}:${this.config.pipedriveClientSecret}`,
     );
-    const response = await this.fetcher(TOKEN_ENDPOINT, {
-      method: "POST",
-      headers: {
-        accept: "application/json",
-        authorization: `Basic ${authorization}`,
-        "content-type": "application/x-www-form-urlencoded",
-      },
-      body: new URLSearchParams(fields),
-    });
+    let response: Response;
+    try {
+      response = await this.fetcher(TOKEN_ENDPOINT, {
+        method: "POST",
+        headers: {
+          accept: "application/json",
+          authorization: `Basic ${authorization}`,
+          "content-type": "application/x-www-form-urlencoded",
+        },
+        body: new URLSearchParams(fields),
+      });
+    } catch {
+      throw new Error("pipedrive_oauth_unavailable");
+    }
     let parsed: PipedriveOAuthResponse;
     try {
       parsed = await response.json() as PipedriveOAuthResponse;
     } catch {
-      throw new Error("pipedrive_oauth_failed");
+      throw new Error(response.ok ? "pipedrive_oauth_invalid_response" : "pipedrive_oauth_failed");
     }
     if (!response.ok) {
       if (parsed.error === "invalid_grant") {
@@ -167,7 +204,12 @@ export class TenantSecretsCore {
   }
 
   private async read(): Promise<OAuthMaterial | undefined> {
-    const envelope = await this.storage.get<EncryptedEnvelope>(MATERIAL_KEY);
+    let envelope: EncryptedEnvelope | undefined;
+    try {
+      envelope = await this.storage.get<EncryptedEnvelope>(MATERIAL_KEY);
+    } catch {
+      throw new Error("tenant_storage_unavailable");
+    }
     if (!envelope) {
       return undefined;
     }
@@ -175,7 +217,12 @@ export class TenantSecretsCore {
   }
 
   private async persist(material: OAuthMaterial): Promise<void> {
-    await this.storage.put(MATERIAL_KEY, await encryptMaterial(material, this.config.encryptionKey));
+    const encrypted = await encryptMaterial(material, this.config.encryptionKey);
+    try {
+      await this.storage.put(MATERIAL_KEY, encrypted);
+    } catch {
+      throw new Error("tenant_storage_unavailable");
+    }
   }
 }
 
@@ -201,29 +248,40 @@ export class TenantSecrets {
     const url = new URL(request.url);
     try {
       if (request.method === "POST" && url.pathname === "/state") {
-        const body = await request.json() as { adminSub: string; redirectUri: string };
+        const body = await requestJson<{ adminSub: string; redirectUri: string }>(request);
         return Response.json({
           state: await this.core.createState(body.adminSub, body.redirectUri),
         });
       }
       if (request.method === "POST" && url.pathname === "/exchange") {
-        const body = await request.json() as {
+        const body = await requestJson<{
           adminSub: string;
           state: string;
           code: string;
           redirectUri: string;
-        };
+        }>(request);
         return Response.json(
           await this.core.exchange(body.adminSub, body.state, body.code, body.redirectUri),
         );
+      }
+      if (request.method === "POST" && url.pathname === "/state/discard") {
+        const body = await requestJson<{
+          adminSub: string;
+          state: string;
+          redirectUri: string;
+        }>(request);
+        await this.core.discardState(body.adminSub, body.state, body.redirectUri);
+        return new Response(null, { status: 204 });
       }
       if (request.method === "GET" && url.pathname === "/credential") {
         return Response.json(await this.core.getCredential());
       }
       return new Response("Not found", { status: 404 });
     } catch (error) {
-      const code = error instanceof Error ? error.message : "tenant_secrets_error";
-      const status = code === "pipedrive_not_connected" ? 404 : 400;
+      const code = normalizeRemoteOAuthErrorCode(
+        error instanceof Error ? error.message : undefined,
+      );
+      const status = remoteOAuthErrorStatus(code);
       return Response.json({ code }, { status });
     }
   }
@@ -240,11 +298,16 @@ export async function encryptMaterial(
   const key = await importEncryptionKey(encodedKey);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const plaintext = new TextEncoder().encode(JSON.stringify(material));
-  const ciphertext = await crypto.subtle.encrypt(
-    { name: "AES-GCM", iv, additionalData: new TextEncoder().encode("pipedrive-oauth:v1") },
-    key,
-    plaintext,
-  );
+  let ciphertext: ArrayBuffer;
+  try {
+    ciphertext = await crypto.subtle.encrypt(
+      { name: "AES-GCM", iv, additionalData: new TextEncoder().encode("pipedrive-oauth:v1") },
+      key,
+      plaintext,
+    );
+  } catch {
+    throw new Error("oauth_encryption_failed");
+  }
   return {
     v: 1,
     iv: bytesToBase64Url(iv),
@@ -259,6 +322,7 @@ export async function decryptMaterial(
   if (envelope.v !== 1) {
     throw new Error("oauth_material_invalid");
   }
+  const key = await importEncryptionKey(encodedKey);
   try {
     const plaintext = await crypto.subtle.decrypt(
       {
@@ -266,7 +330,7 @@ export async function decryptMaterial(
         iv: base64UrlToBytes(envelope.iv),
         additionalData: new TextEncoder().encode("pipedrive-oauth:v1"),
       },
-      await importEncryptionKey(encodedKey),
+      key,
       base64UrlToBytes(envelope.ciphertext),
     );
     return parseStoredMaterial(
@@ -283,6 +347,8 @@ function parseOAuthMaterial(
   previousRefresh?: string,
 ): OAuthMaterial {
   if (
+    typeof parsed !== "object" ||
+    parsed === null ||
     typeof parsed.access_token !== "string" ||
     parsed.access_token.length === 0 ||
     (!previousRefresh && (typeof parsed.refresh_token !== "string" || parsed.refresh_token.length === 0)) ||
@@ -329,11 +395,32 @@ function publicCredential(material: OAuthMaterial): TenantCredential {
 }
 
 async function importEncryptionKey(encodedKey: string): Promise<CryptoKey> {
-  const bytes = base64UrlToBytes(encodedKey);
+  let bytes: Uint8Array<ArrayBuffer>;
+  try {
+    bytes = base64UrlToBytes(encodedKey);
+  } catch {
+    throw new Error("oauth_encryption_key_invalid");
+  }
   if (bytes.byteLength !== 32) {
     throw new Error("oauth_encryption_key_invalid");
   }
-  return crypto.subtle.importKey("raw", bytes, "AES-GCM", false, ["encrypt", "decrypt"]);
+  try {
+    return await crypto.subtle.importKey("raw", bytes, "AES-GCM", false, ["encrypt", "decrypt"]);
+  } catch {
+    throw new Error("oauth_encryption_key_invalid");
+  }
+}
+
+async function assertEncryptionKeyUsable(encodedKey: string): Promise<void> {
+  await importEncryptionKey(encodedKey);
+}
+
+async function requestJson<T>(request: Request): Promise<T> {
+  try {
+    return await request.json() as T;
+  } catch {
+    throw new Error("tenant_request_invalid");
+  }
 }
 
 function validateBounded(value: unknown, max: number, code: string): asserts value is string {

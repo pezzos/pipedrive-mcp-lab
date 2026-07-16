@@ -58,6 +58,190 @@ test("Worker rejects a non-admin before touching the OAuth broker", async () => 
   });
 });
 
+test("Worker starts Pipedrive OAuth and audits the redirect", async () => {
+  const fixture = await accessFixture("admin@example.com");
+  const tenantNamespace = namespaceFor(async (request) => {
+    assert.equal(new URL(request.url).pathname, "/state");
+    const body = await request.json() as { adminSub: string; redirectUri: string };
+    assert.equal(body.adminSub, "worker-user-1");
+    assert.equal(body.redirectUri, "https://mcp.example.test/oauth/pipedrive/callback");
+    return Response.json({ state: "state-fixture" });
+  });
+  await withJwks(fixture.jwk, async () => {
+    const context = executionContext();
+    const { value: response, logs } = await captureLogs(async () => {
+      const result = await worker.fetch(
+        authorizedRequest(
+          "https://mcp.example.test/admin/pipedrive/connect",
+          fixture.assertion,
+          { headers: { "cf-ray": "connect-ray" } },
+        ),
+        remoteEnv(failingNamespace(), tenantNamespace),
+        context.value,
+      );
+      await Promise.all(context.waits);
+      return result;
+    });
+    assert.equal(response.status, 302);
+    const location = new URL(response.headers.get("location") as string);
+    assert.equal(location.origin, "https://oauth.pipedrive.com");
+    assert.equal(location.searchParams.get("client_id"), "client-fixture");
+    assert.equal(location.searchParams.get("state"), "state-fixture");
+    assert.equal(logs.length, 1);
+    const event = JSON.parse(logs[0]) as Record<string, unknown>;
+    assert.equal(event.operation, "oauth.connect");
+    assert.equal(event.outcome, "success");
+    assert.equal(event.httpStatus, 302);
+  });
+});
+
+test("Worker surfaces and audits an allowlisted OAuth connect failure", async () => {
+  const fixture = await accessFixture("admin@example.com");
+  const tenantNamespace = namespaceFor(async () =>
+    Response.json({ code: "oauth_encryption_key_invalid" }, { status: 503 }),
+  );
+  await withJwks(fixture.jwk, async () => {
+    const context = executionContext();
+    const { value: response, logs } = await captureLogs(async () => {
+      const result = await worker.fetch(
+        authorizedRequest(
+          "https://mcp.example.test/admin/pipedrive/connect",
+          fixture.assertion,
+          { headers: { "cf-ray": "connect-failure-ray" } },
+        ),
+        remoteEnv(failingNamespace(), tenantNamespace),
+        context.value,
+      );
+      await Promise.all(context.waits);
+      return result;
+    });
+    assert.equal(response.status, 503);
+    const page = await response.text();
+    assert.match(page, /oauth_encryption_key_invalid/);
+    assert.match(page, /connect-failure-ray/);
+    const event = JSON.parse(logs[0]) as Record<string, unknown>;
+    assert.equal(event.outcome, "error");
+    assert.equal(event.errorCode, "oauth_encryption_key_invalid");
+    assert.equal(event.httpStatus, 503);
+  });
+});
+
+test("Worker completes the Pipedrive callback and audits success", async () => {
+  const fixture = await accessFixture("admin@example.com");
+  const tenantNamespace = namespaceFor(async (request) => {
+    assert.equal(new URL(request.url).pathname, "/exchange");
+    const body = await request.json() as { code: string; state: string };
+    assert.equal(body.code, "code-fixture");
+    assert.equal(body.state, "state-fixture");
+    return Response.json({
+      accessCredential: "access-fixture",
+      apiDomain: "https://acme.pipedrive.com",
+      expiresAtMs: Date.now() + 3_600_000,
+    });
+  });
+  await withJwks(fixture.jwk, async () => {
+    const context = executionContext();
+    const { value: response, logs } = await captureLogs(async () => {
+      const result = await worker.fetch(
+        authorizedRequest(
+          "https://mcp.example.test/oauth/pipedrive/callback?code=code-fixture&state=state-fixture",
+          fixture.assertion,
+          { headers: { "cf-ray": "callback-success-ray" } },
+        ),
+        remoteEnv(failingNamespace(), tenantNamespace),
+        context.value,
+      );
+      await Promise.all(context.waits);
+      return result;
+    });
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /Pipedrive est connecté/);
+    const event = JSON.parse(logs[0]) as Record<string, unknown>;
+    assert.equal(event.operation, "oauth.callback");
+    assert.equal(event.outcome, "success");
+    assert.equal(event.httpStatus, 200);
+  });
+});
+
+test("Worker allowlists callback failures without leaking OAuth canaries", async () => {
+  const fixture = await accessFixture("admin@example.com");
+  const tenantNamespace = namespaceFor(async () =>
+    Response.json({ code: "provider-canary-secret-token" }, { status: 502 }),
+  );
+  await withJwks(fixture.jwk, async () => {
+    const context = executionContext();
+    const { value: response, logs } = await captureLogs(async () => {
+      const result = await worker.fetch(
+        authorizedRequest(
+          "https://mcp.example.test/oauth/pipedrive/callback?code=oauth-code-canary&state=oauth-state-canary",
+          fixture.assertion,
+          { headers: { "cf-ray": "callback-failure-ray" } },
+        ),
+        remoteEnv(failingNamespace(), tenantNamespace),
+        context.value,
+      );
+      await Promise.all(context.waits);
+      return result;
+    });
+    assert.equal(response.status, 503);
+    const page = await response.text();
+    const allOutput = `${page}\n${logs.join("\n")}`;
+    assert.match(page, /tenant_internal_error/);
+    assert.match(page, /callback-failure-ray/);
+    assert.doesNotMatch(allOutput, /provider-canary-secret-token/);
+    assert.doesNotMatch(allOutput, /oauth-code-canary/);
+    assert.doesNotMatch(allOutput, /oauth-state-canary/);
+    const event = JSON.parse(logs[0]) as Record<string, unknown>;
+    assert.equal(event.errorCode, "tenant_internal_error");
+    assert.equal(event.httpStatus, 503);
+  });
+});
+
+test("Worker reports an allowlisted invalid state and a denied consent", async () => {
+  const fixture = await accessFixture("admin@example.com");
+  const invalidStateNamespace = namespaceFor(async () =>
+    Response.json({ code: "oauth_state_invalid" }, { status: 400 }),
+  );
+  await withJwks(fixture.jwk, async () => {
+    const invalidContext = executionContext();
+    const invalid = await worker.fetch(
+      authorizedRequest(
+        "https://mcp.example.test/oauth/pipedrive/callback?code=invalid&state=invalid",
+        fixture.assertion,
+      ),
+      remoteEnv(failingNamespace(), invalidStateNamespace),
+      invalidContext.value,
+    );
+    assert.equal(invalid.status, 400);
+    assert.match(await invalid.text(), /oauth_state_invalid/);
+    await Promise.all(invalidContext.waits);
+
+    let discardedState: Record<string, unknown> | undefined;
+    const deniedNamespace = namespaceFor(async (request) => {
+      assert.equal(new URL(request.url).pathname, "/state/discard");
+      discardedState = await request.json() as Record<string, unknown>;
+      return new Response(null, { status: 204 });
+    });
+    const deniedContext = executionContext();
+    const denied = await worker.fetch(
+      authorizedRequest(
+        "https://mcp.example.test/oauth/pipedrive/callback?error=access_denied&state=denied-state",
+        fixture.assertion,
+      ),
+      remoteEnv(failingNamespace(), deniedNamespace),
+      deniedContext.value,
+    );
+    assert.equal(denied.status, 400);
+    assert.match(await denied.text(), /oauth_authorization_denied/);
+    assert.deepEqual(discardedState, {
+      adminSub: "worker-user-1",
+      state: "denied-state",
+      redirectUri: "https://mcp.example.test/oauth/pipedrive/callback",
+    });
+    await Promise.all(deniedContext.waits);
+  });
+});
+
 test("Worker preserves submitted settings while requesting confirmation", async () => {
   const fixture = await accessFixture("user@example.com");
   const policyNamespace = namespaceFor(async (request) => {
@@ -278,6 +462,17 @@ function executionContext(): { value: ExecutionContext; waits: Promise<unknown>[
       props: {},
     } as unknown as ExecutionContext,
   };
+}
+
+async function captureLogs<T>(run: () => Promise<T>): Promise<{ value: T; logs: string[] }> {
+  const logs: string[] = [];
+  const originalLog = console.log;
+  console.log = (value?: unknown) => logs.push(String(value));
+  try {
+    return { value: await run(), logs };
+  } finally {
+    console.log = originalLog;
+  }
 }
 
 function authorizedRequest(
