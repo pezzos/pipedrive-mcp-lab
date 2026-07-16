@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import type { RemoteEnv } from "../src/remote/env.js";
-import { defaultUserPolicy, UserPolicyStore, type KeyValueStorage } from "../src/remote/policy.js";
+import {
+  defaultUserPolicy,
+  UserPolicyStore,
+  type KeyValueOps,
+  type KeyValueStorage,
+} from "../src/remote/policy.js";
 import {
   decryptMaterial,
   encryptMaterial,
@@ -117,6 +122,164 @@ test("binds OAuth state to the initiating admin and coalesces refresh", async ()
   ]);
   assert.equal(oauthCalls, 2);
   assert.ok(credentials.every((credential) => credential.accessCredential === "access-refreshed"));
+});
+
+test("reads and disconnects a legacy OAuth envelope without exposing secrets", async () => {
+  const storage = new MemoryStorage();
+  const core = new TenantSecretsCore(storage, remoteConfig(), async () => validOAuthResponse());
+  await storage.put("oauth-material", await encryptMaterial({
+    accessCredential: "legacy-access-canary",
+    refreshCredential: "legacy-refresh-canary",
+    expiresAtMs: 123_000,
+    apiDomain: "https://legacy.pipedrive.com",
+  }, encryptionKey()));
+
+  const status = await core.getStatus();
+  assert.deepEqual(status, {
+    connected: true,
+    materialReadable: true,
+    apiDomain: "https://legacy.pipedrive.com",
+    expiresAtMs: 123_000,
+    connectedAtMs: undefined,
+  });
+  assert.doesNotMatch(JSON.stringify(status), /legacy-(?:access|refresh)-canary/);
+
+  const view = await core.issueAdminView("admin-sub");
+  assert.deepEqual(view.status, status);
+  assert.equal((await core.disconnect("admin-sub", view.actionToken)).disconnected, true);
+  assert.deepEqual(await core.getStatus(), { connected: false });
+  assert.deepEqual(storage.peek("oauth-connection"), { generation: 1 });
+  assert.equal(storage.peek("oauth-material"), undefined);
+  assert.equal(storage.peek("oauth-state"), undefined);
+});
+
+test("keeps the disconnect kill switch available when OAuth material cannot be decrypted", async () => {
+  const storage = new MemoryStorage();
+  const redirectUri = "https://mcp.example.test/oauth/pipedrive/callback";
+  const connectedCore = new TenantSecretsCore(
+    storage,
+    remoteConfig(),
+    async () => validOAuthResponse(),
+  );
+  await connect(connectedCore, "connected", redirectUri);
+
+  const brokenKeyCore = new TenantSecretsCore(
+    storage,
+    remoteConfig({ encryptionKey: "invalid-after-connection" }),
+  );
+  const view = await brokenKeyCore.issueAdminView("admin-sub");
+  assert.deepEqual(view.status, { connected: true, materialReadable: false });
+  assert.equal((await brokenKeyCore.disconnect("admin-sub", view.actionToken)).disconnected, true);
+  assert.deepEqual(await brokenKeyCore.getStatus(), { connected: false });
+});
+
+test("never lets an in-flight refresh overwrite a disconnect and reconnection", async () => {
+  let now = 10_000;
+  const refreshStarted = deferred<void>();
+  const releaseRefresh = deferred<void>();
+  const storage = new MemoryStorage();
+  const core = new TenantSecretsCore(
+    storage,
+    remoteConfig(),
+    async (_input, init) => {
+      const body = new URLSearchParams(String(init?.body));
+      if (body.get("grant_type") === "refresh_token") {
+        refreshStarted.resolve();
+        await releaseRefresh.promise;
+        return oauthResponse("stale-refresh", 3_600);
+      }
+      const code = body.get("code");
+      return oauthResponse(code === "replacement" ? "replacement" : "initial", code === "replacement" ? 3_600 : 1);
+    },
+    () => now,
+  );
+  const redirectUri = "https://mcp.example.test/oauth/pipedrive/callback";
+  await connect(core, "initial", redirectUri);
+  now += 2_000;
+  const view = await core.issueAdminView("admin-sub");
+  const staleRefresh = core.getCredential();
+  await refreshStarted.promise;
+
+  await core.disconnect("admin-sub", view.actionToken);
+  await connect(core, "replacement", redirectUri);
+  releaseRefresh.resolve();
+
+  await assert.rejects(staleRefresh, /pipedrive_not_connected/);
+  assert.equal((await core.getCredential()).accessCredential, "access-replacement");
+  assert.equal(JSON.stringify(storage.peek("oauth-material")).includes("stale-refresh"), false);
+});
+
+test("never lets an in-flight OAuth callback resurrect a disconnected generation", async () => {
+  const oldExchangeStarted = deferred<void>();
+  const releaseOldExchange = deferred<void>();
+  const storage = new MemoryStorage();
+  const core = new TenantSecretsCore(
+    storage,
+    remoteConfig(),
+    async (_input, init) => {
+      const body = new URLSearchParams(String(init?.body));
+      const code = body.get("code");
+      if (code === "old") {
+        oldExchangeStarted.resolve();
+        await releaseOldExchange.promise;
+      }
+      return oauthResponse(code ?? "unknown", 3_600);
+    },
+  );
+  const redirectUri = "https://mcp.example.test/oauth/pipedrive/callback";
+  const oldState = await core.createState("admin-sub", redirectUri);
+  const view = await core.issueAdminView("admin-sub");
+  const oldExchange = core.exchange("admin-sub", oldState, "old", redirectUri);
+  await oldExchangeStarted.promise;
+
+  assert.equal((await core.disconnect("admin-sub", view.actionToken)).disconnected, false);
+  await connect(core, "new", redirectUri);
+  releaseOldExchange.resolve();
+
+  await assert.rejects(oldExchange, /pipedrive_not_connected/);
+  assert.equal((await core.getCredential()).accessCredential, "access-new");
+});
+
+test("binds one-shot admin tickets to subject, expiry and connection generation", async () => {
+  let now = 50_000;
+  const storage = new MemoryStorage();
+  const core = new TenantSecretsCore(
+    storage,
+    remoteConfig(),
+    async (_input, init) => {
+      const body = new URLSearchParams(String(init?.body));
+      return oauthResponse(body.get("code") ?? "connected", 3_600);
+    },
+    () => now,
+  );
+  const redirectUri = "https://mcp.example.test/oauth/pipedrive/callback";
+  await connect(core, "connected", redirectUri);
+
+  const wrongSubject = await core.issueAdminView("admin-sub");
+  await assert.rejects(
+    core.disconnect("other-sub", wrongSubject.actionToken),
+    /admin_csrf_invalid/,
+  );
+  await assert.rejects(
+    core.disconnect("admin-sub", wrongSubject.actionToken),
+    /admin_csrf_invalid/,
+  );
+
+  const expired = await core.issueAdminView("admin-sub");
+  now += 10 * 60_000;
+  await assert.rejects(core.disconnect("admin-sub", expired.actionToken), /admin_csrf_invalid/);
+
+  const stale = await core.issueAdminView("admin-sub");
+  await connect(core, "replacement", redirectUri);
+  await assert.rejects(core.disconnect("admin-sub", stale.actionToken), /admin_csrf_invalid/);
+  assert.equal((await core.getCredential()).accessCredential, "access-replacement");
+
+  const valid = await core.issueAdminView("admin-sub");
+  assert.equal((await core.disconnect("admin-sub", valid.actionToken)).disconnected, true);
+  await assert.rejects(core.disconnect("admin-sub", valid.actionToken), /admin_csrf_invalid/);
+  const idempotent = await core.issueAdminView("admin-sub");
+  assert.equal((await core.disconnect("admin-sub", idempotent.actionToken)).disconnected, false);
+  assert.deepEqual(storage.peek("oauth-connection"), { generation: 4 });
 });
 
 test("validates the encryption key before redirect and before consuming OAuth state", async () => {
@@ -273,9 +436,8 @@ test("classifies Durable Object storage failures", async () => {
     transactionStorage,
     remoteConfig(),
   );
-  const state = await transactionFailure.createState("admin-sub", redirectUri);
   await assert.rejects(
-    transactionFailure.exchange("admin-sub", state, "code-fixture", redirectUri),
+    transactionFailure.createState("admin-sub", redirectUri),
     /tenant_storage_unavailable/,
   );
 });
@@ -312,6 +474,7 @@ test("Durable Object HTTP boundary returns only stable allowlisted errors", asyn
 
 class MemoryStorage implements KeyValueStorage {
   private readonly values = new Map<string, unknown>();
+  private transactionTail: Promise<void> = Promise.resolve();
 
   async get<T>(key: string): Promise<T | undefined> {
     return this.values.get(key) as T | undefined;
@@ -325,8 +488,29 @@ class MemoryStorage implements KeyValueStorage {
     return this.values.delete(key);
   }
 
-  async transaction<T>(closure: (transaction: KeyValueStorage) => Promise<T>): Promise<T> {
-    return closure(this);
+  async transaction<T>(closure: (transaction: KeyValueOps) => Promise<T>): Promise<T> {
+    const previous = this.transactionTail;
+    const release = deferred<void>();
+    this.transactionTail = release.promise;
+    await previous;
+    const snapshot = new Map(
+      Array.from(this.values, ([key, value]) => [key, structuredClone(value)]),
+    );
+    try {
+      return await closure(this);
+    } catch (error) {
+      this.values.clear();
+      for (const [key, value] of snapshot) {
+        this.values.set(key, value);
+      }
+      throw error;
+    } finally {
+      release.resolve();
+    }
+  }
+
+  peek(key: string): unknown {
+    return this.values.get(key);
   }
 }
 
@@ -349,7 +533,7 @@ class FailingStorage extends MemoryStorage {
     return super.put(key, value);
   }
 
-  override async transaction<T>(closure: (transaction: KeyValueStorage) => Promise<T>): Promise<T> {
+  override async transaction<T>(closure: (transaction: KeyValueOps) => Promise<T>): Promise<T> {
     if (this.operation === "transaction") {
       throw new Error("storage-transaction-canary-secret");
     }
@@ -382,6 +566,35 @@ function validOAuthResponse(): Response {
     expires_in: 3_600,
     api_domain: "https://acme.pipedrive.com",
   });
+}
+
+function oauthResponse(label: string, expiresIn: number): Response {
+  return Response.json({
+    access_token: `access-${label}`,
+    refresh_token: `refresh-${label}`,
+    expires_in: expiresIn,
+    api_domain: "https://acme.pipedrive.com",
+  });
+}
+
+async function connect(
+  core: TenantSecretsCore,
+  code: string,
+  redirectUri: string,
+): Promise<void> {
+  const state = await core.createState("admin-sub", redirectUri);
+  await core.exchange("admin-sub", state, code, redirectUri);
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve: (value: T | PromiseLike<T>) => void;
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((complete) => {
+    resolve = complete;
+  });
+  return { promise, resolve };
 }
 
 function durableObjectState(storage: KeyValueStorage): DurableObjectState {

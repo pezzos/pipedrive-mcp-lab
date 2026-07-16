@@ -22,6 +22,8 @@ must reconnect Pipedrive when its OAuth grant is revoked or refresh returns
 The Pipedrive authorization is tenant-wide and completed once by the named
 admin. Pipedrive access and refresh tokens are encrypted in a singleton Durable
 Object; they are never sent to Claude or stored in a user's browser.
+The named admin uses `/admin/pipedrive` to inspect the exact connected company
+and user, replace the connection, or remove the Worker's local tokens.
 
 ## Architecture And Trust Boundaries
 
@@ -32,8 +34,14 @@ Object; they are never sent to Claude or stored in a user's browser.
   server and transport; no MCP session Durable Object is required.
 - `USER_POLICY` stores one independent policy per Access subject.
 - `TENANT_SECRETS` persists the shared encrypted Pipedrive OAuth material and
-  one-shot authorization state. Concurrent refreshes are coalesced in memory
-  while the Durable Object instance is active.
+  one-shot authorization state. A persisted connection generation prevents an
+  old refresh or OAuth callback from recreating deleted tokens or overwriting a
+  newer connection. Concurrent refreshes of one generation are also coalesced
+  in memory while the Durable Object instance is active.
+- `/admin/pipedrive` and its disconnect action require the configured Access
+  admin. Disconnect also requires exact-origin POST, explicit confirmation, and
+  a one-shot token bound to the Access subject and current connection
+  generation.
 - The model can call only the tools registered by the user's effective policy.
   It cannot change `/settings` or another user's policy.
 - Audit events contain operational metadata only: pseudonymous actor, route,
@@ -109,9 +117,10 @@ with older audit events.
    available on Cloudflare Workers Free and Paid plans; review the applicable
    quotas and costs before production.
 7. Sign in through Access as `REMOTE_ADMIN_EMAIL`, then visit
-   `https://<worker-host>/admin/pipedrive/connect`. Complete Pipedrive consent
-   once. If a callback fails, start a fresh connection from this URL; OAuth
-   state and authorization codes are one-shot and must not be replayed.
+   `https://<worker-host>/admin/pipedrive`. Choose **Connecter Pipedrive** and
+   complete consent once. Confirm the company and user shown on the admin page.
+   If a callback fails, start a fresh connection from this page; OAuth state and
+   authorization codes are one-shot and must not be replayed.
 8. Give users the remote MCP URL `https://<worker-host>/mcp`. Each user signs
    in through Access and can review their own policy at
    `https://<worker-host>/settings`.
@@ -142,6 +151,21 @@ Before production promotion, exercise the following with non-production data:
    admin Pipedrive reconnect.
 10. A forced Pipedrive token refresh is coalesced, and a revoked grant produces
     `pipedrive_reconnect_required` without exposing token material.
+11. `/admin/pipedrive` shows the sandbox company and user returned by
+    `/api/v1/users/me`. If that live check fails, the page remains connected and
+    shows a degraded verification state.
+12. Disconnect requires confirmation, emits a redacted `oauth.disconnect`
+    event, and makes the next MCP request fail with `pipedrive_not_connected`.
+    Reconnect from a newly issued OAuth state and verify the identity again.
+
+## Worker Rollback
+
+Before every sandbox deployment, record the currently active version with
+`npx wrangler deployments list`. If the new Worker regresses, run
+`npx wrangler rollback <version-id>` with that captured healthy version, then
+repeat `/healthz`, the anonymous `/mcp` rejection, and the protected admin-page
+checks. A Worker rollback does not restore deleted OAuth tokens and must not
+change Access, rotate secrets, or uninstall the Pipedrive application.
 
 ## Production Promotion
 
@@ -149,6 +173,11 @@ Promote the same verified commit and Worker artifact. Replace the sandbox
 Pipedrive OAuth application values with the production application values,
 review Access membership and durations, then repeat the admin connection and
 acceptance smoke tests against deliberately selected production records.
+
+A private Pipedrive application in `DRAFT` can be tested only in its developer
+sandbox. Changing it to live is a separate manual and irreversible promotion;
+it is never implied by deploying this Worker and requires explicit operator
+authorization.
 
 Production is blocked until console audit events are exported to a durable
 Logpush or SIEM destination with agreed retention, access control, alerting,
@@ -169,10 +198,14 @@ intentionally omitted.
 | `access_token_missing` or `access_token_invalid` | Reconnect the Claude connector and verify that the user remains allowed by Access. |
 | `access_jwks_unavailable` or `access_jwks_invalid` | Check Access availability and the issuer certificate endpoint; do not bypass JWT validation. |
 | `policy_unavailable` | Check the `USER_POLICY` Durable Object binding and recent Worker errors. Do not bypass the policy. |
-| `pipedrive_not_connected` | The admin completes `/admin/pipedrive/connect`. |
+| `pipedrive_not_connected` | The admin opens `/admin/pipedrive` and starts a fresh connection. |
+| `admin_required` | Sign in through Access as the exact `REMOTE_ADMIN_EMAIL`; do not broaden Access policy as a workaround. |
+| `admin_origin_invalid` or `admin_method_not_allowed` | Reload `/admin/pipedrive` on the Worker origin and submit its form normally. Do not replay a cross-origin request. |
+| `admin_confirmation_required` | Read and select the explicit local-token deletion confirmation before submitting again. |
+| `admin_csrf_invalid` | The action token expired, was used, or belongs to an older connection generation. Reload `/admin/pipedrive`; do not replay the form. |
 | `pipedrive_reconnect_required` | The admin reconnects Pipedrive; investigate revocation or OAuth app changes. |
 | `oauth_authorization_denied` | The admin denied Pipedrive consent. Start a fresh connection only if authorization is still intended. |
-| `oauth_state_invalid` or `oauth_code_invalid` | The callback expired, was already used, or does not match its initiator. Start again at `/admin/pipedrive/connect`; never replay the callback URL. |
+| `oauth_state_invalid` or `oauth_code_invalid` | The callback expired, was already used, or does not match its initiator. Start again at `/admin/pipedrive`; never replay the callback URL. |
 | `oauth_redirect_invalid` | Verify the Worker custom domain and that the exact callback URL is registered in the Pipedrive application. |
 | `oauth_encryption_key_invalid` | Verify that `PIPEDRIVE_OAUTH_ENCRYPTION_KEY` decodes to exactly 32 bytes. Correct the secret before starting a fresh connection. Replacing a previously valid key makes stored OAuth material unreadable and therefore requires reconnection. |
 | `oauth_encryption_failed` | Treat as a Worker crypto/runtime failure. Correlate the request ID and retry after checking Worker status; do not rotate a valid key speculatively. |
@@ -189,6 +222,11 @@ intentionally omitted.
 Do not log or paste Access assertions, OAuth codes, refresh tokens, encryption
 keys, or CRM response bodies into incident tickets. Correlate by the Worker
 request ID and pseudonymous actor ID.
+
+Disconnect on `/admin/pipedrive` deletes only the OAuth tokens stored by the
+Worker. It stops future Worker calls but does not revoke the provider grant.
+Until Pipedrive exposes a suitable revocation API for this flow, provider-side
+revocation requires manually uninstalling the application in Pipedrive.
 
 ## Primary References
 

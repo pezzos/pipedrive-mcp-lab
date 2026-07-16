@@ -19,11 +19,14 @@ export type PolicyUpdate = {
   expectedRevision: number;
 };
 
-export interface KeyValueStorage {
+export interface KeyValueOps {
   get<T>(key: string): Promise<T | undefined>;
   put<T>(key: string, value: T): Promise<void>;
   delete(key: string): Promise<boolean>;
-  transaction<T>(closure: (transaction: KeyValueStorage) => Promise<T>): Promise<T>;
+}
+
+export interface KeyValueStorage extends KeyValueOps {
+  transaction<T>(closure: (transaction: KeyValueOps) => Promise<T>): Promise<T>;
 }
 
 type CsrfRecord = {

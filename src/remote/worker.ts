@@ -1,4 +1,5 @@
 import type { PipedriveConfig } from "../config.js";
+import { PipedriveClient } from "../pipedriveClient.js";
 import { buildServer } from "../tools.js";
 import { verifyAccessRequest, type AccessIdentity } from "./access.js";
 import {
@@ -23,8 +24,13 @@ import {
 } from "./policy.js";
 import { renderSettingsPage } from "./settingsPage.js";
 import {
+  renderPipedriveAdminPage,
+  type PipedriveAdminIdentity,
+} from "./pipedriveAdminPage.js";
+import {
   TenantSecrets,
   tenantSecretsStub,
+  type TenantAdminView,
   type TenantCredential,
 } from "./tenantSecrets.js";
 import { handleMcpRequest } from "./transport.js";
@@ -78,15 +84,51 @@ export default {
       if (url.pathname === "/settings") {
         return await handleSettings(request, env, identity, config, context);
       }
-      if (url.pathname === "/admin/pipedrive/connect" && request.method === "GET") {
+      if (url.pathname === "/admin/pipedrive") {
         if (identity.email !== config.adminEmail) {
           return noStoreJson({ code: "admin_required" }, { status: 403 });
         }
-        return await handlePipedriveConnect(request, env, identity, config, context);
+        return await handlePipedriveAdmin(request, env, identity);
       }
-      if (url.pathname === "/oauth/pipedrive/callback" && request.method === "GET") {
+      if (url.pathname === "/admin/pipedrive/disconnect") {
+        if (identity.email !== config.adminEmail) {
+          context.waitUntil(
+            writeOperationAudit(
+              request,
+              identity.sub,
+              config.auditHmacKey,
+              url.pathname,
+              "oauth.disconnect",
+              "denied",
+              403,
+              "admin_required",
+            ).catch(() => undefined),
+          );
+          return noStoreJson({ code: "admin_required" }, { status: 403 });
+        }
+        return await handlePipedriveDisconnect(request, env, identity, config, context);
+      }
+      if (url.pathname === "/admin/pipedrive/connect") {
         if (identity.email !== config.adminEmail) {
           return noStoreJson({ code: "admin_required" }, { status: 403 });
+        }
+        if (request.method !== "GET") {
+          return noStoreJson(
+            { code: "admin_method_not_allowed" },
+            { status: 405, headers: { allow: "GET" } },
+          );
+        }
+        return await handlePipedriveConnect(request, env, identity, config, context);
+      }
+      if (url.pathname === "/oauth/pipedrive/callback") {
+        if (identity.email !== config.adminEmail) {
+          return noStoreJson({ code: "admin_required" }, { status: 403 });
+        }
+        if (request.method !== "GET") {
+          return noStoreJson(
+            { code: "admin_method_not_allowed" },
+            { status: 405, headers: { allow: "GET" } },
+          );
         }
         return await handlePipedriveCallback(request, env, identity, config, context);
       }
@@ -149,6 +191,162 @@ async function handleRemoteMcp(
   return response;
 }
 
+async function handlePipedriveAdmin(
+  request: Request,
+  env: RemoteEnv,
+  identity: AccessIdentity,
+): Promise<Response> {
+  if (request.method !== "GET") {
+    return noStoreJson(
+      { code: "admin_method_not_allowed" },
+      { status: 405, headers: { allow: "GET" } },
+    );
+  }
+  const response = await tenantSecretsStub(env).fetch("https://tenant.internal/admin-view", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ adminSub: identity.sub }),
+  });
+  if (!response.ok) {
+    const code = await tenantFailureCode(response);
+    return noStoreJson({ code }, { status: remoteOAuthErrorStatus(code) });
+  }
+  const view = await response.json<TenantAdminView>();
+  const liveIdentity = view.status.connected && view.status.materialReadable
+    ? await getPipedriveAdminIdentity(env).catch((): PipedriveAdminIdentity => ({
+        state: "unavailable",
+      }))
+    : { state: "unavailable" } as const;
+  const nonce = styleNonce();
+  const url = new URL(request.url);
+  return html(
+    renderPipedriveAdminPage({
+      connection: view.status,
+      identity: liveIdentity,
+      actionToken: view.actionToken,
+      nonce,
+      connected: url.searchParams.get("connected") === "1",
+      disconnected: url.searchParams.get("disconnected") === "1",
+    }),
+    200,
+    nonce,
+  );
+}
+
+async function handlePipedriveDisconnect(
+  request: Request,
+  env: RemoteEnv,
+  identity: AccessIdentity,
+  config: RemoteConfig,
+  context: ExecutionContext,
+): Promise<Response> {
+  if (request.method !== "POST") {
+    return disconnectFailure(
+      request,
+      identity,
+      config,
+      context,
+      "admin_method_not_allowed",
+      405,
+      { allow: "POST" },
+    );
+  }
+  if (!hasExactOrigin(request)) {
+    return disconnectFailure(
+      request,
+      identity,
+      config,
+      context,
+      "admin_origin_invalid",
+      403,
+    );
+  }
+  let form: FormData;
+  try {
+    form = await request.formData();
+  } catch {
+    return disconnectFailure(
+      request,
+      identity,
+      config,
+      context,
+      "admin_confirmation_required",
+      400,
+    );
+  }
+  if (form.get("confirm") !== "yes") {
+    return disconnectFailure(
+      request,
+      identity,
+      config,
+      context,
+      "admin_confirmation_required",
+      400,
+    );
+  }
+  const response = await tenantSecretsStub(env).fetch("https://tenant.internal/disconnect", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      adminSub: identity.sub,
+      actionToken: String(form.get("csrf") ?? ""),
+    }),
+  });
+  if (!response.ok) {
+    const code = await tenantFailureCode(response);
+    const status = remoteOAuthErrorStatus(code);
+    context.waitUntil(
+      writeOperationAudit(
+        request,
+        identity.sub,
+        config.auditHmacKey,
+        "/admin/pipedrive/disconnect",
+        "oauth.disconnect",
+        code === "admin_csrf_invalid" ? "denied" : "error",
+        status,
+        code,
+      ).catch(() => undefined),
+    );
+    return noStoreJson({ code }, { status });
+  }
+  context.waitUntil(
+    writeOperationAudit(
+      request,
+      identity.sub,
+      config.auditHmacKey,
+      "/admin/pipedrive/disconnect",
+      "oauth.disconnect",
+      "success",
+      303,
+    ).catch(() => undefined),
+  );
+  return Response.redirect(new URL("/admin/pipedrive?disconnected=1", request.url), 303);
+}
+
+function disconnectFailure(
+  request: Request,
+  identity: AccessIdentity,
+  config: RemoteConfig,
+  context: ExecutionContext,
+  code: RemoteOAuthErrorCode,
+  status: number,
+  headers?: HeadersInit,
+): Response {
+  context.waitUntil(
+    writeOperationAudit(
+      request,
+      identity.sub,
+      config.auditHmacKey,
+      "/admin/pipedrive/disconnect",
+      "oauth.disconnect",
+      "denied",
+      status,
+      code,
+    ).catch(() => undefined),
+  );
+  return noStoreJson({ code }, { status, headers });
+}
+
 async function handleSettings(
   request: Request,
   env: RemoteEnv,
@@ -181,7 +379,7 @@ async function handleSettings(
     );
   }
 
-  if (request.method !== "POST" || request.headers.get("origin") !== new URL(request.url).origin) {
+  if (request.method !== "POST" || !hasExactOrigin(request)) {
     return noStoreJson({ code: "settings_request_invalid" }, { status: 403 });
   }
   const form = await request.formData();
@@ -358,10 +556,10 @@ async function handlePipedriveCallback(
     return oauthFailurePage("Connexion Pipedrive impossible", code, requestId(request), status);
   }
   context.waitUntil(
-    writeOperationAudit(request, identity.sub, config.auditHmacKey, "/oauth/pipedrive/callback", "oauth.callback", "success", 200)
+    writeOperationAudit(request, identity.sub, config.auditHmacKey, "/oauth/pipedrive/callback", "oauth.callback", "success", 303)
       .catch(() => undefined),
   );
-  return html("<h1>Pipedrive est connecté</h1><p>Le serveur peut maintenant renouveler l’accès automatiquement.</p>");
+  return Response.redirect(new URL("/admin/pipedrive?connected=1", request.url), 303);
 }
 
 async function getTenantCredential(env: RemoteEnv): Promise<TenantCredential> {
@@ -371,6 +569,73 @@ async function getTenantCredential(env: RemoteEnv): Promise<TenantCredential> {
     throw new Error(code);
   }
   return response.json<TenantCredential>();
+}
+
+async function getPipedriveAdminIdentity(env: RemoteEnv): Promise<PipedriveAdminIdentity> {
+  const credential = await getTenantCredential(env);
+  const client = new PipedriveClient({
+    accessToken: credential.accessCredential,
+    baseUrl: credential.apiDomain,
+    baseUrlSource: "explicit",
+    allowMockBaseUrl: false,
+    enableWrites: false,
+    enableDeleteTools: false,
+    enableMailboxTools: false,
+    requestTimeoutMs: 10_000,
+  });
+  return parsePipedriveAdminIdentity(await client.get("/api/v1/users/me"));
+}
+
+function parsePipedriveAdminIdentity(value: unknown): PipedriveAdminIdentity {
+  const data = isRecord(value) && value.success === true && isRecord(value.data)
+    ? value.data
+    : undefined;
+  if (!data) {
+    return { state: "unavailable" };
+  }
+  const companyId = boundedIdentifier(data.company_id);
+  const companyName = boundedLabel(data.company_name);
+  const companyDomain = boundedLabel(data.company_domain);
+  const userId = boundedIdentifier(data.id);
+  const userName = boundedLabel(data.name);
+  if (!companyId || !companyName || !companyDomain || !userId || !userName) {
+    return { state: "unavailable" };
+  }
+  return {
+    state: "available",
+    companyId,
+    companyName,
+    companyDomain,
+    userId,
+    userName,
+  };
+}
+
+function boundedIdentifier(value: unknown): string | undefined {
+  if (
+    (typeof value !== "string" && typeof value !== "number") ||
+    (typeof value === "number" && !Number.isSafeInteger(value))
+  ) {
+    return undefined;
+  }
+  const normalized = String(value);
+  return normalized.length > 0 && normalized.length <= 128 ? normalized : undefined;
+}
+
+function boundedLabel(value: unknown): string | undefined {
+  if (typeof value !== "string") {
+    return undefined;
+  }
+  const normalized = value.trim();
+  return normalized.length > 0 && normalized.length <= 200 ? normalized : undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+function hasExactOrigin(request: Request): boolean {
+  return request.headers.get("origin") === new URL(request.url).origin;
 }
 
 async function inspectToolCall(request: Request): Promise<{
@@ -486,7 +751,7 @@ async function writeOperationAudit(
   auditHmacKey: string,
   route: string,
   operation: string,
-  outcome: "success" | "error",
+  outcome: AuditEvent["outcome"],
   httpStatus: number,
   errorCode?: RemoteOAuthErrorCode,
 ): Promise<void> {

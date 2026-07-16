@@ -48,13 +48,23 @@ test("Worker audits and rejects a request without an Access assertion", async ()
 test("Worker rejects a non-admin before touching the OAuth broker", async () => {
   const fixture = await accessFixture("user@example.com");
   await withJwks(fixture.jwk, async () => {
-    const response = await worker.fetch(
+    for (const request of [
       authorizedRequest("https://mcp.example.test/admin/pipedrive/connect", fixture.assertion),
-      remoteEnv(failingNamespace()),
-      executionContext().value,
-    );
-    assert.equal(response.status, 403);
-    assert.deepEqual(await response.json(), { code: "admin_required" });
+      authorizedRequest("https://mcp.example.test/admin/pipedrive", fixture.assertion),
+      authorizedRequest(
+        "https://mcp.example.test/admin/pipedrive/disconnect",
+        fixture.assertion,
+        { method: "POST" },
+      ),
+    ]) {
+      const response = await worker.fetch(
+        request,
+        remoteEnv(failingNamespace()),
+        executionContext().value,
+      );
+      assert.equal(response.status, 403);
+      assert.deepEqual(await response.json(), { code: "admin_required" });
+    }
   });
 });
 
@@ -92,6 +102,24 @@ test("Worker starts Pipedrive OAuth and audits the redirect", async () => {
     assert.equal(event.operation, "oauth.connect");
     assert.equal(event.outcome, "success");
     assert.equal(event.httpStatus, 302);
+  });
+});
+
+test("Worker returns 405 for unsupported methods on GET-only OAuth admin routes", async () => {
+  const fixture = await accessFixture("admin@example.com");
+  await withJwks(fixture.jwk, async () => {
+    for (const path of ["/admin/pipedrive/connect", "/oauth/pipedrive/callback"]) {
+      const response = await worker.fetch(
+        authorizedRequest(`https://mcp.example.test${path}`, fixture.assertion, {
+          method: "POST",
+        }),
+        remoteEnv(failingNamespace()),
+        executionContext().value,
+      );
+      assert.equal(response.status, 405);
+      assert.equal(response.headers.get("allow"), "GET");
+      assert.deepEqual(await response.json(), { code: "admin_method_not_allowed" });
+    }
   });
 });
 
@@ -154,12 +182,15 @@ test("Worker completes the Pipedrive callback and audits success", async () => {
       await Promise.all(context.waits);
       return result;
     });
-    assert.equal(response.status, 200);
-    assert.match(await response.text(), /Pipedrive est connecté/);
+    assert.equal(response.status, 303);
+    assert.equal(
+      response.headers.get("location"),
+      "https://mcp.example.test/admin/pipedrive?connected=1",
+    );
     const event = JSON.parse(logs[0]) as Record<string, unknown>;
     assert.equal(event.operation, "oauth.callback");
     assert.equal(event.outcome, "success");
-    assert.equal(event.httpStatus, 200);
+    assert.equal(event.httpStatus, 303);
   });
 });
 
@@ -239,6 +270,328 @@ test("Worker reports an allowlisted invalid state and a denied consent", async (
       redirectUri: "https://mcp.example.test/oauth/pipedrive/callback",
     });
     await Promise.all(deniedContext.waits);
+  });
+});
+
+test("Worker renders the protected Pipedrive admin page with live company identity", async () => {
+  const fixture = await accessFixture("admin@example.com");
+  const tenantNamespace = namespaceFor(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path === "/admin-view") {
+      assert.deepEqual(await request.json(), { adminSub: "worker-user-1" });
+      return Response.json({
+        status: {
+          connected: true,
+          materialReadable: true,
+          apiDomain: "https://acme.pipedrive.com",
+          expiresAtMs: Date.UTC(2026, 6, 16, 12),
+          connectedAtMs: Date.UTC(2026, 6, 15, 10),
+        },
+        actionToken: "admin-csrf-fixture",
+      });
+    }
+    if (path === "/credential") {
+      return Response.json({
+        accessCredential: "oauth-access-canary",
+        apiDomain: "https://acme.pipedrive.com",
+        expiresAtMs: Date.now() + 3_600_000,
+      });
+    }
+    return new Response("Not found", { status: 404 });
+  });
+  const providerFetch: typeof fetch = async (input, init) => {
+    const request = new Request(input, init);
+    assert.equal(request.url, "https://acme.pipedrive.com/api/v1/users/me");
+    assert.equal(request.headers.get("authorization"), "Bearer oauth-access-canary");
+    return Response.json({
+      success: true,
+      data: {
+        id: 7,
+        name: "Admin Sandbox",
+        email: "private@example.test",
+        company_id: 42,
+        company_name: "Pezzos Labs - Sandbox",
+        company_domain: "pezzos-sandbox",
+      },
+    });
+  };
+
+  await withJwks(fixture.jwk, async () => {
+    const response = await worker.fetch(
+      authorizedRequest("https://mcp.example.test/admin/pipedrive", fixture.assertion),
+      remoteEnv(failingNamespace(), tenantNamespace),
+      executionContext().value,
+    );
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    const page = await response.text();
+    assert.match(page, /Pezzos Labs - Sandbox/);
+    assert.match(page, /Admin Sandbox/);
+    assert.match(page, /pezzos-sandbox/);
+    assert.match(page, /href="\/admin\/pipedrive\/connect"/);
+    assert.match(page, /action="\/admin\/pipedrive\/disconnect"/);
+    assert.match(page, /name="csrf" value="admin-csrf-fixture"/);
+    assert.doesNotMatch(page, /oauth-access-canary|private@example\.test/);
+    const nonce = page.match(/style nonce="([^"]+)"/)?.[1];
+    assert.ok(nonce);
+    assert.match(response.headers.get("content-security-policy") ?? "", new RegExp(`style-src 'nonce-${nonce}'`));
+    assert.doesNotMatch(response.headers.get("content-security-policy") ?? "", /unsafe-inline/);
+  }, providerFetch);
+});
+
+test("Worker keeps a connected admin page degraded when live identity is unavailable", async () => {
+  const fixture = await accessFixture("admin@example.com");
+  const tenantNamespace = namespaceFor(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path === "/admin-view") {
+      return Response.json({
+        status: {
+          connected: true,
+          materialReadable: true,
+          apiDomain: "https://acme.pipedrive.com",
+          expiresAtMs: Date.now() + 3_600_000,
+        },
+        actionToken: "admin-csrf-fixture",
+      });
+    }
+    if (path === "/credential") {
+      return Response.json({
+        accessCredential: "oauth-access-canary",
+        apiDomain: "https://acme.pipedrive.com",
+        expiresAtMs: Date.now() + 3_600_000,
+      });
+    }
+    return new Response("Not found", { status: 404 });
+  });
+
+  await withJwks(fixture.jwk, async () => {
+    const response = await worker.fetch(
+      authorizedRequest("https://mcp.example.test/admin/pipedrive", fixture.assertion),
+      remoteEnv(failingNamespace(), tenantNamespace),
+      executionContext().value,
+    );
+    assert.equal(response.status, 200);
+    const page = await response.text();
+    assert.match(page, /Connecté/);
+    assert.match(page, /vérification en direct indisponible/);
+    assert.doesNotMatch(page, /provider-private-canary/);
+  }, async () => Response.json({ success: false, error: "provider-private-canary" }));
+});
+
+test("Worker rejects invalid disconnect methods, origins and confirmations before the broker", async () => {
+  const fixture = await accessFixture("admin@example.com");
+  await withJwks(fixture.jwk, async () => {
+    const cases: Array<{ request: Request; status: number; code: string; allow?: string }> = [
+      {
+        request: authorizedRequest(
+          "https://mcp.example.test/admin/pipedrive/disconnect",
+          fixture.assertion,
+        ),
+        status: 405,
+        code: "admin_method_not_allowed",
+        allow: "POST",
+      },
+      {
+        request: authorizedRequest(
+          "https://mcp.example.test/admin/pipedrive/disconnect",
+          fixture.assertion,
+          { method: "POST", body: new URLSearchParams({ confirm: "yes", csrf: "token" }) },
+        ),
+        status: 403,
+        code: "admin_origin_invalid",
+      },
+      {
+        request: authorizedRequest(
+          "https://mcp.example.test/admin/pipedrive/disconnect",
+          fixture.assertion,
+          {
+            method: "POST",
+            headers: { origin: "https://evil.example.test" },
+            body: new URLSearchParams({ confirm: "yes", csrf: "token" }),
+          },
+        ),
+        status: 403,
+        code: "admin_origin_invalid",
+      },
+      {
+        request: authorizedRequest(
+          "https://mcp.example.test/admin/pipedrive/disconnect",
+          fixture.assertion,
+          {
+            method: "POST",
+            headers: { origin: "https://mcp.example.test" },
+            body: new URLSearchParams({ csrf: "token" }),
+          },
+        ),
+        status: 400,
+        code: "admin_confirmation_required",
+      },
+    ];
+    for (const scenario of cases) {
+      const context = executionContext();
+      const { value: response, logs } = await captureLogs(async () => {
+        const result = await worker.fetch(
+          scenario.request,
+          remoteEnv(failingNamespace()),
+          context.value,
+        );
+        await Promise.all(context.waits);
+        return result;
+      });
+      assert.equal(response.status, scenario.status);
+      assert.deepEqual(await response.json(), { code: scenario.code });
+      assert.equal(response.headers.get("allow"), scenario.allow ?? null);
+      const event = JSON.parse(logs[0]) as Record<string, unknown>;
+      assert.equal(event.operation, "oauth.disconnect");
+      assert.equal(event.outcome, "denied");
+      assert.equal(event.errorCode, scenario.code);
+    }
+  });
+});
+
+test("Worker disconnects locally, audits without PII and redirects idempotently", async () => {
+  const fixture = await accessFixture("admin@example.com");
+  let received: Record<string, unknown> | undefined;
+  const tenantNamespace = namespaceFor(async (request) => {
+    assert.equal(new URL(request.url).pathname, "/disconnect");
+    received = await request.json() as Record<string, unknown>;
+    return Response.json({ disconnected: false });
+  });
+  await withJwks(fixture.jwk, async () => {
+    const context = executionContext();
+    const { value: response, logs } = await captureLogs(async () => {
+      const result = await worker.fetch(
+        authorizedRequest(
+          "https://mcp.example.test/admin/pipedrive/disconnect",
+          fixture.assertion,
+          {
+            method: "POST",
+            headers: {
+              origin: "https://mcp.example.test",
+              "content-type": "application/x-www-form-urlencoded",
+              "cf-ray": "disconnect-ray",
+            },
+            body: new URLSearchParams({ confirm: "yes", csrf: "admin-csrf-canary" }),
+          },
+        ),
+        remoteEnv(failingNamespace(), tenantNamespace),
+        context.value,
+      );
+      await Promise.all(context.waits);
+      return result;
+    });
+    assert.equal(response.status, 303);
+    assert.equal(
+      response.headers.get("location"),
+      "https://mcp.example.test/admin/pipedrive?disconnected=1",
+    );
+    assert.deepEqual(received, {
+      adminSub: "worker-user-1",
+      actionToken: "admin-csrf-canary",
+    });
+    assert.equal(logs.length, 1);
+    const event = JSON.parse(logs[0]) as Record<string, unknown>;
+    assert.equal(event.operation, "oauth.disconnect");
+    assert.equal(event.outcome, "success");
+    assert.equal(event.httpStatus, 303);
+    assert.equal(String(event.actorId).includes("worker-user-1"), false);
+    assert.doesNotMatch(logs[0], /admin@example\.com|admin-csrf-canary|company/i);
+  });
+});
+
+test("Worker returns pipedrive_not_connected on the next MCP call after disconnect", async () => {
+  const fixture = await accessFixture("admin@example.com");
+  let connected = true;
+  const tenantNamespace = namespaceFor(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path === "/disconnect") {
+      connected = false;
+      return Response.json({ disconnected: true });
+    }
+    if (path === "/credential") {
+      return connected
+        ? Response.json({
+            accessCredential: "oauth-access-fixture",
+            apiDomain: "https://acme.pipedrive.com",
+            expiresAtMs: Date.now() + 60_000,
+          })
+        : Response.json({ code: "pipedrive_not_connected" }, { status: 404 });
+    }
+    return new Response("Not found", { status: 404 });
+  });
+  const policyNamespace = namespaceFor(async () => Response.json({
+    writes: false,
+    deletes: false,
+    mailbox: false,
+    revision: 0,
+    updatedAt: "1970-01-01T00:00:00.000Z",
+  }));
+
+  await withJwks(fixture.jwk, async () => {
+    const disconnectContext = executionContext();
+    const disconnect = await worker.fetch(
+      authorizedRequest(
+        "https://mcp.example.test/admin/pipedrive/disconnect",
+        fixture.assertion,
+        {
+          method: "POST",
+          headers: { origin: "https://mcp.example.test" },
+          body: new URLSearchParams({ confirm: "yes", csrf: "admin-csrf-fixture" }),
+        },
+      ),
+      remoteEnv(policyNamespace, tenantNamespace),
+      disconnectContext.value,
+    );
+    assert.equal(disconnect.status, 303);
+    await Promise.all(disconnectContext.waits);
+
+    const mcp = await worker.fetch(
+      authorizedRequest("https://mcp.example.test/mcp", fixture.assertion, {
+        method: "POST",
+        headers: {
+          accept: "application/json, text/event-stream",
+          "content-type": "application/json",
+          "mcp-protocol-version": "2025-06-18",
+        },
+        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
+      }),
+      remoteEnv(policyNamespace, tenantNamespace),
+      executionContext().value,
+    );
+    assert.equal(mcp.status, 503);
+    const payload = await mcp.json() as { error: { data: { code: string } } };
+    assert.equal(payload.error.data.code, "pipedrive_not_connected");
+  });
+});
+
+test("Worker surfaces a consumed disconnect ticket without leaking it", async () => {
+  const fixture = await accessFixture("admin@example.com");
+  const tenantNamespace = namespaceFor(async () =>
+    Response.json({ code: "admin_csrf_invalid" }, { status: 403 }),
+  );
+  await withJwks(fixture.jwk, async () => {
+    const context = executionContext();
+    const { value: response, logs } = await captureLogs(async () => {
+      const result = await worker.fetch(
+        authorizedRequest(
+          "https://mcp.example.test/admin/pipedrive/disconnect",
+          fixture.assertion,
+          {
+            method: "POST",
+            headers: { origin: "https://mcp.example.test" },
+            body: new URLSearchParams({ confirm: "yes", csrf: "replayed-csrf-canary" }),
+          },
+        ),
+        remoteEnv(failingNamespace(), tenantNamespace),
+        context.value,
+      );
+      await Promise.all(context.waits);
+      return result;
+    });
+    assert.equal(response.status, 403);
+    assert.deepEqual(await response.json(), { code: "admin_csrf_invalid" });
+    assert.doesNotMatch(logs.join("\n"), /replayed-csrf-canary/);
+    assert.equal((JSON.parse(logs[0]) as Record<string, unknown>).outcome, "denied");
   });
 });
 
@@ -485,10 +838,23 @@ function authorizedRequest(
   return new Request(url, { ...init, headers });
 }
 
-async function withJwks(jwk: JsonWebKey, run: () => Promise<void>): Promise<void> {
+async function withJwks(
+  jwk: JsonWebKey,
+  run: () => Promise<void>,
+  providerFetch?: typeof fetch,
+): Promise<void> {
   clearAccessJwksCache();
   const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => Response.json({ keys: [jwk] });
+  globalThis.fetch = async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.origin === issuer && url.pathname === "/cdn-cgi/access/certs") {
+      return Response.json({ keys: [jwk] });
+    }
+    if (providerFetch) {
+      return providerFetch(input, init);
+    }
+    throw new Error(`unexpected_fetch:${url.origin}${url.pathname}`);
+  };
   try {
     await run();
   } finally {

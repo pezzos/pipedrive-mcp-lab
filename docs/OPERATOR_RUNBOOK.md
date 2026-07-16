@@ -90,6 +90,57 @@ Mailbox draft creation, sending, and replies are not supported by this MCP
 version. To create an email to-do, use `pipedrive_create_activity` with
 `type="email"` and place the draft body or instructions in `note`.
 
+## Remote Pipedrive Connection Administration
+
+Sign in through Cloudflare Access as `REMOTE_ADMIN_EMAIL` and open
+`https://<worker-host>/admin/pipedrive`. The page is the canonical entry point
+for connection operations:
+
+1. On a new deployment, choose **Connecter Pipedrive**, complete the one-shot
+   OAuth flow, then verify the displayed company and user.
+2. Verify the displayed Pipedrive company, company ID/domain, user, API domain,
+   token expiration, and connection date when known.
+3. Choose **Remplacer la connexion** to start a fresh one-shot OAuth flow. After
+   the callback, verify the displayed company and user again.
+4. Run `pipedrive_connection_check` in Claude, then perform one known read-only
+   lookup whose result identifies the intended account.
+5. To stop Worker access, select the explicit confirmation and choose
+   **Supprimer la connexion locale**. Confirm the `oauth.disconnect` audit event
+   contains only operational metadata: pseudonymous actor, request ID,
+   timestamp, route, operation, effect, outcome, HTTP status, latency, and a
+   normalized error code when present. It must contain no JWT, token, email,
+   company/user identity, or CRM payload.
+6. Verify the next MCP call fails with `pipedrive_not_connected`. Reconnecting
+   requires a newly issued OAuth state; old forms and callback URLs are not
+   reusable.
+
+Disconnect removes only the Worker's local encrypted tokens. It does not
+uninstall the Pipedrive application or revoke the provider grant. Provider-side
+revocation currently requires a manual uninstall in Pipedrive and is a separate
+destructive operation.
+
+### Moving from sandbox to the intended company
+
+Before attempting the connection, verify that the OAuth application can be
+installed in the target company. A private Pipedrive application in `DRAFT` is
+limited to its developer sandbox. Changing it to live is manual, irreversible,
+and requires explicit authorization; a Worker deployment never performs or
+authorizes that promotion.
+
+When the application is installable in the target company, use **Remplacer la
+connexion**, choose the intended company during Pipedrive consent, verify its
+identity on `/admin/pipedrive`, then run `pipedrive_connection_check` and a
+known read. Do not infer the account from an OAuth success screen alone.
+
+### Worker rollback
+
+Before deploying a Worker update, capture `npx wrangler deployments list`. If
+smoke tests regress, run `npx wrangler rollback <version-id>` with the captured
+healthy version and repeat `/healthz`, anonymous `/mcp`, Access protection, and
+the admin page. A Worker rollback does not restore locally deleted OAuth tokens
+and must not change Access, rotate secrets, or uninstall the Pipedrive
+application.
+
 ## Private Package Delivery
 
 The package is private and is not prepared for public npm publication. Use:
