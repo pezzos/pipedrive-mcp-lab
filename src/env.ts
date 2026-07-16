@@ -2,6 +2,7 @@ import { existsSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config as loadDotenv } from "dotenv";
+import type { RuntimeEnvDiagnostics, RuntimeEnvKeyPresence } from "./runtimeDiagnostics.js";
 
 const runtimeEnvKeys = {
   enableWrites: "PIPEDRIVE_ENABLE_WRITES",
@@ -15,20 +16,12 @@ type RuntimeEnvOptions = {
   env?: NodeJS.ProcessEnv;
 };
 
-type RuntimeEnvDiagnostics = {
-  initialized: boolean;
-  dotenvLoadingEnabled: boolean;
-  dotenvLocalFilePresent: boolean;
-  dotenvLoaded: boolean;
-  preexisting: Record<keyof typeof runtimeEnvKeys, boolean>;
-  current: Record<keyof typeof runtimeEnvKeys, boolean>;
-};
-
 let diagnostics: RuntimeEnvDiagnostics = {
   initialized: false,
   dotenvLoadingEnabled: process.env.PIPEDRIVE_LOAD_DOTENV?.toLowerCase() !== "false",
   dotenvLocalFilePresent: false,
   dotenvLoaded: false,
+  dotenvLoadFailed: false,
   preexisting: hasRuntimeEnvKeys(process.env),
   current: hasRuntimeEnvKeys(process.env),
 };
@@ -43,6 +36,7 @@ export function loadRuntimeEnv(options: RuntimeEnvOptions = {}): void {
     dotenvLoadingEnabled,
     dotenvLocalFilePresent: false,
     dotenvLoaded: false,
+    dotenvLoadFailed: false,
     preexisting,
     current: hasRuntimeEnvKeys(env),
   };
@@ -70,7 +64,12 @@ export function loadRuntimeEnv(options: RuntimeEnvOptions = {}): void {
     processEnv: env,
   });
   if (result.error) {
-    throw new Error(`Failed to load runtime .env file: ${formatError(result.error)}`);
+    diagnostics = {
+      ...diagnostics,
+      dotenvLoadFailed: true,
+      current: hasRuntimeEnvKeys(env),
+    };
+    return;
   }
   diagnostics = {
     ...diagnostics,
@@ -91,11 +90,7 @@ function defaultPackageDir(): string {
   return dirname(dirname(fileURLToPath(import.meta.url)));
 }
 
-function formatError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
-}
-
-function hasRuntimeEnvKeys(env: NodeJS.ProcessEnv): Record<keyof typeof runtimeEnvKeys, boolean> {
+function hasRuntimeEnvKeys(env: NodeJS.ProcessEnv): RuntimeEnvKeyPresence {
   return {
     enableWrites: hasRuntimeEnvKey(env, runtimeEnvKeys.enableWrites),
     enableDeleteTools: hasRuntimeEnvKey(env, runtimeEnvKeys.enableDeleteTools),

@@ -11,7 +11,9 @@ export type PipedriveConfig = {
   requestTimeoutMs: number;
 };
 
-export function loadConfig(env: NodeJS.ProcessEnv = process.env): PipedriveConfig {
+type Environment = Record<string, string | undefined>;
+
+export function loadConfig(env: Environment = processEnvironment()): PipedriveConfig {
   const companyDomain = normalizeCompanyDomain(clean(env.PIPEDRIVE_COMPANY_DOMAIN));
   const apiToken = clean(env.PIPEDRIVE_API_TOKEN);
   const accessToken = clean(env.PIPEDRIVE_ACCESS_TOKEN);
@@ -35,6 +37,14 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): PipedriveConfi
     enableMailboxTools,
     requestTimeoutMs: Number.isFinite(requestTimeoutMs) && requestTimeoutMs > 0 ? requestTimeoutMs : 10_000,
   };
+}
+
+function processEnvironment(): Environment {
+  return (
+    globalThis as typeof globalThis & {
+      process?: { env?: Environment };
+    }
+  ).process?.env ?? {};
 }
 
 export function requireConfigured(config: PipedriveConfig): void {

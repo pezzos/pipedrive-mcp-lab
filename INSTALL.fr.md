@@ -1,172 +1,122 @@
-# Installation de Pipedrive MCP dans Claude Desktop
+# Installer Pipedrive MCP dans Claude
 
-Ce guide est destiné à un utilisateur non technique. Installez et testez
-d'abord dans le chat Claude Desktop. Validez ensuite Claude Cowork si vous
-voulez utiliser des espaces projet et des documents de travail persistants.
+Ce guide concerne le pilote sandbox en version `0.3.0`. Il utilise uniquement :
 
-## Avant de commencer
+```text
+https://pipedrive-mcp-sandbox.pezzoslabs.com/mcp
+```
 
-Vous avez besoin de :
+Le connecteur distant est protégé par Cloudflare Access. L'utilisateur ne
+saisit jamais de token Pipedrive : un administrateur connecte le tenant
+Pipedrive de sandbox et le service renouvelle ensuite cet accès OAuth.
 
-- Claude Desktop installé et connecté.
-- Un token API Pipedrive.
-- Le domaine Pipedrive de l'entreprise.
-  - Exemple : pour `https://acme.pipedrive.com`, saisir uniquement `acme`.
+Choisissez un seul parcours. N'activez pas simultanément le connecteur distant
+et l'extension Desktop locale `.mcpb` : ils exposent tous les deux les outils
+`pipedrive_*` et peuvent créer des doublons.
 
-Vous n'avez normalement pas besoin d'installer Node.js. Claude Desktop inclut
-Node.js pour les extensions Desktop. Installez Node.js seulement si le test
-Cowork à la fin ne trouve pas les outils Pipedrive après un redémarrage complet
-de Claude Desktop.
+Avant l'un ou l'autre parcours, l'opérateur doit ajouter l'adresse e-mail exacte
+de l'utilisateur ou son groupe de fournisseur d'identité à la politique
+**Allow** de l'application Cloudflare Access. Access est la porte de connexion
+par utilisateur devant le serveur MCP ; elle est distincte de la connexion
+OAuth Pipedrive partagée.
 
-## Ce que vous allez installer
+## Offre gratuite : skills autonomes
 
-Il y a deux éléments :
+Un compte gratuit peut importer des skills personnalisés et utiliser un
+connecteur distant personnalisé.
 
-- Le plugin Claude : il ajoute les compétences Pipedrive utilisées par Claude.
-- Le fichier d'extension Desktop (`.mcpb`) : il ajoute le connecteur local
-  Pipedrive et l'écran de réglages où saisir le domaine Pipedrive et le token
-  API.
+1. Ouvrez le
+   [dossier de distribution `standalone-skills/`](https://github.com/pezzos/pipedrive-mcp-claude-plugin/tree/main/standalone-skills)
+   et téléchargez les ZIP souhaités. Chaque ZIP contient un seul workflow.
+2. Dans Claude Web, ouvrez **Personnaliser > Skills**, puis **Créer un skill**
+   et **Importer un skill**.
+3. Importez chaque ZIP séparément et activez-le.
+4. Ouvrez **Personnaliser > Connecteurs**, ajoutez un connecteur personnalisé
+   et saisissez :
 
-Les deux éléments sont nécessaires.
+   ```text
+   https://pipedrive-mcp-sandbox.pezzoslabs.com/mcp
+   ```
 
-## 1. Installer le plugin Claude
+5. Laissez l'identifiant et le secret client OAuth vides.
+6. Connectez-vous et terminez l'authentification Cloudflare Access.
 
-1. Ouvrir Claude Desktop.
-2. Ouvrir **Personnaliser**. Dans l'interface actuelle de Claude Desktop, cela
-   ouvre **Paramètres** avec la section **Personnaliser**.
-3. Ouvrir **Personnaliser** > **Plugins**.
-4. Cliquer sur **Ajouter un plugin**.
-5. Coller cette URL de plugin :
+Un ZIP autonome contient uniquement les instructions du skill. Il ne contient
+ni connecteur MCP, ni identifiant, ni état d'authentification.
+
+## Pro, Max, Team ou Enterprise : plugin
+
+Le plugin payant fournit les sept skills et déclare le connecteur MCP distant.
+
+1. Dans Claude Web ou Claude Desktop, ouvrez **Personnaliser > Plugins**.
+2. Ajoutez ce dépôt de marketplace privé s'il n'est pas déjà disponible :
 
    ```text
    https://github.com/pezzos/pipedrive-mcp-claude-plugin
    ```
 
-6. Installer **Pipedrive MCP**.
-7. L'activer si Claude ne l'active pas automatiquement.
+3. Installez et activez **Pipedrive MCP**.
+4. Ouvrez son connecteur et terminez l'authentification Cloudflare Access. Ne
+   saisissez ni token Pipedrive, ni identifiants OAuth statiques.
 
-Résultat attendu : **Pipedrive MCP** apparaît dans les plugins personnels, avec
-les compétences Pipedrive disponibles.
+Les administrateurs Team et Enterprise peuvent distribuer le plugin via la
+marketplace de l'organisation. Chaque utilisateur s'authentifie tout de même
+individuellement dans Access.
 
-Si Claude indique que les plugins personnels ne sont pas autorisés, demander à
-l'administrateur de l'espace Claude d'autoriser ce plugin privé.
+## Surfaces du pilote
 
-## 2. Installer le connecteur Pipedrive
+| Surface | Skills autonomes Free | Plugin payant |
+| --- | --- | --- |
+| Chat Claude Web | Pris en charge avec le connecteur distant ajouté manuellement | Pris en charge |
+| Chat Claude Desktop | Pris en charge avec le connecteur distant ajouté manuellement | Pris en charge |
+| Cowork Desktop | Indisponible avec l'offre Free | Surface de recette manuelle obligatoire |
+| Cowork Mobile | Indisponible avec l'offre Free | Obligatoire lorsqu'il est activé sur le compte ou l'organisation cible du pilote ; déploiement bêta en cours |
+| Cowork Web | Indisponible avec l'offre Free | À valider lorsqu'il est activé sur le compte ou l'organisation cible du pilote avant toute promesse client |
+| Chat mobile classique | Hors engagement pour ce pilote | Hors engagement pour ce pilote |
 
-1. Télécharger ce fichier :
+Installez ou mettez à jour le plugin et les skills autonomes depuis le Web ou
+Desktop. Les surfaces Cowork payantes utilisent ensuite le même compte Claude,
+les mêmes skills activés et le même connecteur distant. L'éligibilité du plan ne
+garantit pas que la bêta Web/Mobile d'Anthropic soit déjà active sur un compte.
 
-   ```text
-   https://github.com/pezzos/pipedrive-mcp-claude-plugin/raw/main/pipedrive-mcp-latest.mcpb
-   ```
+## Premier test en lecture seule
 
-2. Ouvrir le fichier téléchargé `pipedrive-mcp-latest.mcpb`.
-3. Claude Desktop doit ouvrir l'écran d'installation de l'extension
-   **Pipedrive MCP**.
-4. Cliquer sur **Installer** ou **Mettre à jour**.
-5. Si Claude demande **Voulez-vous installer Pipedrive MCP ?**, cliquer sur
-   **Installer**.
-6. Sur la page de l'extension, vérifier que le commutateur affiche **Activé**.
-   S'il affiche **Désactivé**, l'activer.
+Pour le parcours Free, commencez dans le Chat Claude Web puis recommencez dans
+le Chat Claude Desktop. Pour un compte payant, commencez dans Cowork Desktop,
+puis recommencez dans Cowork Mobile et Cowork Web uniquement lorsque chaque
+surface bêta est activée sur le compte ou l'organisation cible du pilote :
 
-Si le double-clic sur le fichier n'ouvre pas Claude Desktop :
-
-1. Ouvrir Claude Desktop.
-2. Ouvrir **Paramètres**.
-3. Ouvrir **Application bureau** > **Extensions**.
-4. Cliquer sur **Installer l'extension**.
-5. Sélectionner `pipedrive-mcp-latest.mcpb`.
-
-## 3. Configurer Pipedrive
-
-Après l'installation, Claude doit ouvrir automatiquement **Configurer Pipedrive
-MCP**.
-
-1. Renseigner :
-   - **Pipedrive company domain** : uniquement le sous-domaine, par exemple `acme`.
-     Ne collez pas l'URL complète ici.
-   - **Pipedrive API token** : le token API de Pipedrive.
-2. Laisser **Pipedrive base URL** vide, sauf si le support vous a donné une URL
-   Pipedrive complète.
-3. Laisser **Pipedrive OAuth access token** vide, sauf si le support vous a
-   donné un token OAuth.
-4. Laisser ces options désactivées pour le premier test :
-   - **Enable write tools**
-   - **Enable Mailbox tools**
-   - **Enable delete tools**
-5. Garder **Request timeout** à `10000`.
-6. Cliquer sur **Enregistrer**.
-
-Pour modifier ces réglages plus tard :
-
-1. Ouvrir **Paramètres**.
-2. Ouvrir **Application bureau** > **Extensions**.
-3. Ouvrir les réglages de l'extension **Pipedrive MCP**.
-
-Ne configurez pas cela dans l'écran **Connecteurs** du plugin Claude Cowork. Cet
-écran peut être en lecture seule. Les réglages modifiables sont dans
-l'extension Desktop.
-
-## 4. Redémarrer Claude Desktop
-
-1. Quitter complètement Claude Desktop.
-2. Ouvrir Claude Desktop à nouveau.
-
-## 5. Tester dans le chat Claude Desktop
-
-1. Ouvrir un nouveau chat Claude Desktop.
-2. Demander :
-
-   ```text
-   Valide Pipedrive MCP sans faire d'écriture. Lance d'abord pipedrive_health_check, puis pipedrive_get_current_user comme test API en lecture seule. Utilise uniquement les outils pipedrive_*.
-   ```
-
-3. Si Claude demande l'autorisation d'utiliser un outil Pipedrive MCP, ouvrir
-   le menu d'autorisation et choisir **Autoriser une fois** pour le premier
-   test.
+```text
+Valide Pipedrive MCP sans faire d'écriture. Lance d'abord
+pipedrive_health_check, puis pipedrive_get_current_user. Utilise uniquement les
+outils pipedrive_*.
+```
 
 Résultat attendu :
 
-- Claude peut utiliser les outils `pipedrive_*`.
-- `pipedrive_health_check` indique que le domaine Pipedrive et le token sont
-  configurés.
-- `pipedrive_get_current_user` confirme que le token fonctionne contre l'API
-  Pipedrive réelle.
-- Les outils d'écriture restent désactivés tant que **Enable write tools** est
-  désactivé.
+- Claude voit et utilise les outils `pipedrive_*` ;
+- l'authentification Access aboutit pour l'utilisateur courant ;
+- `pipedrive_get_current_user` atteint le compte Pipedrive de sandbox ;
+- l'utilisateur commence en lecture seule.
 
-Si ce test échoue, vérifier les réglages de l'extension avant d'essayer Cowork.
+Ouvrez
+[`https://pipedrive-mcp-sandbox.pezzoslabs.com/settings`](https://pipedrive-mcp-sandbox.pezzoslabs.com/settings)
+pour gérer les bascules Écritures, Suppressions et Mailbox de cet utilisateur.
+Une écriture réelle exige toujours `dry_run=false`.
 
-## 6. Valider dans Claude Cowork
+## Alternative locale Desktop
 
-Utiliser Cowork après que le test dans le chat Desktop fonctionne.
+Le fichier `.mcpb` versionné reste disponible uniquement pour un usage local
+dans Claude Desktop nécessitant des identifiants Pipedrive stockés localement.
+C'est une alternative au connecteur distant, pas une étape supplémentaire. Il
+n'est pas disponible dans Cowork, sur le Web ou sur Mobile.
 
-1. Ouvrir une nouvelle tâche Cowork.
-2. Demander :
+Avant d'utiliser cette alternative, déconnectez le connecteur Pipedrive MCP
+distant. Consultez [la livraison Claude](docs/CLAUDE_DELIVERY.md) et le
+[dépannage](docs/TROUBLESHOOTING.md).
 
-   ```text
-   Valide Pipedrive MCP dans Cowork sans faire d'écriture. Lance d'abord pipedrive_health_check, puis pipedrive_get_current_user comme test API en lecture seule. Utilise uniquement les outils pipedrive_*.
-   ```
-
-3. Si Claude demande l'autorisation d'utiliser un outil Pipedrive MCP, ouvrir
-   le menu d'autorisation et choisir **Autoriser une fois** pour le premier
-   test. Claude peut demander une autorisation par outil.
-
-Résultat attendu :
-
-- Claude affiche le connecteur `pipedrive` ou peut utiliser les outils
-  `pipedrive_*`.
-- `pipedrive_health_check` indique que le domaine Pipedrive et le token sont
-  configurés.
-- `pipedrive_get_current_user` confirme la connectivité API réelle.
-- Les outils d'écriture restent désactivés tant que **Enable write tools** est
-  désactivé.
-
-Si Cowork ne trouve pas les outils :
-
-1. Quitter complètement Claude Desktop.
-2. Ouvrir Claude Desktop à nouveau.
-3. Démarrer une nouvelle tâche Cowork et retester.
-4. Si les outils restent indisponibles, installer Node.js LTS depuis
-   <https://nodejs.org>, redémarrer Claude Desktop, puis retester.
-
-Ne pas utiliser le connecteur officiel Pipedrive de Claude pour ce workflow.
+Ces informations ont été vérifiées le 16 juillet 2026 dans les guides Anthropic
+consacrés aux [skills](https://support.claude.com/en/articles/12512180-use-skills-in-claude),
+aux [plugins](https://support.claude.com/en/articles/13837440-use-plugins-in-claude),
+aux [surfaces Cowork](https://support.claude.com/en/articles/15520349-use-claude-cowork-on-web-desktop-and-mobile) et
+aux [connecteurs MCP distants](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).

@@ -1,6 +1,6 @@
 {
   "name": "pipedrive-mcp",
-  "version": "0.1.6",
+  "version": "0.3.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -18,13 +18,17 @@
   ],
   "scripts": {
     "build": "node -e \"require('fs').rmSync('dist',{recursive:true,force:true})\" && tsc -p tsconfig.json",
+    "build:worker": "tsc -p tsconfig.worker.json && wrangler deploy --dry-run --outdir dist/worker",
     "build:plugin": "node scripts/build-plugin.mjs",
+    "benchmark:server": "npm run build --silent && node scripts/benchmark-server.mjs",
     "pack:claude-plugin": "node scripts/pack-claude-plugin.mjs",
+    "pack:claude-skills": "node scripts/pack-claude-skills.mjs",
+    "pack:claude-delivery": "npm run pack:claude-skills && npm run pack:claude-plugin",
     "prepare:claude-plugin-release": "node scripts/release-claude-plugin.mjs",
     "release:claude-plugin": "node scripts/release-claude-plugin.mjs --publish",
     "prepack": "npm run build",
     "test": "node --import tsx --test tests/*.test.ts",
-    "check": "npm run build && npm run build:plugin && npm test"
+    "check": "npm run build && npm run build:worker && npm run build:plugin && npm test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
@@ -32,9 +36,11 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "5.20260715.1",
     "@types/node": "^25.0.0",
     "esbuild": "^0.25.12",
     "tsx": "^4.21.0",
-    "typescript": "^5.9.3"
+    "typescript": "^5.9.3",
+    "wrangler": "4.111.0"
   }
 }

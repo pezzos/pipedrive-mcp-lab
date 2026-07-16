@@ -168,8 +168,8 @@ Delete execution:
 
 ## Mailbox
 
-Mailbox tools are registered only when writes and Mailbox tools are both
-enabled:
+Mailbox read tools are registered when Mailbox is enabled. This example also
+enables writes because the mail-linking example changes Pipedrive:
 
 ```json
 {
@@ -212,3 +212,8 @@ Link a thread to a deal:
 
 Mailbox access may require `PIPEDRIVE_ACCESS_TOKEN` with appropriate scopes.
 Mailbox draft creation and email sending are not supported.
+
+Remote clients use the deployed Streamable HTTP URL ending in `/mcp` instead
+of a local `mcpServers` command. Cloudflare Access handles the client login;
+the admin-owned Pipedrive OAuth grant and per-user permissions are described in
+[Remote MCP On Cloudflare](REMOTE_MCP_CLOUDFLARE.md).

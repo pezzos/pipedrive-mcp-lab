@@ -61,36 +61,58 @@ export class PipedriveClient {
     requireConfigured(this.config);
     const url = this.url(path, params);
     const encodedBody = body === undefined ? undefined : encodeBody(body, bodyFormat);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), this.config.requestTimeoutMs);
-    let response: Response;
-    try {
-      response = await this.fetchImpl(url, {
-        method,
-        headers: {
-          ...authHeaders(this.config),
-          ...(encodedBody ? { "content-type": contentType(bodyFormat) } : {}),
-        },
-        signal: controller.signal,
-        body: encodedBody,
-      });
-    } catch (error) {
-      if (error instanceof Error && error.name === "AbortError") {
-        throw new Error(`Pipedrive API ${method} ${path} timed out`);
+    const maxAttempts = method === "GET" ? 3 : 1;
+    let remainingRetryDelayMs = 5000;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), this.config.requestTimeoutMs);
+      let response: Response;
+      let text: string;
+      try {
+        response = await this.fetchImpl(url, {
+          method,
+          headers: {
+            ...authHeaders(this.config),
+            ...(encodedBody ? { "content-type": contentType(bodyFormat) } : {}),
+          },
+          signal: controller.signal,
+          body: encodedBody,
+        });
+        text = await response.text();
+      } catch (error) {
+        if (error instanceof Error && error.name === "AbortError") {
+          throw new Error(`Pipedrive API ${method} ${path} timed out`);
+        }
+        if (method === "GET" && attempt < maxAttempts) {
+          const retryDelay = defaultRetryDelayMs(attempt);
+          remainingRetryDelayMs -= retryDelay;
+          await sleep(retryDelay);
+          continue;
+        }
+        throw error;
+      } finally {
+        clearTimeout(timeout);
       }
-      throw error;
-    } finally {
-      clearTimeout(timeout);
+
+      const data = text ? safeJsonParse(text) : null;
+      if (!response.ok) {
+        if (method === "GET" && attempt < maxAttempts && isTransientStatus(response.status)) {
+          const retryDelay = retryDelayMs(response.headers.get("retry-after"), attempt);
+          if (retryDelay !== undefined && retryDelay <= remainingRetryDelayMs) {
+            remainingRetryDelayMs -= retryDelay;
+            await sleep(retryDelay);
+            continue;
+          }
+        }
+        throw new Error(
+          redactSecretMarkers(`Pipedrive API ${method} ${path} failed with ${response.status}: ${summarizeError(data)}`),
+        );
+      }
+      return data;
     }
 
-    const text = await response.text();
-    const data = text ? safeJsonParse(text) : null;
-    if (!response.ok) {
-      throw new Error(
-        redactSecretMarkers(`Pipedrive API ${method} ${path} failed with ${response.status}: ${summarizeError(data)}`),
-      );
-    }
-    return data;
+    throw new Error(`Pipedrive API ${method} ${path} failed after ${maxAttempts} attempts`);
   }
 
   private url(path: string, params: Record<string, string | number | boolean | undefined>) {
@@ -103,6 +125,35 @@ export class PipedriveClient {
     }
     return url;
   }
+}
+
+function isTransientStatus(status: number): boolean {
+  return status === 429 || status === 502 || status === 503 || status === 504;
+}
+
+function retryDelayMs(retryAfter: string | null | undefined, attempt: number): number | undefined {
+  const maximumServerDelayMs = 5000;
+  if (retryAfter) {
+    const seconds = Number(retryAfter);
+    if (Number.isFinite(seconds) && seconds >= 0) {
+      const delay = seconds * 1000;
+      return delay <= maximumServerDelayMs ? delay : undefined;
+    }
+    const timestamp = Date.parse(retryAfter);
+    if (Number.isFinite(timestamp)) {
+      const delay = Math.max(timestamp - Date.now(), 0);
+      return delay <= maximumServerDelayMs ? delay : undefined;
+    }
+  }
+  return defaultRetryDelayMs(attempt);
+}
+
+function defaultRetryDelayMs(attempt: number): number {
+  return Math.min(50 * 2 ** (attempt - 1), 200);
+}
+
+function sleep(milliseconds: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds));
 }
 
 function authHeaders(config: PipedriveConfig): Record<string, string> {

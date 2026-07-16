@@ -178,12 +178,17 @@ test("runtime env diagnostics are returned as a defensive copy", () => {
   }
 });
 
-test("throws when an existing local dotenv path cannot be loaded", () => {
+test("reports an unreadable local dotenv path without preventing startup", () => {
   const { packageDir, cleanup } = temporaryPackageEnv();
   try {
     mkdirSync(join(packageDir, ".env"));
 
-    assert.throws(() => loadRuntimeEnv({ packageDir, env: {} }), /Failed to load runtime \.env file/);
+    assert.doesNotThrow(() => loadRuntimeEnv({ packageDir, env: {} }));
+    const diagnostics = getRuntimeEnvDiagnostics();
+    assert.equal(diagnostics.initialized, true);
+    assert.equal(diagnostics.dotenvLocalFilePresent, true);
+    assert.equal(diagnostics.dotenvLoaded, false);
+    assert.equal(diagnostics.dotenvLoadFailed, true);
   } finally {
     cleanup();
   }

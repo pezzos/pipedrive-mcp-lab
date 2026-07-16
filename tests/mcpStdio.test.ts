@@ -54,15 +54,20 @@ const coreReadTools = [
   "pipedrive_get_task",
 ];
 
-const mailboxTools = [
+const mailboxReadTools = [
   "pipedrive_list_deal_mail_messages",
   "pipedrive_mailbox_probe",
   "pipedrive_list_mail_threads",
   "pipedrive_get_mail_thread",
   "pipedrive_list_mail_thread_messages",
   "pipedrive_get_mail_message",
+];
+
+const mailboxWriteTools = [
   "pipedrive_link_mail_thread",
 ];
+
+const mailboxTools = [...mailboxReadTools, ...mailboxWriteTools];
 
 const nonDeleteWriteTools = [
   "pipedrive_create_project",
@@ -117,10 +122,13 @@ test("starts over stdio and lists only read tools when writes are disabled", asy
     assert.equal(health.writes_enabled, false);
     assert.equal(health.delete_tools_enabled, false);
     assert.equal(health.mailbox_tools_enabled, false);
+    assert.equal(health.mailbox_link_enabled, false);
     assert.equal(health.runtime_env_diagnostics_initialized, true);
     assert.equal(health.dotenv_loading_enabled, false);
     assert.equal(health.dotenv_local_file_present, false);
     assert.equal(health.dotenv_loaded, false);
+    assert.equal(health.dotenv_load_failed, false);
+    assert.equal(health.configuration_valid, true);
     assert.equal(health.request_timeout_ms, 10000);
     assert.equal(health.runtime_env_preexisting_enable_writes, true);
     assert.equal(health.runtime_env_preexisting_enable_delete_tools, false);
@@ -130,6 +138,21 @@ test("starts over stdio and lists only read tools when writes are disabled", asy
     assert.equal(health.runtime_env_current_has_enable_mailbox_tools, false);
     assert.equal(JSON.stringify(health).includes("test-token"), false);
     assert.equal(JSON.stringify(health).includes("lab"), false);
+  } finally {
+    await close();
+  }
+});
+
+test("health check reports invalid configuration without attempting a live request", async () => {
+  const { client, close } = await connectMcp({
+    PIPEDRIVE_COMPANY_DOMAIN: undefined,
+    PIPEDRIVE_BASE_URL: "https://example.invalid",
+  });
+  try {
+    const health = await callJson(client, "pipedrive_health_check", {});
+    assert.equal(health.configuration_valid, false);
+    assert.match(String(health.configuration_error), /PIPEDRIVE_BASE_URL/);
+    assert.equal(JSON.stringify(health).includes("test-token"), false);
   } finally {
     await close();
   }
@@ -154,6 +177,31 @@ test("lists write tools when writes are enabled but hides mailbox and delete too
   }
 });
 
+test("rejects empty update payloads before calling Pipedrive", async () => {
+  const { client, close } = await connectMcp({ PIPEDRIVE_ENABLE_WRITES: "true" });
+  const calls = [
+    ["pipedrive_update_project", { project_id: 1 }],
+    ["pipedrive_update_task", { task_id: 1 }],
+    ["pipedrive_update_deal", { deal_id: 1 }],
+    ["pipedrive_update_person", { person_id: 1 }],
+    ["pipedrive_update_organization", { organization_id: 1 }],
+    ["pipedrive_update_lead", { lead_id: "11111111-1111-4111-8111-111111111111" }],
+    ["pipedrive_update_activity", { activity_id: 1 }],
+  ] as const;
+  try {
+    for (const [name, ids] of calls) {
+      const result = await client.callTool({
+        name,
+        arguments: { ...ids, dry_run: true, validate_links: false },
+      });
+      assert.equal(result.isError, true, `${name} should reject an empty update`);
+      assert.match(firstText(result), /requires at least one field to update/);
+    }
+  } finally {
+    await close();
+  }
+});
+
 test("lists mailbox tools only when writes and mailbox tools are enabled", async () => {
   const { client, close } = await connectMcp({
     PIPEDRIVE_ENABLE_WRITES: "true",
@@ -172,23 +220,26 @@ test("lists mailbox tools only when writes and mailbox tools are enabled", async
     assert.match(schemaText, /validate_links/);
     const health = await callJson(client, "pipedrive_health_check", {});
     assert.equal(health.mailbox_tools_enabled, true);
+    assert.equal(health.mailbox_link_enabled, true);
     assert.equal(health.runtime_env_current_has_enable_mailbox_tools, true);
   } finally {
     await close();
   }
 });
 
-test("does not list mailbox tools when only the mailbox flag is enabled", async () => {
+test("lists read-only mailbox tools when only the mailbox flag is enabled", async () => {
   const { client, close } = await connectMcp({
     PIPEDRIVE_ENABLE_WRITES: "false",
     PIPEDRIVE_ENABLE_MAILBOX_TOOLS: "true",
   });
   try {
     const toolNames = await listToolNames(client);
-    assertToolSet(toolNames, coreReadTools);
-    assertAbsent(toolNames, [...mailboxTools, ...nonDeleteWriteTools, ...deleteTools]);
+    assertToolSet(toolNames, [...coreReadTools, ...mailboxReadTools]);
+    assertAbsent(toolNames, [...mailboxWriteTools, ...nonDeleteWriteTools, ...deleteTools]);
+    assert.equal(toolNames.length, coreReadTools.length + mailboxReadTools.length);
     const health = await callJson(client, "pipedrive_health_check", {});
-    assert.equal(health.mailbox_tools_enabled, false);
+    assert.equal(health.mailbox_tools_enabled, true);
+    assert.equal(health.mailbox_link_enabled, false);
     assert.equal(health.runtime_env_current_has_enable_mailbox_tools, true);
   } finally {
     await close();

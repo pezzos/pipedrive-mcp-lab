@@ -2,9 +2,9 @@
   "manifest_version": "0.3",
   "name": "pipedrive-mcp",
   "display_name": "Pipedrive MCP",
-  "version": "0.1.6",
+  "version": "0.3.0",
   "description": "Local MCP server for Pipedrive CRM operations in Claude Desktop.",
-  "long_description": "Pipedrive MCP gives Claude Desktop and Cowork a local connector for Pipedrive CRM read workflows and opt-in write workflows. Configure your Pipedrive company domain and API token in the extension settings after installation. Enter only the company subdomain, not the full Pipedrive URL. After credentials are saved, the extension synchronizes a managed Claude Desktop MCP entry so Cowork can discover the pipedrive_* tools.",
+  "long_description": "Pipedrive MCP gives Claude Desktop a local connector for Pipedrive CRM read workflows and opt-in write workflows. Configure your Pipedrive company domain and an API or OAuth access token in the extension settings after installation. Enter only the company subdomain, not the full Pipedrive URL. The packaged server runs with Claude Desktop's integrated extension runtime; Cowork requires a separately deployed remote MCP connector.",
   "author": {
     "name": "PezzosLabs"
   },
@@ -70,7 +70,6 @@
       "title": "Pipedrive API token",
       "description": "Pipedrive API token for standard CRM API access. Provide this or an OAuth access token.",
       "sensitive": true,
-      "required": true,
       "default": ""
     },
     "access_token": {
@@ -89,7 +88,7 @@
     "enable_mailbox_tools": {
       "type": "boolean",
       "title": "Enable Mailbox tools",
-      "description": "Register Mailbox tools. Requires write tools to be enabled.",
+      "description": "Register Mailbox read tools. Linking a thread also requires write tools.",
       "default": false
     },
     "enable_delete_tools": {
