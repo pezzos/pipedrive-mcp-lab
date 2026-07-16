@@ -161,6 +161,18 @@ test("classifies OAuth provider failures and invalid responses", async () => {
       expected: /pipedrive_oauth_unavailable/,
     },
     {
+      name: "generic fetch type error",
+      fetcher: async () => { throw new TypeError("fetch failed"); },
+      expected: /pipedrive_oauth_unavailable/,
+    },
+    {
+      name: "incorrect runtime receiver",
+      fetcher: async () => {
+        throw new TypeError("Illegal invocation: function called with incorrect this reference");
+      },
+      expected: /pipedrive_oauth_invocation_failed/,
+    },
+    {
       name: "invalid success JSON",
       fetcher: async () => new Response("not-json", { status: 200 }),
       expected: /pipedrive_oauth_invalid_response/,
@@ -200,6 +212,26 @@ test("classifies OAuth provider failures and invalid responses", async () => {
       scenario.name,
     );
   }
+});
+
+test("calls the injected OAuth fetcher without rebinding its runtime receiver", async () => {
+  const receiverSensitiveFetcher = async function (this: unknown): Promise<Response> {
+    if (this !== undefined) {
+      throw new TypeError("Illegal invocation: function called with incorrect this reference");
+    }
+    return validOAuthResponse();
+  } as typeof fetch;
+  const core = new TenantSecretsCore(
+    new MemoryStorage(),
+    remoteConfig(),
+    receiverSensitiveFetcher,
+  );
+  const redirectUri = "https://mcp.example.test/oauth/pipedrive/callback";
+  const state = await core.createState("admin-sub", redirectUri);
+  assert.equal(
+    (await core.exchange("admin-sub", state, "code-fixture", redirectUri)).accessCredential,
+    "access-fixture",
+  );
 });
 
 test("rejects state at the exact expiry boundary", async () => {

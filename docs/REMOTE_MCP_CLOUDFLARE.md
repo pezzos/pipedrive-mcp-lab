@@ -175,6 +175,7 @@ intentionally omitted.
 | `oauth_encryption_failed` | Treat as a Worker crypto/runtime failure. Correlate the request ID and retry after checking Worker status; do not rotate a valid key speculatively. |
 | `oauth_material_invalid` | After encryption-key rotation or corrupted storage, reconnect Pipedrive to replace the unreadable material. |
 | `pipedrive_oauth_unavailable` | Check Pipedrive OAuth and network availability, then retry from a fresh connection. |
+| `pipedrive_oauth_invocation_failed` | The Worker runtime rejected the outbound OAuth call because its function receiver was invalid. Deploy the receiver-safe implementation before starting a fresh connection; rotating credentials does not correct this code defect. |
 | `pipedrive_oauth_invalid_response` or `invalid_pipedrive_api_domain` | Verify the Pipedrive OAuth application, environment, callback, and provider response contract. Do not persist or trust an unexpected API domain. |
 | `pipedrive_oauth_failed` or `pipedrive_credential_unavailable` | Check the Pipedrive application credentials, callback, scopes, and Worker audit event, then reconnect only if the grant is no longer usable. |
 | `tenant_request_invalid` | The Worker-to-Durable-Object request was malformed. Treat this as a deployment/version mismatch and redeploy one coherent artifact. |

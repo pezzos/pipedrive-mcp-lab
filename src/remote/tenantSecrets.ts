@@ -48,13 +48,16 @@ export type TenantCredential = {
 
 export class TenantSecretsCore {
   private refreshInFlight: Promise<OAuthMaterial> | undefined;
+  private readonly fetcher: typeof fetch;
 
   constructor(
     private readonly storage: KeyValueStorage,
     private readonly config: RemoteConfig,
-    private readonly fetcher: typeof fetch = fetch,
+    fetcher: typeof fetch = fetch,
     private readonly now: () => number = Date.now,
-  ) {}
+  ) {
+    this.fetcher = (input, init) => fetcher(input, init);
+  }
 
   async createState(adminSub: string, redirectUri: string): Promise<string> {
     validateBounded(adminSub, 256, "oauth_state_invalid");
@@ -185,7 +188,14 @@ export class TenantSecretsCore {
         },
         body: new URLSearchParams(fields),
       });
-    } catch {
+    } catch (error) {
+      // Best-effort mapping of documented workerd wording; unknown TypeErrors stay generic.
+      if (
+        error instanceof TypeError &&
+        /illegal invocation|incorrect this reference/i.test(error.message)
+      ) {
+        throw new Error("pipedrive_oauth_invocation_failed");
+      }
       throw new Error("pipedrive_oauth_unavailable");
     }
     let parsed: PipedriveOAuthResponse;

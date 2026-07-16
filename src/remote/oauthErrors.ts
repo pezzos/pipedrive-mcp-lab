@@ -11,6 +11,7 @@ export const remoteOAuthErrorCodes = [
   "pipedrive_not_connected",
   "pipedrive_oauth_failed",
   "pipedrive_oauth_invalid_response",
+  "pipedrive_oauth_invocation_failed",
   "pipedrive_oauth_unavailable",
   "pipedrive_reconnect_required",
   "invalid_pipedrive_api_domain",
@@ -36,6 +37,7 @@ const internalErrorStatuses: Record<RemoteOAuthErrorCode, number> = {
   pipedrive_not_connected: 404,
   pipedrive_oauth_failed: 502,
   pipedrive_oauth_invalid_response: 502,
+  pipedrive_oauth_invocation_failed: 503,
   pipedrive_oauth_unavailable: 502,
   pipedrive_reconnect_required: 409,
   invalid_pipedrive_api_domain: 502,
@@ -88,6 +90,9 @@ export function remoteOAuthErrorMessage(code: RemoteOAuthErrorCode): string {
   }
   if (code === "oauth_encryption_key_invalid" || code === "oauth_encryption_failed") {
     return "La configuration de chiffrement OAuth est invalide. Vérifiez la clé du Worker avant de recommencer.";
+  }
+  if (code === "pipedrive_oauth_invocation_failed") {
+    return "Le runtime Worker n’a pas pu initialiser la requête OAuth. Vérifiez le déploiement avant de recommencer.";
   }
   if (code === "tenant_storage_unavailable") {
     return "Le stockage sécurisé du Worker est momentanément indisponible. Réessayez plus tard.";
