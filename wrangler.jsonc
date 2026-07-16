@@ -11,8 +11,12 @@
         "class_name": "UserPolicy"
       },
       {
-        "name": "TENANT_SECRETS",
-        "class_name": "TenantSecrets"
+        "name": "USER_CONNECTION",
+        "class_name": "UserConnection"
+      },
+      {
+        "name": "TENANT_REGISTRY",
+        "class_name": "TenantRegistry"
       }
     ]
   },
@@ -20,6 +24,10 @@
     {
       "tag": "v1",
       "new_sqlite_classes": ["UserPolicy", "TenantSecrets"]
+    },
+    {
+      "tag": "v2",
+      "new_sqlite_classes": ["UserConnection", "TenantRegistry"]
     }
   ]
 }

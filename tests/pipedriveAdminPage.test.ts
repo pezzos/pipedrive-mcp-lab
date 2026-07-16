@@ -1,86 +1,114 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { renderPipedriveAdminPage } from "../src/remote/pipedriveAdminPage.js";
+import {
+  renderApproveConfirmation,
+  renderAdminActionConfirmation,
+  renderPipedriveAdminPage,
+} from "../src/remote/pipedriveAdminPage.js";
+import { renderUserConnectionPage } from "../src/remote/userConnectionPage.js";
 
-test("renders connected identity, CSP nonce inputs and explicit local disconnect copy safely", () => {
+test("admin page renders only bounded token-free tenant and Access metadata", () => {
   const page = renderPipedriveAdminPage({
-    connection: {
-      connected: true,
-      materialReadable: true,
-      apiDomain: "https://acme.pipedrive.com",
-      expiresAtMs: Date.UTC(2026, 6, 16, 12, 0),
+    projection: {
+      tenants: [{
+        domain: "acme",
+        status: "active",
+        tenantId: "tenant-opaque",
+        generation: 2,
+        createdAtMs: 1,
+        updatedAtMs: 2,
+        companyId: "42",
+        companyName: 'Acme <script>alert("company")</script>',
+        connectedUserCount: 1,
+      }],
+      connections: [{
+        connectionRef: "connection-opaque",
+        accessEmail: 'user+<img>@example.test',
+        domain: "acme",
+        state: "connected",
+        generation: 3,
+        connectedAtMs: Date.UTC(2026, 6, 16),
+      }],
     },
-    identity: {
-      state: "available",
-      companyId: "42",
-      companyName: 'Pezzos <script>alert("company")</script>',
-      companyDomain: "pezzos-sandbox",
-      userId: "7",
-      userName: 'Admin <img src=x onerror="user">',
-    },
-    actionToken: 'csrf"><script>token()</script>',
     nonce: "nonce-fixture",
-    connected: true,
-    disconnected: false,
   });
 
   assert.match(page, /style nonce="nonce-fixture"/);
-  assert.match(page, /Société/);
-  assert.match(page, /Pezzos &lt;script&gt;alert/);
-  assert.match(page, /Admin &lt;img src=x onerror=&quot;user&quot;&gt;/);
-  assert.match(page, /Connexion enregistrée/);
-  assert.match(page, /Remplacer la connexion/);
-  assert.match(page, /name="confirm" value="yes"/);
-  assert.match(page, /ne désinstalle pas l’application/);
-  assert.match(page, /csrf&quot;&gt;&lt;script&gt;token\(\)&lt;\/script&gt;/);
-  assert.match(page, /Connexion enregistrée<\/dt><dd>inconnue/);
-  assert.doesNotMatch(page, /<script>|<img/);
-  assert.doesNotMatch(page, /access_token|refresh_token|oauth-access|oauth-refresh/);
+  assert.match(page, /Acme &lt;script&gt;alert/);
+  assert.match(page, /user\+&lt;img&gt;@example\.test/);
+  assert.match(page, /action="\/admin\/pipedrive\/action\/confirm"/);
+  assert.match(page, /Forcer la déconnexion/);
+  assert.doesNotMatch(page, /<script>|access_token|refresh_token|Pipedrive user/);
+  assert.doesNotMatch(page, /tenant-opaque/);
 });
 
-test("distinguishes disconnected and live-degraded states", () => {
-  const disconnected = renderPipedriveAdminPage({
-    connection: { connected: false },
-    identity: { state: "unavailable" },
-    actionToken: "csrf-fixture",
-    nonce: "nonce-fixture",
-    connected: false,
-    disconnected: true,
+test("admin page uses valid empty table rows and a separate approval confirmation", () => {
+  const empty = renderPipedriveAdminPage({
+    projection: { tenants: [], connections: [] },
+    nonce: "nonce",
   });
-  assert.match(disconnected, /Déconnecté/);
-  assert.match(disconnected, /Connecter Pipedrive/);
-  assert.match(disconnected, /pipedrive_not_connected/);
-  assert.doesNotMatch(disconnected, /Supprimer la connexion locale/);
+  assert.match(empty, /<tbody><tr><td colspan="6">Aucun domaine/);
+  assert.doesNotMatch(empty, /<tbody><p>/);
 
-  const degraded = renderPipedriveAdminPage({
-    connection: {
+  const confirmation = renderApproveConfirmation({
+    domain: "acme",
+    actionToken: "one-shot-token",
+    nonce: "nonce",
+  });
+  assert.match(confirmation, /Confirmer l’approbation/);
+  assert.match(confirmation, /name="confirm" value="yes"/);
+  assert.match(confirmation, /one-shot-token/);
+
+  const actionConfirmation = renderAdminActionConfirmation({
+    action: "force-disconnect",
+    target: 'connection"><script>',
+    actionToken: 'one-shot"><script>',
+    nonce: "nonce",
+  });
+  assert.match(actionConfirmation, /action="\/admin\/pipedrive\/force-disconnect"/);
+  assert.match(actionConfirmation, /name="confirm" value="yes"/);
+  assert.doesNotMatch(actionConfirmation, /<script>/);
+});
+
+test("user page distinguishes connect, replace, reconnect and local disconnect safely", () => {
+  const connected = renderUserConnectionPage({
+    status: {
       connected: true,
-      materialReadable: true,
-      apiDomain: "https://acme.pipedrive.com",
+      reconnectRequired: false,
+      generation: 3,
+      domain: "acme",
+      companyId: "42",
+      companyName: 'Acme <img src="x">',
       expiresAtMs: Date.now() + 60_000,
-      connectedAtMs: Date.now(),
     },
-    identity: { state: "unavailable" },
-    actionToken: "csrf-fixture",
-    nonce: "nonce-fixture",
+    actionToken: 'csrf"><script>',
+    nonce: "nonce",
     connected: false,
     disconnected: false,
   });
-  assert.match(degraded, /Connecté/);
-  assert.match(degraded, /vérification en direct indisponible/);
-  assert.match(degraded, /Cela ne prouve pas une déconnexion/);
+  assert.match(connected, /Remplacer la connexion/);
+  assert.match(connected, /Déconnecter mon compte/);
+  assert.match(connected, /ne révoque pas l’application/);
+  assert.match(connected, /Acme &lt;img src=&quot;x&quot;&gt;/);
+  assert.doesNotMatch(connected, /<script>|<img/);
 
-  const unreadable = renderPipedriveAdminPage({
-    connection: { connected: true, materialReadable: false },
-    identity: { state: "unavailable" },
-    actionToken: "csrf-unreadable-fixture",
-    nonce: "nonce-fixture",
+  const purged = renderUserConnectionPage({
+    status: {
+      connected: false,
+      reconnectRequired: true,
+      generation: 4,
+      domain: "acme",
+      companyId: "42",
+      companyName: "Acme",
+    },
+    actionToken: "unused",
+    nonce: "nonce",
     connected: false,
     disconnected: false,
   });
-  assert.match(unreadable, /Connexion inutilisable/);
-  assert.match(unreadable, /jetons illisibles/);
-  assert.match(unreadable, /Supprimer la connexion locale/);
-  assert.match(unreadable, /name="csrf" value="csrf-unreadable-fixture"/);
+  assert.match(purged, /Reconnexion requise/);
+  assert.match(purged, /Connecter Pipedrive/);
+  assert.doesNotMatch(purged, /Déconnecter mon compte/);
+  assert.doesNotMatch(purged, /href="\/settings"/);
 });

@@ -7,7 +7,8 @@ export interface RemoteEnv {
   PIPEDRIVE_OAUTH_ENCRYPTION_KEY: string;
   AUDIT_HMAC_KEY: string;
   USER_POLICY: DurableObjectNamespace;
-  TENANT_SECRETS: DurableObjectNamespace;
+  USER_CONNECTION: DurableObjectNamespace;
+  TENANT_REGISTRY: DurableObjectNamespace;
 }
 
 export type RemoteConfig = {

@@ -15,14 +15,14 @@ const ADMIN_ACTION_TTL_MS = 10 * 60_000;
 const REFRESH_SKEW_MS = 60_000;
 const TOKEN_ENDPOINT = "https://oauth.pipedrive.com/oauth/token";
 
-type OAuthMaterial = {
+export type OAuthMaterial = {
   accessCredential: string;
   refreshCredential: string;
   expiresAtMs: number;
   apiDomain: string;
 };
 
-type EncryptedEnvelope = {
+export type EncryptedEnvelope = {
   v: 1;
   iv: string;
   ciphertext: string;
@@ -491,10 +491,6 @@ export class TenantSecrets {
       return Response.json({ code }, { status });
     }
   }
-}
-
-export function tenantSecretsStub(env: RemoteEnv): DurableObjectStub {
-  return env.TENANT_SECRETS.get(env.TENANT_SECRETS.idFromName("tenant"));
 }
 
 export async function encryptMaterial(
