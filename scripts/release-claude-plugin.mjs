@@ -230,7 +230,10 @@ function writeDistributionMarketplace(path, releaseVersion) {
   if (matches.length !== 1) {
     throw new Error(`${marketplaceManifestPath} must contain exactly one pipedrive-mcp plugin`);
   }
-  matches[0].source = ".";
+  // Claude's remote marketplace backend only recognizes repository-local
+  // plugin paths when they are explicitly relative ("./"). A bare "." is
+  // accepted by the local CLI validator but rejected during Desktop sync.
+  matches[0].source = "./";
   matches[0].version = releaseVersion;
   writeJson(path, marketplace);
 }

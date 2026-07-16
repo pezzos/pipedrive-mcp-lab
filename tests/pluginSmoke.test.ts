@@ -167,7 +167,7 @@ test("Claude plugin release script stages versioned and latest MCPB artifacts", 
     assert.equal(existsSync(join(distributionRepo, "standalone-skills", "pipedrive-add-note-latest.zip")), true);
     const marketplace = JSON.parse(readFileSync(join(distributionRepo, ".claude-plugin", "marketplace.json"), "utf8"));
     assert.equal(marketplace.plugins[0].name, "pipedrive-mcp");
-    assert.equal(marketplace.plugins[0].source, ".");
+    assert.equal(marketplace.plugins[0].source, "./");
     assert.equal(marketplace.plugins[0].version, packageVersion);
 
     const readme = readFileSync(join(distributionRepo, "README.md"), "utf8");
@@ -194,7 +194,7 @@ test("Claude plugin release preparation defaults to a generated directory inside
   assert.equal(existsSync(join(distributionRoot, ".mcp.json")), true);
   assert.equal(existsSync(join(distributionRoot, "standalone-skills", `pipedrive-add-note-${packageVersion}.zip`)), true);
   const marketplace = JSON.parse(readFileSync(join(distributionRoot, ".claude-plugin", "marketplace.json"), "utf8"));
-  assert.equal(marketplace.plugins[0].source, ".");
+  assert.equal(marketplace.plugins[0].source, "./");
   assert.equal(marketplace.plugins[0].version, packageVersion);
 });
 
@@ -250,7 +250,7 @@ test("Claude plugin publication can use a disposable clone of the distribution r
     assert.equal(existsSync(latestMcpb), true);
     assert.equal(readFileSync(versionedMcpb).equals(readFileSync(latestMcpb)), true);
     const marketplace = JSON.parse(readFileSync(join(verificationClone, ".claude-plugin", "marketplace.json"), "utf8"));
-    assert.equal(marketplace.plugins[0].source, ".");
+    assert.equal(marketplace.plugins[0].source, "./");
     assert.equal(marketplace.plugins[0].version, packageVersion);
 
     const commitCount = gitCommitCount(remote);
