@@ -324,6 +324,7 @@ test("Worker renders the protected Pipedrive admin page with live company identi
     );
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("cache-control"), "no-store");
+    assert.equal(response.headers.get("referrer-policy"), "same-origin");
     const page = await response.text();
     assert.match(page, /Pezzos Labs - Sandbox/);
     assert.match(page, /Admin Sandbox/);
@@ -638,6 +639,7 @@ test("Worker preserves submitted settings while requesting confirmation", async 
       executionContext().value,
     );
     assert.equal(response.status, 400);
+    assert.equal(response.headers.get("referrer-policy"), "same-origin");
     const page = await response.text();
     assert.match(page, /name="writes" value="yes" checked/);
     assert.match(page, /name="mailbox" value="yes" checked/);

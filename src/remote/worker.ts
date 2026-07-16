@@ -797,7 +797,9 @@ function html(body: string, status = 200, nonce?: string): Response {
       "content-type": "text/html; charset=utf-8",
       "content-security-policy":
         `default-src 'none'; style-src ${nonce ? `'nonce-${nonce}'` : "'none'"}; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
-      "referrer-policy": "no-referrer",
+      // Same-origin form POSTs must retain a concrete Origin for hasExactOrigin().
+      // `no-referrer` makes Chromium serialize that header as `Origin: null`.
+      "referrer-policy": "same-origin",
       "x-content-type-options": "nosniff",
     },
   });
