@@ -1,14 +1,17 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 import test from "node:test";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
+import { assertSafeTextTree } from "../scripts/lib/artifact-safety.mjs";
 
 const readOnlyToolCount = 46;
 const artifactRoot = join(process.cwd(), "dist", "claude-plugin", "pipedrive-mcp");
+const standaloneSkillsRoot = join(process.cwd(), "dist", "claude-skills");
 const packageVersion = JSON.parse(readFileSync(join(process.cwd(), "package.json"), "utf8")).version;
 const expectedSkillNames = [
   "pipedrive-add-activity",
@@ -46,7 +49,15 @@ test("staged Claude plugin artifact is isolated and read-only by default", { tim
   assert.equal(pluginJson.skills, "./skills/");
   assert.equal("mcpServers" in pluginJson, false);
   assert.equal("userConfig" in pluginJson, false);
-  assert.equal(existsSync(join(artifactRoot, ".mcp.json")), false);
+  assert.equal(existsSync(join(artifactRoot, ".mcp.json")), true);
+  assert.deepEqual(JSON.parse(readFileSync(join(artifactRoot, ".mcp.json"), "utf8")), {
+    mcpServers: {
+      "pipedrive-mcp": {
+        type: "http",
+        url: "https://pipedrive-mcp-sandbox.pezzoslabs.com/mcp",
+      },
+    },
+  });
   assert.equal(existsSync(join(artifactRoot, "dist", "plugin-server.js")), false);
   assert.equal(existsSync(join(artifactRoot, "INSTALL.md")), true);
   assert.equal(existsSync(join(artifactRoot, "INSTALL.fr.md")), true);
@@ -70,12 +81,63 @@ test("staged Claude plugin artifact is isolated and read-only by default", { tim
     assert.match(skillText, /Do not use the official Pipedrive connector\./);
   }
 
-  assertCleanArtifact(artifactRoot);
+  assert.doesNotThrow(() => assertSafeTextTree(artifactRoot, { allowedMcpConfig: ".mcp.json" }));
+});
+
+test("standalone Claude skill archives match the canonical plugin skills", { timeout: 180_000 }, () => {
+  execFileSync("npm", ["run", "pack:claude-delivery"], { cwd: process.cwd(), stdio: "pipe" });
+
+  const manifest = JSON.parse(readFileSync(join(standaloneSkillsRoot, "manifest.json"), "utf8"));
+  assert.equal(manifest.version, packageVersion);
+  assert.deepEqual(manifest.skills.map((skill: { name: string }) => skill.name), expectedSkillNames);
+
+  for (const skill of manifest.skills) {
+    const versioned = join(standaloneSkillsRoot, skill.versioned);
+    const latest = join(standaloneSkillsRoot, skill.latest);
+    assert.equal(skill.versioned, `${skill.name}-${packageVersion}.zip`);
+    assert.equal(skill.latest, `${skill.name}-latest.zip`);
+    assert.equal(existsSync(versioned), true);
+    assert.equal(existsSync(latest), true);
+    assert.equal(normalizedZipDigest(versioned), normalizedZipDigest(latest));
+    assert.equal(normalizedZipDigest(versioned), skill.content_sha256);
+    const members = listZipMembers(versioned);
+    assert.equal(members.includes(`${skill.name}/SKILL.md`), true);
+    assert.equal(members.some((member) => member.endsWith(".mcp.json")), false);
+    assert.equal(members.some((member) => member.includes(".claude-plugin")), false);
+    const archivedSkill = execFileSync("unzip", ["-p", versioned, `${skill.name}/SKILL.md`]);
+    const pluginSkill = readFileSync(join(artifactRoot, "skills", skill.name, "SKILL.md"));
+    assert.equal(archivedSkill.equals(pluginSkill), true, `${skill.name} must match in Free and paid artifacts`);
+  }
+});
+
+test("artifact safety rejects symbolic links", () => {
+  const root = mkdtempSync(join(tmpdir(), "pipedrive-mcp-artifact-safety-"));
+  try {
+    writeFileSync(join(root, "target.txt"), "safe\n", "utf8");
+    symlinkSync("target.txt", join(root, "linked.txt"));
+    assert.throws(() => assertSafeTextTree(root), /Symbolic links are forbidden/);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test("all coupled delivery manifests use the package version", () => {
+  const packageLock = JSON.parse(readFileSync(join(process.cwd(), "package-lock.json"), "utf8"));
+  const plugin = JSON.parse(readFileSync(join(process.cwd(), "plugin", "claude", ".claude-plugin", "plugin.json"), "utf8"));
+  const marketplace = JSON.parse(readFileSync(join(process.cwd(), ".claude-plugin", "marketplace.json"), "utf8"));
+  const mcpb = JSON.parse(readFileSync(join(process.cwd(), "plugin", "mcpb", "manifest.json"), "utf8"));
+  assert.equal(packageLock.version, packageVersion);
+  assert.equal(packageLock.packages[""].version, packageVersion);
+  assert.equal(plugin.version, packageVersion);
+  assert.equal(marketplace.plugins[0].version, packageVersion);
+  assert.equal(mcpb.version, packageVersion);
+  assert.match(readFileSync(join(process.cwd(), "src", "tools.ts"), "utf8"), new RegExp(`version: "${packageVersion.replaceAll(".", "\\.")}"`));
 });
 
 test("Claude plugin release script stages versioned and latest MCPB artifacts", { timeout: 180_000 }, () => {
   execFileSync("npm", ["run", "build:plugin"], { cwd: process.cwd(), stdio: "pipe" });
   execFileSync("npm", ["run", "pack:claude-plugin"], { cwd: process.cwd(), stdio: "pipe" });
+  execFileSync("npm", ["run", "pack:claude-skills"], { cwd: process.cwd(), stdio: "pipe" });
 
   const distributionRepo = mkdtempSync(join(tmpdir(), "pipedrive-mcp-distribution-"));
   try {
@@ -100,6 +162,9 @@ test("Claude plugin release script stages versioned and latest MCPB artifacts", 
     assert.notEqual(readMcpbManifest(versionedMcpb).user_config.api_token.required, true);
     assert.equal(existsSync(join(distributionRepo, "mcpb", "pipedrive-mcp", "server", "plugin-server.js")), true);
     assert.equal(existsSync(join(distributionRepo, "skills", "pipedrive-add-note", "SKILL.md")), true);
+    assert.equal(existsSync(join(distributionRepo, ".mcp.json")), true);
+    assert.equal(existsSync(join(distributionRepo, "standalone-skills", `pipedrive-add-note-${packageVersion}.zip`)), true);
+    assert.equal(existsSync(join(distributionRepo, "standalone-skills", "pipedrive-add-note-latest.zip")), true);
     const marketplace = JSON.parse(readFileSync(join(distributionRepo, ".claude-plugin", "marketplace.json"), "utf8"));
     assert.equal(marketplace.plugins[0].name, "pipedrive-mcp");
     assert.equal(marketplace.plugins[0].source, ".");
@@ -115,6 +180,7 @@ test("Claude plugin release script stages versioned and latest MCPB artifacts", 
 test("Claude plugin release preparation defaults to a generated directory inside dist", { timeout: 180_000 }, () => {
   execFileSync("npm", ["run", "build:plugin"], { cwd: process.cwd(), stdio: "pipe" });
   execFileSync("npm", ["run", "pack:claude-plugin"], { cwd: process.cwd(), stdio: "pipe" });
+  execFileSync("npm", ["run", "pack:claude-skills"], { cwd: process.cwd(), stdio: "pipe" });
 
   const distributionRoot = join(process.cwd(), "dist", "release", "pipedrive-mcp-claude-plugin");
   execFileSync("node", ["scripts/release-claude-plugin.mjs", "--skip-check"], {
@@ -125,6 +191,8 @@ test("Claude plugin release preparation defaults to a generated directory inside
   assert.equal(existsSync(join(distributionRoot, `pipedrive-mcp-${packageVersion}.mcpb`)), true);
   assert.equal(existsSync(join(distributionRoot, "pipedrive-mcp-latest.mcpb")), true);
   assert.equal(existsSync(join(distributionRoot, "skills", "pipedrive-add-note", "SKILL.md")), true);
+  assert.equal(existsSync(join(distributionRoot, ".mcp.json")), true);
+  assert.equal(existsSync(join(distributionRoot, "standalone-skills", `pipedrive-add-note-${packageVersion}.zip`)), true);
   const marketplace = JSON.parse(readFileSync(join(distributionRoot, ".claude-plugin", "marketplace.json"), "utf8"));
   assert.equal(marketplace.plugins[0].source, ".");
   assert.equal(marketplace.plugins[0].version, packageVersion);
@@ -133,6 +201,7 @@ test("Claude plugin release preparation defaults to a generated directory inside
 test("Claude plugin publication can use a disposable clone of the distribution repository", { timeout: 180_000 }, () => {
   execFileSync("npm", ["run", "build:plugin"], { cwd: process.cwd(), stdio: "pipe" });
   execFileSync("npm", ["run", "pack:claude-plugin"], { cwd: process.cwd(), stdio: "pipe" });
+  execFileSync("npm", ["run", "pack:claude-skills"], { cwd: process.cwd(), stdio: "pipe" });
 
   const root = mkdtempSync(join(tmpdir(), "pipedrive-mcp-publish-test-"));
   const remote = join(root, "distribution.git");
@@ -223,6 +292,58 @@ test("Claude plugin publication can use a disposable clone of the distribution r
     } finally {
       writeFileSync(pluginServerPath, originalPluginServer);
     }
+
+    const remoteMcpArtifact = join(artifactRoot, ".mcp.json");
+    const originalRemoteMcp = readFileSync(remoteMcpArtifact);
+    try {
+      writeFileSync(remoteMcpArtifact, '{"mcpServers":{"pipedrive-mcp":{"type":"http","url":"https://changed.invalid/mcp"}}}\n');
+      assert.throws(
+        () =>
+          execFileSync(
+            "node",
+            [
+              "scripts/release-claude-plugin.mjs",
+              "--publish",
+              "--distribution-git-url",
+              remote,
+              "--skip-check",
+              "--skip-remote-verify",
+            ],
+            { cwd: process.cwd(), env: gitIdentity, stdio: "pipe" },
+          ),
+        /different content|bump the release version/,
+      );
+      assert.equal(gitCommitCount(remote), commitCount);
+    } finally {
+      writeFileSync(remoteMcpArtifact, originalRemoteMcp);
+    }
+
+    const skillArchive = join(standaloneSkillsRoot, `pipedrive-add-note-${packageVersion}.zip`);
+    const originalSkillArchive = readFileSync(skillArchive);
+    const tamperedFile = join(root, "tampered.txt");
+    try {
+      writeFileSync(tamperedFile, "tampered\n", "utf8");
+      execFileSync("zip", ["-q", skillArchive, basename(tamperedFile)], { cwd: root, stdio: "pipe" });
+      assert.throws(
+        () =>
+          execFileSync(
+            "node",
+            [
+              "scripts/release-claude-plugin.mjs",
+              "--publish",
+              "--distribution-git-url",
+              remote,
+              "--skip-check",
+              "--skip-remote-verify",
+            ],
+            { cwd: process.cwd(), env: gitIdentity, stdio: "pipe" },
+          ),
+        /different content|bump the release version/,
+      );
+      assert.equal(gitCommitCount(remote), commitCount);
+    } finally {
+      writeFileSync(skillArchive, originalSkillArchive);
+    }
   } finally {
     rmSync(root, { recursive: true, force: true });
   }
@@ -291,51 +412,28 @@ function assertReadOnlyProfile(tools: string[]) {
   assert.equal(tools.includes("pipedrive_create_deal"), false);
 }
 
-function assertCleanArtifact(root: string) {
-  for (const file of walk(root)) {
-    const relative = file.slice(root.length + 1);
-    const parts = relative.split(/[\\/]/);
-    assert.equal(parts.includes("src"), false, `artifact must not include src: ${relative}`);
-    assert.equal(parts.includes("tests"), false, `artifact must not include tests: ${relative}`);
-    assert.equal(parts.includes("node_modules"), false, `artifact must not include node_modules: ${relative}`);
-    assert.equal(parts.includes("dist"), false, `artifact must not include bundled server files: ${relative}`);
-    assert.equal(parts.includes("package-lock.json"), false, `artifact must not include package-lock.json: ${relative}`);
-    assert.equal(parts.includes(".env"), false, `artifact must not include .env: ${relative}`);
-    assert.equal(parts.includes(".mcp.json"), false, `artifact must not include MCP server config: ${relative}`);
-    assert.equal(relative.endsWith(".tgz"), false, `artifact must not include tarballs: ${relative}`);
-    assert.equal(
-      /secret|token|credential/i.test(basename(file)) && !relative.startsWith("docs/"),
-      false,
-      `artifact must not include secret-like files outside docs: ${relative}`,
-    );
-    const content = readFileSync(file, "utf8");
-    for (const pattern of [
-      /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/,
-      /\beyJ[A-Za-z0-9_-]{10,}\.eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/,
-      /cf-access-jwt-assertion\s*:\s*\S+/i,
-      /^\s*(?:PIPEDRIVE_OAUTH_CLIENT_SECRET|PIPEDRIVE_OAUTH_ENCRYPTION_KEY|AUDIT_HMAC_KEY)\s*=\s*\S+/m,
-    ]) {
-      assert.equal(pattern.test(content), false, `artifact must not include sensitive content: ${relative}`);
-    }
-  }
-}
-
 function readMcpbManifest(path: string) {
   return JSON.parse(execFileSync("unzip", ["-p", path, "manifest.json"], { encoding: "utf8" }));
 }
 
-function gitCommitCount(remote: string): number {
-  return Number(execFileSync("git", ["--git-dir", remote, "rev-list", "--count", "main"], { encoding: "utf8" }).trim());
+function normalizedZipDigest(path: string): string {
+  const digest = createHash("sha256");
+  for (const member of listZipMembers(path).filter((name) => !name.endsWith("/")).sort()) {
+    digest.update(member);
+    digest.update("\0");
+    digest.update(createHash("sha256").update(execFileSync("unzip", ["-p", path, member])).digest("hex"));
+    digest.update("\n");
+  }
+  return digest.digest("hex");
 }
 
-function* walk(root: string): Generator<string> {
-  for (const entry of readdirSync(root)) {
-    const fullPath = join(root, entry);
-    const stat = statSync(fullPath);
-    if (stat.isDirectory()) {
-      yield* walk(fullPath);
-    } else {
-      yield fullPath;
-    }
-  }
+function listZipMembers(path: string): string[] {
+  return execFileSync("unzip", ["-Z1", path], { encoding: "utf8" })
+    .split("\n")
+    .map((member) => member.trim())
+    .filter(Boolean);
+}
+
+function gitCommitCount(remote: string): number {
+  return Number(execFileSync("git", ["--git-dir", remote, "rev-list", "--count", "main"], { encoding: "utf8" }).trim());
 }

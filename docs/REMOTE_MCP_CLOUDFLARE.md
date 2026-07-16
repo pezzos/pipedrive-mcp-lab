@@ -1,14 +1,16 @@
 # Remote MCP On Cloudflare
 
 This is the operator guide for the single-tenant remote Pipedrive MCP. It is
-the recommended delivery for Claude Cowork, web, mobile, and users who should
-not maintain a local process. The existing Desktop Extension remains supported
-for local Claude Desktop use.
+the recommended delivery for Claude Web/Desktop Chat and paid Cowork surfaces,
+and for users who should not maintain a local process. Cowork Web and Mobile are
+currently rolling out in beta; validate availability on the target account.
+The existing Desktop Extension remains supported for local Claude Desktop use.
 
 ## User Experience
 
-An allowed user connects the remote MCP URL in Claude and completes the
-Cloudflare Access login once. Access then refreshes the client authorization
+Before onboarding, an operator adds the user's exact email or IdP group to the
+Access application's Allow policy. An allowed user then connects the remote MCP
+URL in Claude and completes the Cloudflare Access login once. Access then refreshes the client authorization
 and re-evaluates the Access policy without a routine user action. The user can
 open `/settings` to manage only their own permissions.
 
@@ -198,4 +200,4 @@ request ID and pseudonymous actor ID.
 - [Pipedrive OAuth](https://developers.pipedrive.com/docs/api/v1/Oauth)
 - [Pipedrive Developer Sandbox](https://pipedrive.readme.io/docs/developer-sandbox-account)
 
-These platform references were checked on 2026-07-15.
+These platform references were checked on 2026-07-16.

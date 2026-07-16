@@ -2,7 +2,7 @@
   "manifest_version": "0.3",
   "name": "pipedrive-mcp",
   "display_name": "Pipedrive MCP",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Local MCP server for Pipedrive CRM operations in Claude Desktop.",
   "long_description": "Pipedrive MCP gives Claude Desktop a local connector for Pipedrive CRM read workflows and opt-in write workflows. Configure your Pipedrive company domain and an API or OAuth access token in the extension settings after installation. Enter only the company subdomain, not the full Pipedrive URL. The packaged server runs with Claude Desktop's integrated extension runtime; Cowork requires a separately deployed remote MCP connector.",
   "author": {

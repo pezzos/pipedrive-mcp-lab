@@ -117,8 +117,24 @@ claude plugin validate dist/claude-plugin/pipedrive-mcp
 ```
 
 If validation fails, check that the staged repository plugin artifact contains
-`.claude-plugin/` and `skills/`, and does not contain `.mcp.json` or
-`dist/plugin-server.js`.
+`.claude-plugin/`, `skills/`, and the root `.mcp.json`. The MCP configuration
+must declare exactly one HTTP server named `pipedrive-mcp` with the approved
+sandbox URL and no other fields. The artifact must not contain
+`dist/plugin-server.js` or credentials.
+
+## A Free Account Cannot Install The Plugin
+
+This is expected. Import the wanted files from the
+[`standalone-skills/` distribution folder](https://github.com/pezzos/pipedrive-mcp-claude-plugin/tree/main/standalone-skills)
+through **Customize > Skills**, then add the remote `/mcp` URL as a custom
+connector. Do not unzip and edit the archives before importing them.
+
+## Skills Are Visible But Pipedrive Tools Are Missing
+
+A skill provides instructions, not the MCP tools themselves. On the Free path,
+add and authenticate the remote connector manually. On the paid path, open the
+plugin connector and complete Cloudflare Access. Leave optional OAuth client ID
+and client secret fields empty.
 
 ## Claude Desktop Extension Loads But Pipedrive Tools Are Missing
 
@@ -147,15 +163,24 @@ cannot turn the local extension into a remote connector. If the remote
 connector is already present, complete the Cloudflare Access login and verify
 that the user is allowed by the Access policy.
 
-This platform behavior was checked on 2026-07-15 against Anthropic's
+Cowork Desktop and Cowork Mobile are required pilot checks. Cowork Web is a
+conditional check because rollout may depend on the target organization. The
+standard mobile chat surface is outside this pilot.
+
+This platform behavior was checked on 2026-07-16 against Anthropic's
 [local MCP server guide](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop),
 [remote MCP connector guide](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp), and
 [desktop versus web connector guide](https://support.claude.com/en/articles/11725091-when-to-use-desktop-and-web-connectors).
 
 ## Remote Connector Errors
 
+- `mcp_registration_failed`: confirm that the server supports dynamic client
+  registration and that Cloudflare Access allows Claude's OAuth redirects,
+  including `https://claude.ai/*`. Remove and recreate the connector after a
+  configuration change.
 - `access_denied` or `access_configuration_invalid`: verify Worker variables,
-  Access policy, issuer, and audience.
+  Access policy, issuer, and audience. Confirm that the operator added the
+  user's exact email address or IdP group to the application's Allow policy.
 - `access_token_missing` or `access_token_invalid`: reconnect the Claude
   connector and verify that the user remains allowed by Access.
 - `access_jwks_unavailable` or `access_jwks_invalid`: check Access availability
@@ -171,6 +196,12 @@ This platform behavior was checked on 2026-07-15 against Anthropic's
 - `pipedrive_oauth_failed` or `pipedrive_credential_unavailable`: check
   Pipedrive OAuth availability and Worker errors, then reconnect only if the
   grant is no longer usable.
+
+## Pipedrive Tools Appear Twice
+
+Keep exactly one connector path active. Disable the local `.mcpb` and remove any
+legacy Pipedrive entry from `claude_desktop_config.json` before using the remote
+connector. Do not remove an unrelated or user-managed server entry.
 
 Start with `/healthz`. A healthy response proves that the Worker route is
 running, not that Access, Durable Objects, or Pipedrive are correctly
@@ -198,7 +229,7 @@ Run:
 
 ```sh
 npm run build
-npm run pack:claude-plugin
+npm run pack:claude-delivery
 npm pack --dry-run
 ```
 

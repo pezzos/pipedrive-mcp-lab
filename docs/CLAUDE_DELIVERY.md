@@ -1,127 +1,142 @@
-# Claude Plugin, Desktop Extension, And Remote Delivery
+# Claude Delivery
 
-This package stages a Claude skills plugin and a Pipedrive MCP Desktop
-Extension, and builds a Cloudflare Worker for remote MCP delivery. The plugin
-contains Pipedrive-specific skills only; the `.mcpb` provides local settings,
-while the remote Worker provides Access login and per-user settings.
+Version `0.3.0` produces three delivery families from one source repository:
 
-Claude Desktop chat is the supported local validation path. The Desktop
-Extension uses Claude Desktop's integrated Node.js runtime, so users do not need
-to install Node.js or edit `.env` or JSON files.
+| Artifact | Audience | Surfaces | Connector |
+| --- | --- | --- | --- |
+| Standalone skill ZIPs | Claude Free and users who want selected workflows | Web and Desktop Chat | User adds the remote connector manually |
+| Claude plugin | Pro, Max, Team, Enterprise | Web Chat, Desktop Chat, eligible Cowork surfaces (see acceptance below) | Plugin declares the remote HTTP connector |
+| Desktop Extension `.mcpb` | Local Desktop fallback only | Claude Desktop | Local stdio server and locally stored settings |
 
-The current Desktop Extension runs directly and does not copy credentials into
-`claude_desktop_config.json`. Versions through `0.1.6` could create a legacy
-managed entry in that file. It is not used by the current extension and never
-provided a supported or reliable Cowork path. Earlier guidance overstated that
-bridge's role; Anthropic's current documentation says local Desktop-configured
-MCP servers are not available in Cowork or `claude.ai`, so a remote MCP
-connector is required for those surfaces. Version `0.2.0` implements that path
-with Cloudflare Access Managed OAuth.
+The source of truth for both skill deliveries is `plugin/claude/skills/`. The
+standalone and plugin packagers copy that source; they never maintain separate
+skill implementations.
 
-## Build The Plugin
+## Sandbox boundary
 
-```sh
-npm install
-npm run check
-npm run pack:claude-plugin
-claude plugin validate dist/claude-plugin/pipedrive-mcp
-```
-
-The staged plugin lives at:
+The cross-surface artifacts declare only:
 
 ```text
-dist/claude-plugin/pipedrive-mcp/
+https://pipedrive-mcp-sandbox.pezzoslabs.com/mcp
 ```
 
-The staged plugin artifact contains the Claude plugin manifest, skills, README,
-LICENSE, and this guide. It must not contain `.mcp.json`, `dist/`, `src/`,
-`tests/`, `node_modules/`, `.env`, tarballs, or package lock files.
+This hostname and the connected Pipedrive tenant are for the sandbox pilot.
+Publishing a production artifact or changing the hostname is a separate
+operator-controlled promotion.
 
-## Install For Pilot Testing
+The remote Worker owns Pipedrive OAuth storage and refresh. Each Claude user
+authenticates through Cloudflare Access and receives only their effective tool
+policy. No Pipedrive credential, Access token, static OAuth client, or secret is
+embedded in a skill ZIP or plugin artifact.
 
-For local Claude Code pilot testing:
+## Build artifacts
 
 ```sh
-claude --plugin-dir dist/claude-plugin/pipedrive-mcp
+npm run check
+npm run pack:claude-skills
+npm run pack:claude-plugin
+claude plugin validate dist/claude-plugin/pipedrive-mcp
+npm run prepare:claude-plugin-release
 ```
 
-For routine client delivery, use a private Git plugin repository or private
-Claude plugin marketplace. Do not use a side-loaded zip as the primary support
-path.
+Outputs:
 
-## Configure The Connector
+```text
+dist/claude-skills/
+  manifest.json
+  <skill>-0.3.0.zip
+  <skill>-latest.zip
 
-Configure credentials in the Desktop Extension settings, not in a plugin
-Connectors tab and not in a `.env` file. Required fields:
+dist/claude-plugin/pipedrive-mcp/
+  .claude-plugin/plugin.json
+  .mcp.json
+  skills/
+  docs/
 
-- Pipedrive company domain: enter only the company subdomain used for
-  `https://<company>.pipedrive.com`.
-- Pipedrive API token, or OAuth access token where required.
+dist/release/pipedrive-mcp-claude-plugin/
+  .claude-plugin/
+  .mcp.json
+  skills/
+  standalone-skills/
+  pipedrive-mcp-0.3.0.mcpb
+  pipedrive-mcp-latest.mcpb
+```
 
-Optional fields:
+Every standalone ZIP contains exactly one top-level skill folder with its
+`SKILL.md` and optional resources. `manifest.json` records a normalized content
+SHA-256 that ignores ZIP timestamps. A release refuses to reuse an existing
+version when plugin or standalone-skill content differs.
 
-- Explicit base URL, only when the company domain is not enough.
-- Write, Mailbox, and delete flags.
-- Request timeout.
+## Free installation contract
 
-The repository plugin intentionally declares no connector. The `.mcpb`
-extension owns the editable configuration form and the supported local server.
+Free users upload each desired ZIP separately from **Customize > Skills** and
+then add the remote `/mcp` URL under **Customize > Connectors**. A Free account
+is currently limited to one custom remote connector. The ZIP does not install
+or authenticate the connector.
 
-Treat Claude Desktop extension storage as sensitive local data and include
-token rotation in offboarding. An installation upgraded from version `0.1.6`
-or earlier may also retain a legacy managed entry with credentials in
-`claude_desktop_config.json`; follow the troubleshooting guide to identify it.
+Cowork requires a paid Claude plan. The Free contract covers standard Web and
+Desktop Chat only; standard mobile Chat is not part of this pilot.
 
-## Safety Defaults
+## Paid plugin contract
 
-- The plugin is disabled by default after installation.
-- The repository plugin contains no credentials, `.mcp.json`, or bundled server.
-- The skills require `pipedrive_*` tools and instruct Claude not to use the
-  official Pipedrive connector, whose different tools do not share this
-  package's safety defaults.
-- CRM write tools are not registered unless writes are enabled.
-- Mailbox reads require the Mailbox flag; mail linking also requires writes.
-- Delete tools require both writes and the delete flag.
-- Write tools default to `dry_run=true`.
-- Mailbox draft creation and email sending are not supported.
-- The local extension accepts supplied credentials. The remote Worker performs
-  admin-owned Pipedrive OAuth login and refreshes the encrypted tenant grant.
+Paid users install the private marketplace plugin. The plugin contributes all
+seven skills and its root `.mcp.json` declares exactly one server with only:
 
-## Supported Surfaces
+```json
+{
+  "type": "http",
+  "url": "https://pipedrive-mcp-sandbox.pezzoslabs.com/mcp"
+}
+```
 
-Before client rollout, confirm:
+The plugin stays disabled by default until the user or organization enables
+it. Team and Enterprise owners may distribute it through an organization
+marketplace. Access OAuth remains per user.
 
-- Custom plugins are allowed by the workspace or organization.
-- The user can install and trust the plugin.
-- The user can install the `.mcpb` Desktop Extension and edit extension
-  settings.
-- The client accepts the credential storage behavior for extension settings.
-- Users can restart Claude Desktop after installing or updating the extension.
+## Surface acceptance
 
-If the Pipedrive MCP tools are unavailable, first check that the `.mcpb`
-extension is installed, enabled, and configured, then inspect its status and
-logs in Claude Desktop. Do not install Node.js as a workaround.
+- Web Chat and Desktop Chat: plugin skills and remote connector are supported.
+- Cowork Desktop: mandatory manual pilot test.
+- Cowork Mobile: mandatory manual pilot test on the latest mobile app when the
+  current beta rollout has reached the target account.
+- Cowork Web: test when the beta is available in the target account or organization;
+  do not promise it before that test passes.
+- Standard mobile Chat: outside this pilot commitment.
 
-The local connector is supported in Claude Desktop. The repository skills can
-also be pilot-tested in Claude Code with `claude --plugin-dir`, but that command
-does not install the local connector there. Cowork, web, and mobile use the
-separately deployed remote MCP connector. Users complete Cloudflare Access
-login, start read-only, and manage only their own permissions at `/settings`.
-See [Remote MCP On Cloudflare](REMOTE_MCP_CLOUDFLARE.md).
+Local automated checks prove artifact shape, safety, and release consistency.
+They do not prove Anthropic's hosted execution behavior. Record the client-side
+Cowork acceptance separately after publication.
 
-## Update And Uninstall
+## Local fallback and duplicate prevention
 
-For a private plugin repository, update by publishing a new plugin version and
-having users update or reinstall the plugin according to the marketplace
-workflow.
+The `.mcpb` is retained for a Desktop-only local mode. It stores supplied
+Pipedrive credentials in extension settings and runs the bundled Node server.
+It cannot provide Cowork, Web, or Mobile access.
 
-When uninstalling, remove the plugin and the Desktop Extension. If an older
-installation left a marked managed entry in `claude_desktop_config.json`,
-review and remove it manually; the uninstaller does not delete client
-configuration. Then revoke or rotate Pipedrive tokens that were configured for
-it.
+Do not enable the local `.mcpb`, a legacy `claude_desktop_config.json` entry,
+and the remote connector simultaneously. They expose the same `pipedrive_*`
+tools. Disconnect or disable the unused path before testing another.
 
-Platform statements were checked on 2026-07-15 against Anthropic's
-[local MCP server guide](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop),
-[remote MCP connector guide](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp), and
-[desktop versus web connector guide](https://support.claude.com/en/articles/11725091-when-to-use-desktop-and-web-connectors).
+## Safety defaults
+
+- Standalone ZIPs contain skill instructions only.
+- The paid plugin contains a reviewed static remote URL but no headers, env,
+  command, local server, credentials, or secrets.
+- Remote users start read-only and manage only their own policy at `/settings`.
+- Real writes still require both an enabled user policy and `dry_run=false`.
+- Delete and Mailbox tools remain separately gated.
+- The plugin directs Claude to use only `pipedrive_*` tools.
+
+## Publication
+
+Routine preparation uses `npm run prepare:claude-plugin-release`. Actual
+publication uses `npm run release:claude-plugin`, which clones the compatibility
+distribution repository, refuses changed content under an existing version,
+commits actual changes, pushes, and validates published downloads. Publication
+is not part of ordinary local validation.
+
+Platform statements were checked on 2026-07-16 against Anthropic's
+[custom skills guide](https://support.claude.com/en/articles/12512198-how-to-create-custom-skills),
+[plugins guide](https://support.claude.com/en/articles/13837440-use-plugins-in-claude),
+[Cowork surface guide](https://support.claude.com/en/articles/15520349-use-claude-cowork-on-web-desktop-and-mobile), and
+[remote connector guide](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).

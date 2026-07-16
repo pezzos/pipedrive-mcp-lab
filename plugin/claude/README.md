@@ -1,35 +1,37 @@
 # Pipedrive MCP Claude Plugin
 
-This plugin adds Pipedrive CRM skills to Claude. Pair it with either the local
-Pipedrive MCP Desktop Extension or the deployed remote MCP connector. The local
-extension owns its credential settings; the remote connector uses Cloudflare
-Access and per-user permission settings.
+This paid-plan plugin adds seven Pipedrive workflow skills and declares the
+remote sandbox MCP connector:
+
+```text
+https://pipedrive-mcp-sandbox.pezzoslabs.com/mcp
+```
+
+It is intended for Claude Pro, Max, Team, and Enterprise on Web chat, Desktop
+chat, and Cowork. Cowork Desktop is a required pilot acceptance surface.
+Cowork Mobile is required when Anthropic's beta rollout has reached the test
+account. Cowork Web must also be validated on the target account or organization
+before it is promised to a client.
+
+After installation, each user completes Cloudflare Access authentication. The
+plugin contains no Pipedrive token, OAuth client secret, Access token, or local
+server. Use only the `pipedrive_*` tools; Claude's official Pipedrive connector
+does not share this package's safety defaults.
+
+Do not activate the local `.mcpb` Desktop Extension or a legacy
+`claude_desktop_config.json` Pipedrive entry at the same time. Those alternative
+local connectors expose the same tool names and can create duplicates.
+The compatibility distribution names the local fallback
+`pipedrive-mcp-latest.mcpb`.
+
+Free-plan users install individual ZIP files from `standalone-skills/` and add
+the remote connector manually instead of installing this plugin.
 
 Start here:
 
 - [English installation guide](INSTALL.md)
-- [Guide d'installation en francais](INSTALL.fr.md)
+- [Guide d'installation en français](INSTALL.fr.md)
+- [Claude delivery details](docs/CLAUDE_DELIVERY.md)
 
-## What You Install
-
-1. The Claude plugin from this repository.
-2. The Desktop Extension file:
-
-   ```text
-   https://github.com/pezzos/pipedrive-mcp-claude-plugin/raw/main/pipedrive-mcp-latest.mcpb
-   ```
-
-Install and test in Claude Desktop chat. The `.mcpb` extension uses Claude
-Desktop's integrated Node.js runtime; a separate Node.js install is not needed.
-
-The local package is not available in Cowork. Use the version `0.2.0` remote
-connector there: add the admin-provided `/mcp` URL, complete Cloudflare Access
-login, and use `/settings` to manage only your own capabilities. No Pipedrive
-token is entered by the user.
-
-Do not use Claude's official Pipedrive connector for this workflow. Use only
-the `pipedrive_*` tools provided by Pipedrive MCP; the official connector's
-different tools do not share this package's safety defaults.
-
-Platform details and their verification sources are maintained in the
-[Claude delivery guide](docs/CLAUDE_DELIVERY.md).
+Version `0.3.0` is a sandbox pilot. Production promotion and a production MCP
+hostname require a separate operator-approved release.

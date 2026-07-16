@@ -1,4 +1,5 @@
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import {
   cpSync,
   existsSync,
@@ -11,7 +12,8 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { basename, dirname, join, resolve } from "node:path";
+import { basename, dirname, join, relative, resolve } from "node:path";
+import { walk } from "./lib/artifact-safety.mjs";
 
 const repoRoot = process.cwd();
 const packageJson = readJson(join(repoRoot, "package.json"));
@@ -29,6 +31,7 @@ const remoteUrlBase =
   args["remote-url-base"] ?? "https://github.com/pezzos/pipedrive-mcp-claude-plugin/raw/main";
 
 const pluginArtifactRoot = join(repoRoot, "dist", "claude-plugin", "pipedrive-mcp");
+const standaloneSkillsRoot = join(repoRoot, "dist", "claude-skills");
 const pluginServerPath = join(repoRoot, "dist", "plugin-server.js");
 const mcpbManifestPath = join(repoRoot, "plugin", "mcpb", "manifest.json");
 const marketplaceManifestPath = join(repoRoot, ".claude-plugin", "marketplace.json");
@@ -56,11 +59,12 @@ function main() {
 
     if (!skipCheck) {
       run("npm", ["run", "check"], { cwd: repoRoot });
-      run("npm", ["run", "pack:claude-plugin"], { cwd: repoRoot });
+      run("npm", ["run", "pack:claude-delivery"], { cwd: repoRoot });
     } else {
       assertRequiredBuildOutputs();
     }
 
+    assertExistingVersionCompatible(target.path, version);
     syncDistributionRepo(target.path, version);
 
     const versionedMcpb = join(target.path, `pipedrive-mcp-${version}.mcpb`);
@@ -73,6 +77,7 @@ function main() {
       if (!skipRemoteVerify) {
         verifyRemoteMcpb(`${remoteUrlBase}/pipedrive-mcp-${version}.mcpb`, version);
         verifyRemoteMcpb(`${remoteUrlBase}/pipedrive-mcp-latest.mcpb`, version);
+        verifyRemoteStandaloneSkills(remoteUrlBase);
       }
     }
 
@@ -128,6 +133,11 @@ function assertSourceVersions(expectedVersion) {
   assertMarketplaceVersion(marketplaceManifestPath, expectedVersion);
   assertJsonVersion(join(repoRoot, "plugin", "claude", ".claude-plugin", "plugin.json"), expectedVersion);
   assertJsonVersion(mcpbManifestPath, expectedVersion);
+  const toolsSource = readFileSync(join(repoRoot, "src", "tools.ts"), "utf8");
+  const serverVersion = toolsSource.match(/new McpServer\([\s\S]*?version:\s*"(\d+\.\d+\.\d+)"/)?.[1];
+  if (serverVersion !== expectedVersion) {
+    throw new Error(`src/tools.ts has MCP server version ${serverVersion ?? "<missing>"}; expected ${expectedVersion}`);
+  }
 }
 
 function assertMarketplaceVersion(path, expectedVersion) {
@@ -146,7 +156,7 @@ function assertJsonVersion(path, expectedVersion) {
 }
 
 function assertRequiredBuildOutputs() {
-  for (const path of [pluginArtifactRoot, pluginServerPath]) {
+  for (const path of [pluginArtifactRoot, standaloneSkillsRoot, pluginServerPath]) {
     if (!existsSync(path)) {
       throw new Error(`Missing build output with --skip-check: ${path}`);
     }
@@ -161,7 +171,9 @@ function syncDistributionRepo(targetRepo, releaseVersion) {
 
   copyDirectoryExact(join(pluginArtifactRoot, "skills"), join(targetRepo, "skills"));
   copyDirectoryExact(join(pluginArtifactRoot, "docs"), join(targetRepo, "docs"));
+  copyDirectoryExact(standaloneSkillsRoot, join(targetRepo, "standalone-skills"));
   copyFile(join(pluginArtifactRoot, ".claude-plugin", "plugin.json"), join(targetRepo, ".claude-plugin", "plugin.json"));
+  copyFile(join(pluginArtifactRoot, ".mcp.json"), join(targetRepo, ".mcp.json"));
   copyFile(join(pluginArtifactRoot, "README.md"), join(targetRepo, "README.md"));
   copyFile(join(pluginArtifactRoot, "INSTALL.md"), join(targetRepo, "INSTALL.md"));
   copyFile(join(pluginArtifactRoot, "INSTALL.fr.md"), join(targetRepo, "INSTALL.fr.md"));
@@ -177,6 +189,39 @@ function syncDistributionRepo(targetRepo, releaseVersion) {
 
   buildVersionedMcpb(mcpbSourceRoot, versionedMcpb, releaseVersion);
   copyFile(versionedMcpb, latestMcpb);
+}
+
+function assertExistingVersionCompatible(targetRepo, releaseVersion) {
+  const marketplacePath = join(targetRepo, ".claude-plugin", "marketplace.json");
+  if (!existsSync(marketplacePath)) {
+    return;
+  }
+  const marketplace = readJson(marketplacePath);
+  const currentVersion = marketplace.plugins?.find((plugin) => plugin?.name === "pipedrive-mcp")?.version;
+  if (currentVersion !== releaseVersion) {
+    return;
+  }
+
+  for (const source of walk(pluginArtifactRoot)) {
+    const relativePath = relative(pluginArtifactRoot, source);
+    const target = join(targetRepo, relativePath);
+    if (!existsSync(target) || !readFileSync(source).equals(readFileSync(target))) {
+      throw new Error(`${relativePath} already exists with different content; bump the release version instead of overwriting it`);
+    }
+  }
+
+  const manifest = readJson(join(standaloneSkillsRoot, "manifest.json"));
+  const targetManifest = join(targetRepo, "standalone-skills", "manifest.json");
+  if (!existsSync(targetManifest) || !readFileSync(join(standaloneSkillsRoot, "manifest.json")).equals(readFileSync(targetManifest))) {
+    throw new Error("standalone-skills/manifest.json already exists with different content; bump the release version instead of overwriting it");
+  }
+  for (const skill of manifest.skills ?? []) {
+    const source = join(standaloneSkillsRoot, skill.versioned);
+    const target = join(targetRepo, "standalone-skills", skill.versioned);
+    if (!existsSync(target) || normalizedZipDigest(source) !== normalizedZipDigest(target)) {
+      throw new Error(`${skill.versioned} already exists with different content; bump the release version instead of overwriting it`);
+    }
+  }
 }
 
 function writeDistributionMarketplace(path, releaseVersion) {
@@ -213,6 +258,22 @@ function mcpbPayloadEquals(left, right) {
   return ["manifest.json", "server/plugin-server.js"].every((member) =>
     readMcpbMember(left, member).equals(readMcpbMember(right, member)),
   );
+}
+
+function normalizedZipDigest(path) {
+  const digest = createHash("sha256");
+  const members = run("unzip", ["-Z1", path], { cwd: repoRoot })
+    .split("\n")
+    .map((name) => name.trim())
+    .filter((name) => name && !name.endsWith("/"))
+    .sort();
+  for (const member of members) {
+    digest.update(member);
+    digest.update("\0");
+    digest.update(createHash("sha256").update(readMcpbMember(path, member)).digest("hex"));
+    digest.update("\n");
+  }
+  return digest.digest("hex");
 }
 
 function readMcpbMember(path, member) {
@@ -254,6 +315,22 @@ function verifyRemoteMcpb(url, expectedVersion) {
   }
 }
 
+function verifyRemoteStandaloneSkills(urlBase) {
+  const manifest = readJson(join(standaloneSkillsRoot, "manifest.json"));
+  const tempDir = mkdtempSync(join(tmpdir(), "pipedrive-mcp-skills-release-"));
+  try {
+    for (const skill of manifest.skills ?? []) {
+      const target = join(tempDir, skill.versioned);
+      run("curl", ["-fsSL", `${urlBase}/standalone-skills/${skill.versioned}`, "-o", target], { cwd: repoRoot });
+      if (normalizedZipDigest(target) !== skill.content_sha256) {
+        throw new Error(`Published standalone skill differs from its manifest: ${skill.versioned}`);
+      }
+    }
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
 function commitAndPush(targetRepo, releaseVersion) {
   if (!isGitRepo(targetRepo)) {
     throw new Error(`Cannot publish because distribution repository is not a git repo: ${targetRepo}`);
@@ -268,18 +345,18 @@ function commitAndPush(targetRepo, releaseVersion) {
       [
         "commit",
         "-m",
-        `release ${releaseVersion} desktop extension`,
+        `release ${releaseVersion} Pipedrive MCP delivery`,
         "-m",
         [
           "# Why",
-          "# - Publish the Claude Desktop Extension binary referenced by client install docs.",
-          "# - Keep the versioned artifact and latest alias in sync.",
+          "# - Publish the paid cross-surface plugin, standalone skills, and Desktop fallback.",
+          "# - Keep versioned artifacts and latest aliases in sync.",
           "# What",
           `# - Generate pipedrive-mcp-${releaseVersion}.mcpb and pipedrive-mcp-latest.mcpb.`,
-          "# - Sync the Claude plugin skills, docs, and MCPB manifest from the source repo.",
+          "# - Sync the remote plugin, standalone skill ZIPs, docs, and MCPB manifest from the source repo.",
           "# Tests",
           "# - local MCPB manifest validation",
-          "# - remote MCPB download validation after push",
+          "# - remote MCPB and standalone skill download validation after push",
         ].join("\n"),
       ],
       { cwd: targetRepo },

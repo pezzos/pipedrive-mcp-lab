@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "pipedrive-mcp": {
+      "type": "http",
+      "url": "https://pipedrive-mcp-sandbox.pezzoslabs.com/mcp"
+    }
+  }
+}

@@ -1,6 +1,6 @@
 {
   "name": "pipedrive-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "license": "MIT",
   "type": "module",
@@ -22,6 +22,8 @@
     "build:plugin": "node scripts/build-plugin.mjs",
     "benchmark:server": "npm run build --silent && node scripts/benchmark-server.mjs",
     "pack:claude-plugin": "node scripts/pack-claude-plugin.mjs",
+    "pack:claude-skills": "node scripts/pack-claude-skills.mjs",
+    "pack:claude-delivery": "npm run pack:claude-skills && npm run pack:claude-plugin",
     "prepare:claude-plugin-release": "node scripts/release-claude-plugin.mjs",
     "release:claude-plugin": "node scripts/release-claude-plugin.mjs --publish",
     "prepack": "npm run build",

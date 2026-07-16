@@ -14,14 +14,15 @@ npm run build
 
 Use `node dist/server.js` as the MCP command.
 
-For Claude plugin or Claude Code skills delivery:
+For both Claude delivery variants:
 
 ```sh
-npm run pack:claude-plugin
+npm run pack:claude-delivery
 claude plugin validate dist/claude-plugin/pipedrive-mcp
 ```
 
-The plugin artifact is staged at `dist/claude-plugin/pipedrive-mcp/`.
+Standalone ZIPs are staged at `dist/claude-skills/`. The plugin artifact is
+staged at `dist/claude-plugin/pipedrive-mcp/`.
 
 ## Environment Contract
 
@@ -102,25 +103,33 @@ The tarball should contain runtime files, README, LICENSE, config example, and
 docs only. It must not include source, tests, historical validation notes, or
 validation prompts.
 
-## Private Claude Plugin Delivery
+## Private Claude Delivery
 
-Use `npm run pack:claude-plugin` to stage the skills plugin.
-Routine delivery should use a private plugin repository or private Claude plugin
-marketplace. Use `claude --plugin-dir` only for local pilot testing.
+Use `npm run pack:claude-delivery` to stage the standalone skill ZIPs and the
+plugin. Routine paid delivery should use a private plugin repository or private
+Claude plugin marketplace. Use `claude --plugin-dir` only for local pilot
+testing.
 
-The Claude repository plugin contains skills only. The editable connector is
-the Pipedrive MCP Desktop Extension (`.mcpb`), where users configure
-`company_domain`, API/OAuth token, write flags, and timeout. Claude Desktop uses
-its integrated Node.js runtime for this extension. Version `0.1.7` removes the
-legacy `claude_desktop_config.json` bridge because Desktop does not need it and
-Cowork cannot consume it. Upgrades preserve any old client configuration; use
-the troubleshooting procedure to review a stale marked entry.
+The paid plugin contains the seven skills and exactly one remote HTTP connector
+in its root `.mcp.json`. Pro, Max, Team, and Enterprise users install that
+plugin. Free users import selected files from `standalone-skills/` and add the
+same remote `/mcp` URL manually. Each archive must contain one top-level skill
+folder with its `SKILL.md`, and no connector or credentials.
 
-For Cowork, web, and mobile delivery, deploy the remote Worker and provide its
-`/mcp` URL instead of the `.mcpb`. Users authenticate through Cloudflare Access
-and manage only their own permissions at `/settings`; the admin completes
-Pipedrive OAuth once. The local and remote delivery paths share the same tools
-and safety defaults but do not share credential storage.
+Cowork Desktop and Cowork Mobile are mandatory pilot acceptance surfaces.
+Validate Cowork Web when it is enabled for the target organization. Users
+authenticate through Cloudflare Access and manage only their own permissions at
+`/settings`; the admin completes Pipedrive OAuth once.
+
+Before handing off either installation path, add the user's exact email or IdP
+group to the Cloudflare Access application's Allow policy. Record who owns this
+onboarding step. Importing a skill or plugin does not grant Access membership.
+
+The `.mcpb` remains a local Claude Desktop fallback where users configure
+`company_domain`, API/OAuth token, write flags, and timeout. It is an alternative
+to the remote connector, not an additional step. Never activate the `.mcpb`, a
+legacy `claude_desktop_config.json` entry, and the remote connector at the same
+time.
 
 The source server, MCPB manifest, skills, and marketplace now live in this one
 canonical repository. The existing `pipedrive-mcp-claude-plugin` repository is
@@ -129,8 +138,9 @@ change.
 
 Use the release script to publish the Desktop Extension and plugin repository.
 It builds and validates the local package, syncs the distribution repository,
-creates both a versioned `.mcpb` and `pipedrive-mcp-latest.mcpb`, then verifies
-published downloads after push.
+creates both a versioned `.mcpb` and `pipedrive-mcp-latest.mcpb`, generates
+versioned and `latest` standalone skill ZIPs, then verifies published downloads
+after push.
 
 For local preparation, no second checkout is required:
 
@@ -187,7 +197,7 @@ Required local validation:
 ```sh
 npm run check
 npm run benchmark:server
-npm run pack:claude-plugin
+npm run pack:claude-delivery
 npm run prepare:claude-plugin-release
 claude plugin validate .
 claude plugin validate dist/claude-plugin/pipedrive-mcp
@@ -198,9 +208,11 @@ Do not run live writes as part of ordinary validation. If live credentials are
 already configured, limit manual checks to read-only tools unless an operator
 explicitly approves a write test.
 
-Platform behavior was checked on 2026-07-15 against Anthropic's
+Platform behavior was checked on 2026-07-16 against Anthropic's
 [local MCP server guide](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop),
 [remote MCP connector guide](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp),
-[connector surface guide](https://support.claude.com/en/articles/11725091-when-to-use-desktop-and-web-connectors).
+[skills guide](https://support.claude.com/en/articles/12512180-use-skills-in-claude),
+[plugins guide](https://support.claude.com/en/articles/13837440-use-plugins-in-claude), and
+[Cowork surface guide](https://support.claude.com/en/articles/15520349-use-claude-cowork-on-web-desktop-and-mobile).
 The monorepo marketplace layout was checked separately against Anthropic's
 [plugin marketplace documentation](https://code.claude.com/docs/en/plugin-marketplaces).
