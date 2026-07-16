@@ -125,7 +125,7 @@ sandbox URL and no other fields. The artifact must not contain
 ## A Free Account Cannot Install The Plugin
 
 This is expected. Import the wanted files from the
-[`standalone-skills/` distribution folder](https://github.com/pezzos/pipedrive-mcp-claude-plugin/tree/main/standalone-skills)
+[latest GitHub Release](https://github.com/pezzos/pipedrive-mcp-claude-plugin/releases/latest)
 through **Customize > Skills**, then add the remote `/mcp` URL as a custom
 connector. Do not unzip and edit the archives before importing them.
 

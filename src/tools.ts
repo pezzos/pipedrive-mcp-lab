@@ -419,7 +419,7 @@ export function buildServer(
 ) {
   const server = new McpServer({
     name: "pipedrive-mcp",
-    version: "0.3.1",
+    version: "0.3.3",
   });
 
   server.registerTool(

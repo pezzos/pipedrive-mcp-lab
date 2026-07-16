@@ -1,6 +1,6 @@
 # Install Pipedrive MCP In Claude
 
-This guide covers the version `0.3.1` sandbox pilot. It uses only:
+This guide covers the version `0.3.3` sandbox pilot. It uses only:
 
 ```text
 https://pipedrive-mcp-sandbox.pezzoslabs.com/mcp
@@ -24,7 +24,7 @@ is separate from the shared Pipedrive OAuth connection.
 Free accounts can upload custom skills and use one custom remote connector.
 
 1. Open the
-   [`standalone-skills/` distribution folder](https://github.com/pezzos/pipedrive-mcp-claude-plugin/tree/main/standalone-skills)
+   [latest GitHub Release](https://github.com/pezzos/pipedrive-mcp-claude-plugin/releases/latest)
    and download the wanted ZIP files. Each ZIP contains one workflow skill.
 2. On Claude Web, open **Customize > Skills**, choose **Create skill**, then
    **Upload a skill**.
