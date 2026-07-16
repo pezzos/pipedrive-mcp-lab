@@ -1,6 +1,6 @@
 # Claude Delivery
 
-Version `0.3.0` produces three delivery families from one source repository:
+Version `0.3.1` produces three delivery families from one source repository:
 
 | Artifact | Audience | Surfaces | Connector |
 | --- | --- | --- | --- |
@@ -44,7 +44,7 @@ Outputs:
 ```text
 dist/claude-skills/
   manifest.json
-  <skill>-0.3.0.zip
+  <skill>-0.3.1.zip
   <skill>-latest.zip
 
 dist/claude-plugin/pipedrive-mcp/
@@ -58,7 +58,7 @@ dist/release/pipedrive-mcp-claude-plugin/
   .mcp.json
   skills/
   standalone-skills/
-  pipedrive-mcp-0.3.0.mcpb
+  pipedrive-mcp-0.3.1.mcpb
   pipedrive-mcp-latest.mcpb
 ```
 

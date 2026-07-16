@@ -2,7 +2,7 @@
   "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
   "name": "pipedrive-mcp",
   "displayName": "Pipedrive MCP",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Cross-surface Pipedrive skills with a remote Cloudflare MCP connector.",
   "author": {
     "name": "PezzosLabs"

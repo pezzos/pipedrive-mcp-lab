@@ -89,7 +89,7 @@ standalone skills, and Claude plugin. Plugin source files live under
 `plugin/claude/`, the monorepo marketplace is declared in
 `.claude-plugin/marketplace.json`, and staged output lives under `dist/`.
 
-The version `0.3.0` plugin contains the seven skills and a strict root
+The version `0.3.1` plugin contains the seven skills and a strict root
 `.mcp.json` that declares only the remote sandbox connector. Free-plan users
 import selected standalone ZIPs and add the same `/mcp` URL manually. The ZIPs
 contain no connector or credentials.
