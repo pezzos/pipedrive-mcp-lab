@@ -31,6 +31,14 @@ continues to accept an externally supplied token. Mailbox draft creation, email
 sending, file upload/download, reports, automations, and webhooks are not
 implemented.
 
+The checked-in remote Worker is multi-tenant: every Cloudflare Access subject
+connects and uses its own encrypted Pipedrive OAuth grant, while the platform
+administrator controls a global allowlist of company subdomains. Permissions
+are isolated by `(Access sub, company_id)` and start read-only for every new
+pair. This implementation is locally validated but has not been deployed or
+promoted by this repository change; see the [tenancy boundary and deployment
+gate](docs/REMOTE_MCP_CLOUDFLARE.md#implemented-tenancy-boundary-and-deployment-gate).
+
 ## Quick Start
 
 Build both Claude delivery variants:

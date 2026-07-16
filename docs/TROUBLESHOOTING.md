@@ -65,7 +65,8 @@ make sure writes are enabled in the server environment.
 
 Some Pipedrive accounts require OAuth scopes for Mailbox endpoints. The local
 server accepts an externally supplied `PIPEDRIVE_ACCESS_TOKEN`; the remote
-Worker obtains and refreshes OAuth after the admin connects Pipedrive.
+Worker obtains and refreshes OAuth after each user connects an approved company
+at `/pipedrive`.
 
 Use `pipedrive_mailbox_probe` before reading thread or message content.
 
@@ -174,25 +175,26 @@ This platform behavior was checked on 2026-07-16 against Anthropic's
 
 ## Remote Connector Errors
 
+> The routes and error codes below describe the checked-in multi-tenant Worker.
+> This repository change did not inspect or change the live deployment. Verify
+> the active Worker version before assuming these procedures apply; see the
+> [deployment gate](REMOTE_MCP_CLOUDFLARE.md#implemented-tenancy-boundary-and-deployment-gate).
+
 Use `pipedrive_connection_check` for an end-to-end read-only verification. It
 calls Pipedrive's current-user endpoint and reports only non-sensitive status
 metadata. `pipedrive_health_check` remains a local configuration check and does
 not prove that the credential is accepted by Pipedrive.
 
-The named admin should start at `/admin/pipedrive`, not at the callback URL.
-This page distinguishes three states:
+The platform admin starts at `/admin/pipedrive` to approve, suspend, or resume
+company subdomains. An ordinary user starts at `/pipedrive`, not at the callback
+URL. The user page distinguishes:
 
-- **Déconnecté**: the Worker has no local OAuth material and MCP calls fail with
-  `pipedrive_not_connected`.
-- **Connecté**: the page shows the company and user returned live by
-  `/api/v1/users/me`.
-- **Connexion enregistrée, vérification en direct indisponible**: local OAuth
-  material exists, but the live identity check failed. This is not proof of a
-  disconnection; check Pipedrive availability and reload before replacing the
-  connection.
-- **Connexion inutilisable**: an encrypted envelope exists but cannot be read.
-  Use **Supprimer la connexion locale**, then reconnect with a valid encryption
-  key. The kill switch remains available without decrypting the stored tokens.
+- **Aucune connexion**: this Access subject has no local OAuth material and MCP
+  calls fail with `pipedrive_not_connected`.
+- **Connectée**: the page shows the verified Pipedrive company for this user.
+- **Reconnexion requise**: encrypted material was purged after inactivity,
+  revoked, or became unreadable. Reconnect through a fresh one-shot OAuth flow;
+  do not replay the callback URL.
 
 - `mcp_registration_failed`: confirm that the server supports dynamic client
   registration and that Cloudflare Access allows Claude's OAuth redirects,
@@ -207,30 +209,35 @@ This page distinguishes three states:
   and its certificate endpoint; do not bypass JWT validation.
 - `policy_unavailable`: verify the `USER_POLICY` Durable Object binding. Do not
   bypass the policy or enable tools globally.
-- `pipedrive_not_connected`: the named admin visits
-  `/admin/pipedrive`, starts a fresh connection, and verifies the displayed
-  company and user.
+- `pipedrive_not_connected`: the affected user visits `/pipedrive`, starts a
+  fresh connection to an approved subdomain, and verifies the displayed company.
 - `admin_required`: sign in through Cloudflare Access as the exact configured
   admin. Do not change Access policy merely to bypass this check.
 - `admin_origin_invalid` or `admin_method_not_allowed`: reload the admin page on
   the Worker origin and submit its form; do not replay the request manually.
-- `admin_confirmation_required`: select the explicit disconnect confirmation.
-- `admin_csrf_invalid`: reload the page. The one-shot token expired, was already
-  used, belongs to another Access subject, or targets an older connection.
-- `pipedrive_reconnect_required`: the Pipedrive grant was revoked or could not
-  be refreshed; the named admin reconnects it.
+- `admin_confirmation_required`: select the explicit tenant or selected-user
+  confirmation.
+- `tenant_admin_action_invalid` or `user_action_invalid`: reload the relevant
+  page. The one-shot token expired, was used, belongs to another actor, or
+  targets an older generation.
+- `tenant_admission_denied`: the domain is unknown, unapproved, suspended, or
+  intentionally indistinguishable at the user boundary. Contact the platform
+  admin; do not probe alternate hosts.
+- `pipedrive_reconnect_required`: this user's Pipedrive grant was revoked,
+  purged after 90 inactive days, or could not be refreshed; that user reconnects
+  it at `/pipedrive`.
 - `oauth_material_invalid`: reconnect Pipedrive after encryption-key rotation
   or unreadable stored OAuth material.
 - `pipedrive_oauth_failed` or `pipedrive_credential_unavailable`: check
   Pipedrive OAuth availability and Worker errors, then reconnect only if the
   grant is no longer usable.
 
-The **Supprimer la connexion locale** action removes only the encrypted access
-and refresh tokens held by the Worker. It immediately blocks future Worker calls
-and invalidates older refresh/callback results, but it does not uninstall the
-application or revoke the provider grant. Provider-side revocation currently
-requires a manual Pipedrive uninstall. Do not perform that destructive action
-as a troubleshooting shortcut.
+User self-disconnect and admin selected force-disconnect remove only that
+connection's encrypted access and refresh tokens. They immediately block future
+calls for that user and invalidate older refresh/callback results, but do not
+uninstall the application or revoke the provider grant. Provider-side
+revocation still requires a manual Pipedrive uninstall. Do not perform that
+destructive action as a troubleshooting shortcut.
 
 ## Pipedrive Tools Appear Twice
 

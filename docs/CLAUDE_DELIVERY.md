@@ -24,6 +24,18 @@ This hostname and the connected Pipedrive tenant are for the sandbox pilot.
 Publishing a production artifact or changing the hostname is a separate
 operator-controlled promotion.
 
+This repository change neither inspected nor changed the Worker currently live
+at that hostname. Verify its active deployment version before onboarding: the
+hardcoded URL does not prove that the new multi-tenant code has been deployed.
+
+The checked-in Worker now isolates one Pipedrive OAuth connection per Access
+subject and one permission policy per `(Access sub, company_id)`. The global
+platform administrator approves, suspends, and resumes Pipedrive company
+subdomains but never receives a user's OAuth token. This code is locally
+validated only: do not distribute it as deployed multi-tenant behavior until
+the canonical [deployment gate](REMOTE_MCP_CLOUDFLARE.md#implemented-tenancy-boundary-and-deployment-gate)
+has passed.
+
 The remote Worker owns Pipedrive OAuth storage and refresh. Each Claude user
 authenticates through Cloudflare Access and receives only their effective tool
 policy. No Pipedrive credential, Access token, static OAuth client, or secret is
@@ -146,7 +158,8 @@ tools. Disconnect or disable the unused path before testing another.
 - Standalone ZIPs contain skill instructions only.
 - The paid plugin contains a reviewed static remote URL but no headers, env,
   command, local server, credentials, or secrets.
-- Remote users start read-only and manage only their own policy at `/settings`.
+- Each remote user connects their own approved company at `/pipedrive`, starts
+  read-only, and manages only that user-company policy at `/settings`.
 - Real writes still require both an enabled user policy and `dry_run=false`.
 - Delete and Mailbox tools remain separately gated.
 - The plugin directs Claude to use only `pipedrive_*` tools.
