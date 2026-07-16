@@ -124,7 +124,8 @@ local repository validation.
 
 Before production promotion, exercise the following with non-production data:
 
-1. `/healthz` returns `200` with `transport: "streamable-http"`.
+1. `/healthz` returns `200` with `transport: "streamable-http"`, then
+   `pipedrive_connection_check` confirms a live read-only Pipedrive request.
 2. An unauthenticated `/mcp` request is rejected and produces a redacted audit
    event.
 3. Before the admin connection, `/mcp` fails fast with

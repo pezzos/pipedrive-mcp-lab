@@ -174,6 +174,11 @@ This platform behavior was checked on 2026-07-16 against Anthropic's
 
 ## Remote Connector Errors
 
+Use `pipedrive_connection_check` for an end-to-end read-only verification. It
+calls Pipedrive's current-user endpoint and reports only non-sensitive status
+metadata. `pipedrive_health_check` remains a local configuration check and does
+not prove that the credential is accepted by Pipedrive.
+
 - `mcp_registration_failed`: confirm that the server supports dynamic client
   registration and that Cloudflare Access allows Claude's OAuth redirects,
   including `https://claude.ai/*`. Remove and recreate the connector after a

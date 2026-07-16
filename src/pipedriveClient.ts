@@ -2,13 +2,23 @@ import { PipedriveConfig, requireConfigured } from "./config.js";
 
 export type FetchLike = typeof fetch;
 
+export class PipedriveApiError extends Error {
+  constructor(
+    readonly status: number,
+    message: string,
+  ) {
+    super(message);
+    this.name = "PipedriveApiError";
+  }
+}
+
 export class PipedriveClient {
   private readonly fetchImpl: FetchLike;
   private readonly config: PipedriveConfig;
 
   constructor(config: PipedriveConfig, fetchImpl: FetchLike = fetch) {
     this.config = config;
-    this.fetchImpl = fetchImpl;
+    this.fetchImpl = (input, init) => fetchImpl(input, init);
   }
 
   async get(path: string, params: Record<string, string | number | boolean | undefined> = {}) {
@@ -105,8 +115,11 @@ export class PipedriveClient {
             continue;
           }
         }
-        throw new Error(
-          redactSecretMarkers(`Pipedrive API ${method} ${path} failed with ${response.status}: ${summarizeError(data)}`),
+        throw new PipedriveApiError(
+          response.status,
+          redactSecretMarkers(
+            `Pipedrive API ${method} ${path} failed with ${response.status}: ${summarizeError(data)}`,
+          ),
         );
       }
       return data;

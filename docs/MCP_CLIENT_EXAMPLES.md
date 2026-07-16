@@ -27,6 +27,12 @@ Useful read-only calls:
 { "name": "pipedrive_health_check", "arguments": {} }
 ```
 
+For an end-to-end check that performs a live, read-only Pipedrive API request:
+
+```json
+{ "name": "pipedrive_connection_check", "arguments": {} }
+```
+
 ```json
 { "name": "pipedrive_list_deals", "arguments": { "limit": 5 } }
 ```

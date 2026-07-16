@@ -9,7 +9,7 @@ import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js";
 import { assertSafeTextTree, walk } from "../scripts/lib/artifact-safety.mjs";
 
-const readOnlyToolCount = 46;
+const readOnlyToolCount = 47;
 const artifactRoot = join(process.cwd(), "dist", "claude-plugin", "pipedrive-mcp");
 const standaloneSkillsRoot = join(process.cwd(), "dist", "claude-skills");
 const releaseAssetsRoot = join(process.cwd(), "dist", "release", "assets");
@@ -619,6 +619,7 @@ async function listTools(serverPath: string, cwd: string, overrides: Record<stri
 function assertReadOnlyProfile(tools: string[]) {
   assert.equal(tools.length, readOnlyToolCount);
   assert.equal(tools.includes("pipedrive_health_check"), true);
+  assert.equal(tools.includes("pipedrive_connection_check"), true);
   assert.equal(tools.includes("pipedrive_mailbox_probe"), false);
   assert.equal(tools.includes("pipedrive_delete_deal"), false);
   assert.equal(tools.includes("pipedrive_create_deal"), false);
