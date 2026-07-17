@@ -158,7 +158,8 @@ async function handleRemoteMcp(
   context: ExecutionContext,
 ): Promise<Response> {
   const startedAt = Date.now();
-  const call = await inspectToolCall(request);
+  const inspection = await inspectMcpRequest(request);
+  const call = inspection.call;
   let credential: UserCredential;
   let policy: UserPolicyRecord;
   try {
@@ -184,6 +185,9 @@ async function handleRemoteMcp(
       targetIds: call ? extractTargetIds(call.arguments) : undefined,
       errorCode: code,
     }).catch(() => undefined));
+    if (canUseDisconnectedMcpServer(inspection.method, code)) {
+      return handleMcpRequest(request, () => buildServer(disconnectedPipedriveConfig()));
+    }
     throw error;
   }
   const pipedriveConfig: PipedriveConfig = {
@@ -199,7 +203,7 @@ async function handleRemoteMcp(
   const response = await handleMcpRequest(request, () => buildServer(pipedriveConfig));
 
   const outcome = await mcpOutcome(response);
-  if (outcome === "success") {
+  if (outcome === "success" && call) {
     const usedResponse = await userConnectionStub(env, identity.sub).fetch(
       "https://connection.internal/used",
       {
@@ -876,18 +880,24 @@ function hasExactOrigin(request: Request): boolean {
   return request.headers.get("origin") === new URL(request.url).origin;
 }
 
-async function inspectToolCall(request: Request): Promise<{
-  name: string;
-  arguments: unknown;
-  dryRun?: boolean;
-} | undefined> {
+async function inspectMcpRequest(request: Request): Promise<{
+  method?: string;
+  call?: {
+    name: string;
+    arguments: unknown;
+    dryRun?: boolean;
+  };
+}> {
   try {
     const body = await request.clone().json() as {
       method?: unknown;
       params?: { name?: unknown; arguments?: unknown };
     };
+    if (typeof body.method !== "string") {
+      return {};
+    }
     if (body.method !== "tools/call" || typeof body.params?.name !== "string") {
-      return undefined;
+      return { method: body.method };
     }
     const argumentsValue = body.params.arguments;
     const dryRun =
@@ -897,10 +907,33 @@ async function inspectToolCall(request: Request): Promise<{
       typeof (argumentsValue as { dry_run?: unknown }).dry_run === "boolean"
         ? (argumentsValue as { dry_run: boolean }).dry_run
         : undefined;
-    return { name: body.params.name, arguments: argumentsValue, dryRun };
+    return {
+      method: body.method,
+      call: { name: body.params.name, arguments: argumentsValue, dryRun },
+    };
   } catch {
-    return undefined;
+    return {};
   }
+}
+
+function disconnectedPipedriveConfig(): PipedriveConfig {
+  return {
+    baseUrl: "",
+    baseUrlSource: "missing",
+    allowMockBaseUrl: false,
+    enableWrites: false,
+    enableDeleteTools: false,
+    enableMailboxTools: false,
+    requestTimeoutMs: 10_000,
+  };
+}
+
+function canUseDisconnectedMcpServer(method: string | undefined, code: string): boolean {
+  return (
+    method !== undefined &&
+    method !== "tools/call" &&
+    (code === "pipedrive_not_connected" || code === "pipedrive_reconnect_required")
+  );
 }
 
 function toolEffect(name: string): AuditEvent["effect"] {

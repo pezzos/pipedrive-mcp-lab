@@ -323,6 +323,112 @@ test("settings policy is physically keyed by Access subject and verified company
   assert.deepEqual(policyNames, [userCompanyPolicyObjectKey("user:one", "company:42")]);
 });
 
+test("MCP completes discovery before Pipedrive OAuth while every tool call stays fail-closed", async () => {
+  const fixture = await accessFixture("user@example.test", "user-one");
+  let policyCalls = 0;
+  const policyNamespace = namespaceFor(async () => {
+    policyCalls += 1;
+    return Response.json(readOnlyPolicy());
+  });
+  const missingConnection = namespaceFor(async () =>
+    Response.json({ code: "pipedrive_not_connected" }, { status: 404 }));
+
+  const { logs } = await captureLogs(async () => {
+    await withJwks(fixture.jwk, async () => {
+      const env = remoteEnv(policyNamespace, missingConnection, failingNamespace());
+      const context = executionContext();
+
+      const initialize = await worker.fetch(
+        mcpRequest(fixture.assertion, {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: {
+            protocolVersion: "2025-06-18",
+            capabilities: {},
+            clientInfo: { name: "claude-fixture", version: "1.0.0" },
+          },
+        }),
+        env,
+        context.value,
+      );
+      assert.equal(initialize.status, 200);
+      assert.equal(((await initialize.json()) as any).result.serverInfo.name, "pipedrive-mcp");
+
+      const initialized = await worker.fetch(
+        mcpRequest(fixture.assertion, {
+          jsonrpc: "2.0",
+          method: "notifications/initialized",
+        }),
+        env,
+        context.value,
+      );
+      assert.equal(initialized.status, 202);
+
+      const listed = await worker.fetch(
+        mcpRequest(fixture.assertion, {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/list",
+          params: {},
+        }),
+        env,
+        context.value,
+      );
+      assert.equal(listed.status, 200);
+      const toolNames = ((await listed.json()) as any).result.tools.map(
+        (tool: { name: string }) => tool.name,
+      );
+      assert.ok(toolNames.includes("pipedrive_connection_check"));
+      assert.ok(toolNames.includes("pipedrive_list_deals"));
+      assert.equal(toolNames.includes("pipedrive_create_deal"), false);
+
+      const called = await worker.fetch(
+        mcpRequest(fixture.assertion),
+        env,
+        context.value,
+      );
+      assert.equal(called.status, 503);
+      assert.equal(((await called.json()) as any).error.data.code, "pipedrive_not_connected");
+      await Promise.all(context.waits);
+    });
+  });
+
+  assert.equal(policyCalls, 0);
+  assert.ok(logs.some((entry) =>
+    JSON.parse(entry).errorCode === "pipedrive_not_connected"
+  ));
+});
+
+test("MCP discovery remains available when the user must reconnect Pipedrive", async () => {
+  const fixture = await accessFixture("user@example.test", "user-one");
+  const reconnectRequired = namespaceFor(async () =>
+    Response.json({ code: "pipedrive_reconnect_required" }, { status: 409 }));
+
+  const { logs } = await captureLogs(async () => {
+    await withJwks(fixture.jwk, async () => {
+      const context = executionContext();
+      const response = await worker.fetch(
+        mcpRequest(fixture.assertion, {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: {
+            protocolVersion: "2025-06-18",
+            capabilities: {},
+            clientInfo: { name: "claude-fixture", version: "1.0.0" },
+          },
+        }),
+        remoteEnv(failingNamespace(), reconnectRequired, failingNamespace()),
+        context.value,
+      );
+      assert.equal(response.status, 200);
+      await Promise.all(context.waits);
+    });
+  });
+  assert.equal(JSON.parse(logs[0] as string).errorCode, "pipedrive_reconnect_required");
+});
+
 test("MCP fails closed before policy on missing connection and after provider on suspension", async () => {
   const fixture = await accessFixture("user@example.test", "user-one");
   let policyCalls = 0;
@@ -349,20 +455,67 @@ test("MCP fails closed before policy on missing connection and after provider on
   });
   assert.equal(policyCalls, 0);
 
+  const deniedConnection = namespaceFor(async () =>
+    Response.json({ code: "tenant_admission_denied" }, { status: 403 }));
+  await withJwks(fixture.jwk, async () => {
+    const context = executionContext();
+    const { value: response, logs } = await captureLogs(async () => {
+      const result = await worker.fetch(
+        mcpRequest(fixture.assertion, {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: {
+            protocolVersion: "2025-06-18",
+            capabilities: {},
+            clientInfo: { name: "claude-fixture", version: "1.0.0" },
+          },
+        }),
+        remoteEnv(failingNamespace(), deniedConnection, failingNamespace()),
+        context.value,
+      );
+      await Promise.all(context.waits);
+      return result;
+    });
+    assert.equal(response.status, 503);
+    assert.equal(((await response.json()) as any).error.data.code, "tenant_admission_denied");
+    assert.equal(JSON.parse(logs[0] as string).errorCode, "tenant_admission_denied");
+  });
+
+  let usedCalls = 0;
   const connection = namespaceFor(async (request) => {
     const path = new URL(request.url).pathname;
     if (path === "/credential") return Response.json(credential());
     if (path === "/used") {
+      usedCalls += 1;
       return Response.json({ code: "tenant_admission_denied" }, { status: 403 });
     }
     throw new Error(`unexpected_connection_path:${path}`);
   });
   await withJwks(fixture.jwk, async () => {
+    const env = remoteEnv(namespaceFor(async () => Response.json(writePolicy())), connection, failingNamespace());
+    const initialize = await worker.fetch(
+      mcpRequest(fixture.assertion, {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-06-18",
+          capabilities: {},
+          clientInfo: { name: "claude-fixture", version: "1.0.0" },
+        },
+      }),
+      env,
+      executionContext().value,
+    );
+    assert.equal(initialize.status, 200);
+    assert.equal(usedCalls, 0, "protocol discovery must not mark provider use");
+
     const context = executionContext();
     const { value: response, logs } = await captureLogs(async () => {
       const result = await worker.fetch(
         mcpRequest(fixture.assertion),
-        remoteEnv(namespaceFor(async () => Response.json(writePolicy())), connection, failingNamespace()),
+        env,
         context.value,
       );
       await Promise.all(context.waits);
@@ -374,6 +527,7 @@ test("MCP fails closed before policy on missing connection and after provider on
     assert.equal(event.outcome, "error");
     assert.equal(event.errorCode, "tenant_admission_denied");
   });
+  assert.equal(usedCalls, 1);
 });
 
 test("successful MCP audit carries pseudonymous actor and tenant correlation but no PII", async () => {
@@ -512,7 +666,15 @@ function authorizedForm(
   });
 }
 
-function mcpRequest(assertion: string): Request {
+function mcpRequest(assertion: string, body: unknown = {
+  jsonrpc: "2.0",
+  id: 1,
+  method: "tools/call",
+  params: {
+    name: "pipedrive_create_deal",
+    arguments: { title: "Fixture", dry_run: true },
+  },
+}): Request {
   return authorizedRequest("https://mcp.example.test/mcp", assertion, {
     method: "POST",
     headers: {
@@ -520,15 +682,7 @@ function mcpRequest(assertion: string): Request {
       "content-type": "application/json",
       "mcp-protocol-version": "2025-06-18",
     },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "tools/call",
-      params: {
-        name: "pipedrive_create_deal",
-        arguments: { title: "Fixture", dry_run: true },
-      },
-    }),
+    body: JSON.stringify(body),
   });
 }
 
