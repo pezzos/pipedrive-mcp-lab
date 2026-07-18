@@ -1,4 +1,9 @@
 export const remoteOAuthErrorCodes = [
+  "admin_confirmation_required",
+  "admin_csrf_invalid",
+  "admin_method_not_allowed",
+  "admin_origin_invalid",
+  "admin_required",
   "oauth_authorization_denied",
   "oauth_code_invalid",
   "oauth_encryption_failed",
@@ -25,6 +30,11 @@ export type RemoteOAuthErrorCode = (typeof remoteOAuthErrorCodes)[number];
 const errorCodeSet = new Set<string>(remoteOAuthErrorCodes);
 
 const internalErrorStatuses: Record<RemoteOAuthErrorCode, number> = {
+  admin_confirmation_required: 400,
+  admin_csrf_invalid: 403,
+  admin_method_not_allowed: 405,
+  admin_origin_invalid: 403,
+  admin_required: 403,
   oauth_authorization_denied: 400,
   oauth_code_invalid: 400,
   oauth_encryption_failed: 503,
@@ -76,6 +86,18 @@ export function remoteOAuthDependencyStatus(code: RemoteOAuthErrorCode): number 
 }
 
 export function remoteOAuthErrorMessage(code: RemoteOAuthErrorCode): string {
+  if (code === "admin_required") {
+    return "Cette page est réservée à l’administrateur Pipedrive configuré.";
+  }
+  if (code === "admin_origin_invalid") {
+    return "L’origine de la requête d’administration est invalide.";
+  }
+  if (code === "admin_confirmation_required") {
+    return "Confirmez explicitement la suppression locale des jetons avant de continuer.";
+  }
+  if (code === "admin_csrf_invalid") {
+    return "La confirmation d’administration a expiré ou a déjà été utilisée. Rechargez la page.";
+  }
   if (code === "oauth_authorization_denied") {
     return "L’autorisation Pipedrive a été refusée. Recommencez depuis la page d’administration si vous souhaitez connecter le serveur.";
   }

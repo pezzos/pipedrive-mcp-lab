@@ -7,6 +7,7 @@ import { StdioClientTransport } from "@modelcontextprotocol/sdk/client/stdio.js"
 
 const coreReadTools = [
   "pipedrive_health_check",
+  "pipedrive_connection_check",
   "pipedrive_list_deals",
   "pipedrive_get_deal",
   "pipedrive_search_items",
@@ -155,6 +156,130 @@ test("health check reports invalid configuration without attempting a live reque
     assert.equal(JSON.stringify(health).includes("test-token"), false);
   } finally {
     await close();
+  }
+});
+
+test("connection check performs a live request and returns only non-sensitive user metadata", async () => {
+  const requested: Array<{ method: string; path: string }> = [];
+  const api = createServer((request, response) => {
+    requested.push({ method: request.method ?? "", path: request.url ?? "" });
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({
+      success: true,
+      data: {
+        id: 42,
+        active_flag: true,
+        name: "Sensitive Name",
+        email: "sensitive@example.test",
+      },
+    }));
+  });
+  await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
+  const baseUrl = `http://127.0.0.1:${(api.address() as AddressInfo).port}`;
+  const { client, close } = await connectMcp({
+    PIPEDRIVE_BASE_URL: baseUrl,
+    PIPEDRIVE_ALLOW_MOCK_BASE_URL: "true",
+  });
+
+  try {
+    const result = await callJson(client, "pipedrive_connection_check", {});
+    assert.deepEqual(requested, [{ method: "GET", path: "/api/v1/users/me" }]);
+    assert.equal(result.connection_valid, true);
+    assert.equal(result.pipedrive_api_reachable, true);
+    assert.equal(result.authentication_valid, true);
+    assert.equal(result.authentication_mode, "api_token");
+    assert.equal(result.current_user_id, 42);
+    assert.equal(result.current_user_active, true);
+    assert.equal(JSON.stringify(result).includes("Sensitive Name"), false);
+    assert.equal(JSON.stringify(result).includes("sensitive@example.test"), false);
+    assert.equal(JSON.stringify(result).includes("test-token"), false);
+  } finally {
+    await close();
+    await new Promise<void>((resolve) => api.close(() => resolve()));
+  }
+});
+
+test("connection check classifies rejected credentials without exposing the provider response", async () => {
+  const api = createServer((_request, response) => {
+    response.statusCode = 401;
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ error: "Sensitive provider response" }));
+  });
+  await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
+  const baseUrl = `http://127.0.0.1:${(api.address() as AddressInfo).port}`;
+  const { client, close } = await connectMcp({
+    PIPEDRIVE_BASE_URL: baseUrl,
+    PIPEDRIVE_ALLOW_MOCK_BASE_URL: "true",
+  });
+
+  try {
+    const result = await callJson(client, "pipedrive_connection_check", {});
+    assert.equal(result.connection_valid, false);
+    assert.equal(result.pipedrive_api_reachable, true);
+    assert.equal(result.authentication_valid, false);
+    assert.equal(result.connection_error_code, "authentication_failed");
+    assert.equal(JSON.stringify(result).includes("Sensitive provider response"), false);
+  } finally {
+    await close();
+    await new Promise<void>((resolve) => api.close(() => resolve()));
+  }
+});
+
+test("connection check rejects an unexpected success payload without exposing it", async () => {
+  const api = createServer((_request, response) => {
+    response.setHeader("content-type", "application/json");
+    response.end(JSON.stringify({ success: false, data: { name: "Sensitive Name" } }));
+  });
+  await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
+  const baseUrl = `http://127.0.0.1:${(api.address() as AddressInfo).port}`;
+  const { client, close } = await connectMcp({
+    PIPEDRIVE_BASE_URL: baseUrl,
+    PIPEDRIVE_ALLOW_MOCK_BASE_URL: "true",
+  });
+
+  try {
+    const result = await callJson(client, "pipedrive_connection_check", {});
+    assert.equal(result.connection_valid, false);
+    assert.equal(result.pipedrive_api_reachable, true);
+    assert.equal(result.authentication_valid, null);
+    assert.equal(result.connection_error_code, "unexpected_response");
+    assert.equal(JSON.stringify(result).includes("Sensitive Name"), false);
+  } finally {
+    await close();
+    await new Promise<void>((resolve) => api.close(() => resolve()));
+  }
+});
+
+test("connection check classifies rate limits and provider outages from structured API errors", async () => {
+  const cases = [
+    { status: 429, expected: "rate_limited" },
+    { status: 503, expected: "pipedrive_unavailable" },
+  ];
+
+  for (const scenario of cases) {
+    const api = createServer((_request, response) => {
+      response.statusCode = scenario.status;
+      response.setHeader("content-type", "application/json");
+      response.end(JSON.stringify({ error: "Sensitive provider response" }));
+    });
+    await new Promise<void>((resolve) => api.listen(0, "127.0.0.1", resolve));
+    const baseUrl = `http://127.0.0.1:${(api.address() as AddressInfo).port}`;
+    const { client, close } = await connectMcp({
+      PIPEDRIVE_BASE_URL: baseUrl,
+      PIPEDRIVE_ALLOW_MOCK_BASE_URL: "true",
+    });
+
+    try {
+      const result = await callJson(client, "pipedrive_connection_check", {});
+      assert.equal(result.connection_valid, false);
+      assert.equal(result.pipedrive_api_reachable, true);
+      assert.equal(result.authentication_valid, null);
+      assert.equal(result.connection_error_code, scenario.expected);
+      assert.equal(JSON.stringify(result).includes("Sensitive provider response"), false);
+    } finally {
+      await close();
+      await new Promise<void>((resolve) => api.close(() => resolve()));
+    }
   }
 });
 

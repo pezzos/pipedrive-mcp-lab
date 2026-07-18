@@ -13,6 +13,7 @@ export type AuditEvent = {
   httpStatus: number;
   latencyMs: number;
   targetIds?: Record<string, string | number>;
+  tenantId?: string;
   errorCode?: string;
   policyRevision?: number;
   policyChanges?: Partial<

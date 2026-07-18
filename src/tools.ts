@@ -1,7 +1,7 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import * as z from "zod/v4";
 import { PipedriveConfig, requireConfigured } from "./config.js";
-import { PipedriveClient } from "./pipedriveClient.js";
+import { PipedriveApiError, PipedriveClient } from "./pipedriveClient.js";
 import {
   unavailableRuntimeEnvDiagnostics,
   type RuntimeEnvDiagnostics,
@@ -408,6 +408,41 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null;
 }
 
+function connectionErrorCode(error: unknown) {
+  const message = error instanceof Error ? error.message : "";
+  if (/PIPEDRIVE_(?:API_TOKEN|ACCESS_TOKEN|COMPANY_DOMAIN|BASE_URL)/i.test(message)) {
+    return "configuration_invalid";
+  }
+  if (/timed out/i.test(message)) {
+    return "timeout";
+  }
+  if (error instanceof PipedriveApiError) {
+    if (error.status === 401 || error.status === 403) {
+      return "authentication_failed";
+    }
+    if (error.status === 429) {
+      return "rate_limited";
+    }
+    if (error.status >= 500) {
+      return "pipedrive_unavailable";
+    }
+  }
+  return "request_failed";
+}
+
+function currentUserSummary(response: unknown) {
+  const data =
+    isRecord(response) && response.success === true && isRecord(response.data)
+      ? response.data
+      : undefined;
+  const id = data?.id;
+  return {
+    valid: Boolean(data) && (typeof id === "number" || typeof id === "string"),
+    current_user_id: typeof id === "number" || typeof id === "string" ? id : undefined,
+    current_user_active: typeof data?.active_flag === "boolean" ? data.active_flag : undefined,
+  };
+}
+
 type BuildServerOptions = {
   runtimeEnvDiagnostics?: () => RuntimeEnvDiagnostics;
 };
@@ -464,6 +499,40 @@ export function buildServer(
         runtime_env_current_has_enable_mailbox_tools: envDiagnostics.current.enableMailboxTools,
         runtime_env_current_has_load_dotenv: envDiagnostics.current.loadDotenv,
       });
+    },
+  );
+  server.registerTool(
+    "pipedrive_connection_check",
+    {
+      title: "Pipedrive Connection Check",
+      description:
+        "Perform a live, read-only Pipedrive API request to verify that the configured credential is accepted.",
+      inputSchema: {},
+      annotations: { readOnlyHint: true, destructiveHint: false, openWorldHint: true },
+    },
+    async () => {
+      try {
+        const response = await client.get("/api/v1/users/me");
+        const summary = currentUserSummary(response);
+        return jsonResult({
+          connection_valid: summary.valid,
+          pipedrive_api_reachable: true,
+          authentication_valid: summary.valid ? true : null,
+          authentication_mode: config.accessToken ? "oauth" : config.apiToken ? "api_token" : "none",
+          current_user_id: summary.current_user_id,
+          current_user_active: summary.current_user_active,
+          connection_error_code: summary.valid ? undefined : "unexpected_response",
+        });
+      } catch (error) {
+        const errorCode = connectionErrorCode(error);
+        return jsonResult({
+          connection_valid: false,
+          pipedrive_api_reachable: error instanceof PipedriveApiError,
+          authentication_valid: errorCode === "authentication_failed" ? false : null,
+          authentication_mode: config.accessToken ? "oauth" : config.apiToken ? "api_token" : "none",
+          connection_error_code: errorCode,
+        });
+      }
     },
   );
   server.registerTool(

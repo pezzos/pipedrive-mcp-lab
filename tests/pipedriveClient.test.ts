@@ -2,6 +2,19 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { PipedriveClient } from "../src/pipedriveClient.js";
 
+test("calls an injected fetcher without rebinding its runtime receiver", async () => {
+  const receiverSensitiveFetcher = async function (this: unknown): Promise<Response> {
+    if (this !== undefined) {
+      throw new TypeError("Illegal invocation: function called with incorrect this reference");
+    }
+    return Response.json({ success: true, data: [] });
+  } as typeof fetch;
+
+  const client = new PipedriveClient(config(), receiverSensitiveFetcher);
+
+  assert.deepEqual(await client.get("/api/v2/deals"), { success: true, data: [] });
+});
+
 test("adds token as authorization header and query filters without logging the token", async () => {
   let requestedUrl = "";
   let requestedToken = "";

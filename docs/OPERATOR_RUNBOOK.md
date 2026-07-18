@@ -90,6 +90,67 @@ Mailbox draft creation, sending, and replies are not supported by this MCP
 version. To create an email to-do, use `pipedrive_create_activity` with
 `type="email"` and place the draft body or instructions in `note`.
 
+## Remote Pipedrive Connection Administration
+
+> **Deployment gate:** commit `c7398c9` is deployed on the sandbox Worker as
+> version `d0b493c2-7cbe-411d-af29-e7d08562c28a`. Health, administration, user
+> routing, and pre-OAuth MCP discovery are verified. Do not treat this sandbox
+> smoke test as real two-user OAuth acceptance, client rollout, Pipedrive app
+> promotion, or production readiness; complete the remaining canonical
+> [deployment gate](REMOTE_MCP_CLOUDFLARE.md#implemented-tenancy-boundary-and-deployment-gate).
+
+Sign in through Cloudflare Access as `REMOTE_ADMIN_EMAIL` and open
+`https://<worker-host>/admin/pipedrive`. This page controls global admission,
+not a shared OAuth grant:
+
+1. Approve a normalized Pipedrive subdomain. The confirmation is exact-origin,
+   explicit, and one-shot. Approval does not add anyone to Access.
+2. After the first user's verified OAuth callback, confirm the pinned safe
+   company name and stable company ID. A later mismatch is rejected.
+3. Suspend a domain to fail closed for new OAuth, callbacks, refresh, and MCP.
+   Resume only after the incident or policy reason is resolved; retained
+   per-user grants can resume without token sharing.
+4. Use a connection row's confirmation page to force-disconnect exactly that
+   user. The admin projection may show Access email and bounded timestamps but
+   must never show Pipedrive user identity or token material.
+5. Confirm audit events contain only operational metadata: pseudonymous actor,
+   opaque tenant ID, request ID, timestamp, route, operation, effect, outcome,
+   status, latency, and stable error code. They must contain no JWT, token,
+   email, company/user identity, or CRM payload.
+
+Each allowed user manages their own connection at `/pipedrive`: enter an
+approved subdomain, complete OAuth, verify the company, replace the connection
+only through a fresh one-shot state, and self-disconnect with explicit
+confirmation. `/settings` then manages only `(Access sub, company_id)` and
+starts read-only for every new pair.
+
+Self-disconnect and admin force-disconnect remove only the selected user's
+encrypted local tokens. They do not uninstall the Pipedrive application or
+revoke its provider grant. Provider-side revocation remains a separate manual,
+destructive action.
+
+### Moving from sandbox to the intended company
+
+Before attempting the connection, verify that the OAuth application can be
+installed in the target company. A private Pipedrive application in `DRAFT` is
+limited to its developer sandbox. Changing it to live is manual, irreversible,
+and requires explicit authorization; a Worker deployment never performs or
+authorizes that promotion.
+
+When the application is installable in the target company, the platform admin
+approves its subdomain, then each intended user connects from `/pipedrive` and
+verifies the returned company before running `pipedrive_connection_check` and
+a known read. Do not infer the account from an OAuth success screen alone.
+
+### Worker rollback
+
+Before deploying a Worker update, capture `npx wrangler deployments list`. If
+smoke tests regress, run `npx wrangler rollback <version-id>` with the captured
+healthy version and repeat `/healthz`, anonymous `/mcp`, Access protection, the
+admin page, and two-user isolation. A Worker rollback does not restore locally deleted OAuth tokens
+and must not change Access, rotate secrets, or uninstall the Pipedrive
+application.
+
 ## Private Package Delivery
 
 The package is private and is not prepared for public npm publication. Use:
@@ -105,6 +166,14 @@ validation prompts.
 
 ## Private Claude Delivery
 
+Before onboarding or handing out the hardcoded sandbox connector, verify that
+the active Worker is still version
+`d0b493c2-7cbe-411d-af29-e7d08562c28a` (or a later explicitly accepted
+version) and complete the remaining separately authorized
+[deployment gate](REMOTE_MCP_CLOUDFLARE.md#implemented-tenancy-boundary-and-deployment-gate).
+The current sandbox smoke test does not prove real two-user OAuth, suspension,
+or client-surface acceptance.
+
 Use `npm run pack:claude-delivery` to stage the standalone skill ZIPs and the
 plugin. Routine paid delivery should use a private plugin repository or private
 Claude plugin marketplace. Use `claude --plugin-dir` only for local pilot
@@ -118,8 +187,9 @@ folder with its `SKILL.md`, and no connector or credentials.
 
 Cowork Desktop and Cowork Mobile are mandatory pilot acceptance surfaces.
 Validate Cowork Web when it is enabled for the target organization. Users
-authenticate through Cloudflare Access and manage only their own permissions at
-`/settings`; the admin completes Pipedrive OAuth once.
+authenticate through Cloudflare Access, connect their own approved Pipedrive
+identity at `/pipedrive`, and manage only that company pair at `/settings`;
+the admin controls the global allowlist without receiving user tokens.
 
 Before handing off either installation path, add the user's exact email or IdP
 group to the Cloudflare Access application's Allow policy. Record who owns this

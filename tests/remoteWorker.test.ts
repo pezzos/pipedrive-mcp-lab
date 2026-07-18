@@ -1,455 +1,638 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import { clearAccessJwksCache } from "../src/remote/access.js";
 import type { RemoteEnv } from "../src/remote/env.js";
+import {
+  tenantRegistryObjectKey,
+  userCompanyPolicyObjectKey,
+  userConnectionObjectKey,
+} from "../src/remote/objectKey.js";
 import worker from "../src/remote/worker.js";
 
 const issuer = "https://team.cloudflareaccess.com";
 const audience = "worker-audience";
 
-test("Worker exposes healthz before Access or Pipedrive connection", async () => {
-  const response = await worker.fetch(
+test("Worker exposes health before Access and audits a missing assertion", async () => {
+  const health = await worker.fetch(
     new Request("https://mcp.example.test/healthz"),
-    remoteEnv(failingNamespace()),
+    remoteEnv(failingNamespace(), failingNamespace(), failingNamespace()),
     executionContext().value,
   );
-  assert.equal(response.status, 200);
-  assert.deepEqual(await response.json(), {
-    status: "ok",
-    transport: "streamable-http",
-  });
-});
+  assert.equal(health.status, 200);
 
-test("Worker audits and rejects a request without an Access assertion", async () => {
-  const logs: string[] = [];
-  const originalLog = console.log;
-  console.log = (value?: unknown) => logs.push(String(value));
-  try {
-    const context = executionContext();
+  const context = executionContext();
+  const { value: denied, logs } = await captureLogs(async () => {
     const response = await worker.fetch(
-      new Request("https://mcp.example.test/settings"),
-      remoteEnv(failingNamespace()),
+      new Request("https://mcp.example.test/pipedrive"),
+      remoteEnv(failingNamespace(), failingNamespace(), failingNamespace()),
       context.value,
     );
-    assert.equal(response.status, 401);
-    assert.deepEqual(await response.json(), { code: "access_token_missing" });
     await Promise.all(context.waits);
-    assert.equal(logs.length, 1);
-    const event = JSON.parse(logs[0]) as Record<string, unknown>;
-    assert.equal(event.operation, "access.verify");
-    assert.equal(event.outcome, "denied");
-    assert.equal(event.actorId, "anonymous");
-  } finally {
-    console.log = originalLog;
-  }
+    return response;
+  });
+  assert.equal(denied.status, 401);
+  assert.deepEqual(await denied.json(), { code: "access_token_missing" });
+  assert.equal(JSON.parse(logs[0] as string).actorId, "anonymous");
 });
 
-test("Worker rejects a non-admin before touching the OAuth broker", async () => {
-  const fixture = await accessFixture("user@example.com");
+test("any Access user can view only their own connection and start exact-origin OAuth", async () => {
+  const fixture = await accessFixture("user@example.test", "user-one");
+  const names: string[] = [];
+  const calls: string[] = [];
+  const connectionNamespace = namespaceFor(async (request) => {
+    const path = new URL(request.url).pathname;
+    calls.push(path);
+    if (path === "/status") {
+      return Response.json({ connected: false, reconnectRequired: false, generation: 0 });
+    }
+    if (path === "/self-action") return Response.json({ actionToken: "self-action-token" });
+    if (path === "/state") {
+      const body = await request.json() as Record<string, unknown>;
+      assert.equal(body.accessSub, "user-one");
+      assert.equal(body.accessEmail, "user@example.test");
+      assert.equal(body.expectedDomain, "acme");
+      assert.equal(body.actionToken, "self-action-token");
+      return Response.json({ state: "oauth-state" });
+    }
+    throw new Error(`unexpected_connection_path:${path}`);
+  }, names);
+
   await withJwks(fixture.jwk, async () => {
-    const response = await worker.fetch(
-      authorizedRequest("https://mcp.example.test/admin/pipedrive/connect", fixture.assertion),
-      remoteEnv(failingNamespace()),
+    const page = await worker.fetch(
+      authorizedRequest("https://mcp.example.test/pipedrive", fixture.assertion),
+      remoteEnv(failingNamespace(), connectionNamespace, failingNamespace()),
       executionContext().value,
     );
-    assert.equal(response.status, 403);
-    assert.deepEqual(await response.json(), { code: "admin_required" });
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), /Ma connexion Pipedrive/);
+
+    const connect = await worker.fetch(
+      authorizedForm("https://mcp.example.test/pipedrive/connect", fixture.assertion, {
+        domain: "Acme",
+        confirm: "yes",
+        csrf: "self-action-token",
+      }),
+      remoteEnv(failingNamespace(), connectionNamespace, failingNamespace()),
+      executionContext().value,
+    );
+    assert.equal(connect.status, 302);
+    assert.equal(new URL(connect.headers.get("location") as string).searchParams.get("state"), "oauth-state");
+
+    const badOrigin = await worker.fetch(
+      authorizedForm("https://mcp.example.test/pipedrive/connect", fixture.assertion, {
+        domain: "acme",
+        confirm: "yes",
+        csrf: "self-action-token",
+      }, "https://evil.example.test"),
+      remoteEnv(failingNamespace(), connectionNamespace, failingNamespace()),
+      executionContext().value,
+    );
+    assert.equal(badOrigin.status, 403);
+  });
+  assert.ok(calls.includes("/state"));
+  assert.deepEqual(new Set(names), new Set([userConnectionObjectKey("user-one")]));
+});
+
+test("OAuth callback is bound to the Access user and never requires admin identity", async () => {
+  const fixture = await accessFixture("user@example.test", "user-one");
+  const connectionNamespace = namespaceFor(async (request) => {
+    assert.equal(new URL(request.url).pathname, "/exchange");
+    const body = await request.json() as Record<string, unknown>;
+    assert.equal(body.accessSub, "user-one");
+    assert.equal(body.state, "state-fixture");
+    assert.equal(body.code, "code-fixture");
+    return Response.json({ connected: true });
+  });
+  await withJwks(fixture.jwk, async () => {
+    const response = await worker.fetch(
+      authorizedRequest(
+        "https://mcp.example.test/oauth/pipedrive/callback?state=state-fixture&code=code-fixture",
+        fixture.assertion,
+      ),
+      remoteEnv(failingNamespace(), connectionNamespace, failingNamespace()),
+      executionContext().value,
+    );
+    assert.equal(response.status, 303);
+    assert.equal(new URL(response.headers.get("location") as string).pathname, "/pipedrive");
   });
 });
 
-test("Worker starts Pipedrive OAuth and audits the redirect", async () => {
-  const fixture = await accessFixture("admin@example.com");
-  const tenantNamespace = namespaceFor(async (request) => {
-    assert.equal(new URL(request.url).pathname, "/state");
-    const body = await request.json() as { adminSub: string; redirectUri: string };
-    assert.equal(body.adminSub, "worker-user-1");
-    assert.equal(body.redirectUri, "https://mcp.example.test/oauth/pipedrive/callback");
-    return Response.json({ state: "state-fixture" });
+test("admin allowlist is global and token-free while non-admins fail before registry access", async () => {
+  const user = await accessFixture("user@example.test", "user-one");
+  let registryCalls = 0;
+  const registryNamespace = namespaceFor(async (request) => {
+    registryCalls += 1;
+    const path = new URL(request.url).pathname;
+    if (path === "/admin/projection") {
+      return Response.json({
+        tenants: [{
+          domain: "acme", status: "active", tenantId: "tenant-opaque", generation: 1,
+          createdAtMs: 1, updatedAtMs: 1, connectedUserCount: 0,
+        }],
+        connections: [],
+      });
+    }
+    if (path === "/admin/action-ticket") return Response.json({ actionToken: "admin-action-token" });
+    throw new Error(`unexpected_registry_path:${path}`);
   });
-  await withJwks(fixture.jwk, async () => {
+  await withJwks(user.jwk, async () => {
     const context = executionContext();
-    const { value: response, logs } = await captureLogs(async () => {
-      const result = await worker.fetch(
-        authorizedRequest(
-          "https://mcp.example.test/admin/pipedrive/connect",
-          fixture.assertion,
-          { headers: { "cf-ray": "connect-ray" } },
-        ),
-        remoteEnv(failingNamespace(), tenantNamespace),
+    const { value: denied, logs } = await captureLogs(async () => {
+      const response = await worker.fetch(
+        authorizedRequest("https://mcp.example.test/admin/pipedrive", user.assertion),
+        remoteEnv(failingNamespace(), failingNamespace(), registryNamespace),
         context.value,
       );
       await Promise.all(context.waits);
-      return result;
+      return response;
     });
-    assert.equal(response.status, 302);
-    const location = new URL(response.headers.get("location") as string);
-    assert.equal(location.origin, "https://oauth.pipedrive.com");
-    assert.equal(location.searchParams.get("client_id"), "client-fixture");
-    assert.equal(location.searchParams.get("state"), "state-fixture");
-    assert.equal(logs.length, 1);
-    const event = JSON.parse(logs[0]) as Record<string, unknown>;
-    assert.equal(event.operation, "oauth.connect");
-    assert.equal(event.outcome, "success");
-    assert.equal(event.httpStatus, 302);
+    assert.equal(denied.status, 403);
+    assert.equal(JSON.parse(logs[0] as string).errorCode, "admin_required");
   });
+  assert.equal(registryCalls, 0);
+
+  const admin = await accessFixture("admin@example.com", "admin-sub");
+  await withJwks(admin.jwk, async () => {
+    const response = await worker.fetch(
+      authorizedRequest("https://mcp.example.test/admin/pipedrive", admin.assertion),
+      remoteEnv(failingNamespace(), failingNamespace(), registryNamespace),
+      executionContext().value,
+    );
+    assert.equal(response.status, 200);
+    const page = await response.text();
+    assert.match(page, /acme\.pipedrive\.com/);
+    assert.doesNotMatch(page, /tenant-opaque|access_token|refresh_token/);
+  });
+  assert.equal(registryCalls, 1, "page load must not pre-issue one ticket per row");
+
+  await withJwks(admin.jwk, async () => {
+    const response = await worker.fetch(
+      authorizedForm(
+        "https://mcp.example.test/admin/pipedrive/action/confirm",
+        admin.assertion,
+        { action: "suspend", domain: "acme" },
+      ),
+      remoteEnv(failingNamespace(), failingNamespace(), registryNamespace),
+      executionContext().value,
+    );
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /admin-action-token/);
+  });
+  assert.equal(registryCalls, 2);
 });
 
-test("Worker surfaces and audits an allowlisted OAuth connect failure", async () => {
-  const fixture = await accessFixture("admin@example.com");
-  const tenantNamespace = namespaceFor(async () =>
-    Response.json({ code: "oauth_encryption_key_invalid" }, { status: 503 }),
-  );
+test("admin approval, tenant mutation, and force-disconnect enforce confirmation and audit", async () => {
+  const admin = await accessFixture("admin@example.com", "admin-sub");
+  const registryPaths: string[] = [];
+  const registry = namespaceFor(async (request) => {
+    const path = new URL(request.url).pathname;
+    registryPaths.push(path);
+    if (path === "/admin/action-ticket") {
+      const body = await request.json() as Record<string, unknown>;
+      assert.equal(body.adminSub, "admin-sub");
+      return Response.json({ actionToken: `ticket-${String(body.action)}` });
+    }
+    if (path === "/admin/suspend") {
+      const body = await request.json() as Record<string, unknown>;
+      assert.equal(body.domain, "acme");
+      assert.equal(body.actionToken, "ticket-suspend");
+      return Response.json({ tenantId: "tenant-opaque", status: "suspended" });
+    }
+    if (path === "/admin/force-disconnect/consume") {
+      return Response.json({
+        accessSub: "selected-user",
+        generation: 9,
+        tenantId: "tenant-opaque",
+      });
+    }
+    throw new Error(`unexpected_registry_path:${path}`);
+  });
+  const connectionNames: string[] = [];
+  const connections = namespaceFor(async (request) => {
+    assert.equal(new URL(request.url).pathname, "/admin-disconnect");
+    const body = await request.json() as Record<string, unknown>;
+    assert.equal(body.accessSub, "selected-user");
+    assert.equal(body.expectedGeneration, 9);
+    return Response.json({ disconnected: true });
+  }, connectionNames);
+
+  await withJwks(admin.jwk, async () => {
+    const approval = await worker.fetch(
+      authorizedForm(
+        "https://mcp.example.test/admin/pipedrive/approve/confirm",
+        admin.assertion,
+        { domain: "acme" },
+      ),
+      remoteEnv(failingNamespace(), connections, registry),
+      executionContext().value,
+    );
+    assert.equal(approval.status, 200);
+    assert.match(await approval.text(), /ticket-approve/);
+
+    const missingConfirmation = await worker.fetch(
+      authorizedForm(
+        "https://mcp.example.test/admin/pipedrive/tenant",
+        admin.assertion,
+        { action: "suspend", domain: "acme", csrf: "ticket-suspend" },
+      ),
+      remoteEnv(failingNamespace(), connections, registry),
+      executionContext().value,
+    );
+    assert.equal(missingConfirmation.status, 400);
+
+    const badOrigin = await worker.fetch(
+      authorizedForm(
+        "https://mcp.example.test/admin/pipedrive/force-disconnect",
+        admin.assertion,
+        { connection_ref: "selected-ref", csrf: "ticket-force", confirm: "yes" },
+        "https://evil.example.test",
+      ),
+      remoteEnv(failingNamespace(), connections, registry),
+      executionContext().value,
+    );
+    assert.equal(badOrigin.status, 403);
+
+    const tenantContext = executionContext();
+    const tenantResult = await captureLogs(async () => {
+      const response = await worker.fetch(
+        authorizedForm(
+          "https://mcp.example.test/admin/pipedrive/tenant",
+          admin.assertion,
+          {
+            action: "suspend",
+            domain: "acme",
+            csrf: "ticket-suspend",
+            confirm: "yes",
+          },
+        ),
+        remoteEnv(failingNamespace(), connections, registry),
+        tenantContext.value,
+      );
+      await Promise.all(tenantContext.waits);
+      return response;
+    });
+    assert.equal(tenantResult.value.status, 303);
+    assert.equal(JSON.parse(tenantResult.logs[0] as string).tenantId, "tenant-opaque");
+
+    const forceContext = executionContext();
+    const forceResult = await captureLogs(async () => {
+      const response = await worker.fetch(
+        authorizedForm(
+          "https://mcp.example.test/admin/pipedrive/force-disconnect",
+          admin.assertion,
+          { connection_ref: "selected-ref", csrf: "ticket-force", confirm: "yes" },
+        ),
+        remoteEnv(failingNamespace(), connections, registry),
+        forceContext.value,
+      );
+      await Promise.all(forceContext.waits);
+      return response;
+    });
+    assert.equal(forceResult.value.status, 303);
+    assert.equal(JSON.parse(forceResult.logs[0] as string).tenantId, "tenant-opaque");
+  });
+
+  assert.ok(registryPaths.includes("/admin/action-ticket"));
+  assert.ok(registryPaths.includes("/admin/suspend"));
+  assert.ok(registryPaths.includes("/admin/force-disconnect/consume"));
+  assert.deepEqual(connectionNames, [userConnectionObjectKey("selected-user")]);
+});
+
+test("settings policy is physically keyed by Access subject and verified company id", async () => {
+  const fixture = await accessFixture("user@example.test", "user:one");
+  const connectionNames: string[] = [];
+  const policyNames: string[] = [];
+  const connectionNamespace = namespaceFor(async () => Response.json(credential()), connectionNames);
+  const policyNamespace = namespaceFor(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path === "/policy") return Response.json(readOnlyPolicy());
+    if (path === "/csrf") return Response.json({ csrf: "x".repeat(43) });
+    throw new Error(`unexpected_policy_path:${path}`);
+  }, policyNames);
+  await withJwks(fixture.jwk, async () => {
+    const response = await worker.fetch(
+      authorizedRequest("https://mcp.example.test/settings", fixture.assertion),
+      remoteEnv(policyNamespace, connectionNamespace, failingNamespace()),
+      executionContext().value,
+    );
+    assert.equal(response.status, 200);
+  });
+  assert.deepEqual(connectionNames, [userConnectionObjectKey("user:one")]);
+  assert.deepEqual(policyNames, [userCompanyPolicyObjectKey("user:one", "company:42")]);
+});
+
+test("MCP completes discovery before Pipedrive OAuth while every tool call stays fail-closed", async () => {
+  const fixture = await accessFixture("user@example.test", "user-one");
+  let policyCalls = 0;
+  const policyNamespace = namespaceFor(async () => {
+    policyCalls += 1;
+    return Response.json(readOnlyPolicy());
+  });
+  const missingConnection = namespaceFor(async () =>
+    Response.json({ code: "pipedrive_not_connected" }, { status: 404 }));
+
+  const { logs } = await captureLogs(async () => {
+    await withJwks(fixture.jwk, async () => {
+      const env = remoteEnv(policyNamespace, missingConnection, failingNamespace());
+      const context = executionContext();
+
+      const initialize = await worker.fetch(
+        mcpRequest(fixture.assertion, {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: {
+            protocolVersion: "2025-06-18",
+            capabilities: {},
+            clientInfo: { name: "claude-fixture", version: "1.0.0" },
+          },
+        }),
+        env,
+        context.value,
+      );
+      assert.equal(initialize.status, 200);
+      assert.equal(((await initialize.json()) as any).result.serverInfo.name, "pipedrive-mcp");
+
+      const initialized = await worker.fetch(
+        mcpRequest(fixture.assertion, {
+          jsonrpc: "2.0",
+          method: "notifications/initialized",
+        }),
+        env,
+        context.value,
+      );
+      assert.equal(initialized.status, 202);
+
+      const listed = await worker.fetch(
+        mcpRequest(fixture.assertion, {
+          jsonrpc: "2.0",
+          id: 2,
+          method: "tools/list",
+          params: {},
+        }),
+        env,
+        context.value,
+      );
+      assert.equal(listed.status, 200);
+      const toolNames = ((await listed.json()) as any).result.tools.map(
+        (tool: { name: string }) => tool.name,
+      );
+      assert.ok(toolNames.includes("pipedrive_connection_check"));
+      assert.ok(toolNames.includes("pipedrive_list_deals"));
+      assert.equal(toolNames.includes("pipedrive_create_deal"), false);
+
+      const called = await worker.fetch(
+        mcpRequest(fixture.assertion),
+        env,
+        context.value,
+      );
+      assert.equal(called.status, 503);
+      assert.equal(((await called.json()) as any).error.data.code, "pipedrive_not_connected");
+      await Promise.all(context.waits);
+    });
+  });
+
+  assert.equal(policyCalls, 0);
+  assert.ok(logs.some((entry) =>
+    JSON.parse(entry).errorCode === "pipedrive_not_connected"
+  ));
+});
+
+test("MCP discovery remains available when the user must reconnect Pipedrive", async () => {
+  const fixture = await accessFixture("user@example.test", "user-one");
+  const reconnectRequired = namespaceFor(async () =>
+    Response.json({ code: "pipedrive_reconnect_required" }, { status: 409 }));
+
+  const { logs } = await captureLogs(async () => {
+    await withJwks(fixture.jwk, async () => {
+      const context = executionContext();
+      const response = await worker.fetch(
+        mcpRequest(fixture.assertion, {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: {
+            protocolVersion: "2025-06-18",
+            capabilities: {},
+            clientInfo: { name: "claude-fixture", version: "1.0.0" },
+          },
+        }),
+        remoteEnv(failingNamespace(), reconnectRequired, failingNamespace()),
+        context.value,
+      );
+      assert.equal(response.status, 200);
+      await Promise.all(context.waits);
+    });
+  });
+  assert.equal(JSON.parse(logs[0] as string).errorCode, "pipedrive_reconnect_required");
+});
+
+test("MCP fails closed before policy on missing connection and after provider on suspension", async () => {
+  const fixture = await accessFixture("user@example.test", "user-one");
+  let policyCalls = 0;
+  const policyNamespace = namespaceFor(async () => {
+    policyCalls += 1;
+    return Response.json(readOnlyPolicy());
+  });
+  const missingConnection = namespaceFor(async () =>
+    Response.json({ code: "pipedrive_not_connected" }, { status: 404 }));
   await withJwks(fixture.jwk, async () => {
     const context = executionContext();
     const { value: response, logs } = await captureLogs(async () => {
       const result = await worker.fetch(
-        authorizedRequest(
-          "https://mcp.example.test/admin/pipedrive/connect",
-          fixture.assertion,
-          { headers: { "cf-ray": "connect-failure-ray" } },
-        ),
-        remoteEnv(failingNamespace(), tenantNamespace),
+        mcpRequest(fixture.assertion),
+        remoteEnv(policyNamespace, missingConnection, failingNamespace()),
         context.value,
       );
       await Promise.all(context.waits);
       return result;
     });
     assert.equal(response.status, 503);
-    const page = await response.text();
-    assert.match(page, /oauth_encryption_key_invalid/);
-    assert.match(page, /connect-failure-ray/);
-    const event = JSON.parse(logs[0]) as Record<string, unknown>;
-    assert.equal(event.outcome, "error");
-    assert.equal(event.errorCode, "oauth_encryption_key_invalid");
-    assert.equal(event.httpStatus, 503);
+    assert.equal(((await response.json()) as any).error.data.code, "pipedrive_not_connected");
+    assert.equal(JSON.parse(logs[0] as string).errorCode, "pipedrive_not_connected");
   });
-});
+  assert.equal(policyCalls, 0);
 
-test("Worker completes the Pipedrive callback and audits success", async () => {
-  const fixture = await accessFixture("admin@example.com");
-  const tenantNamespace = namespaceFor(async (request) => {
-    assert.equal(new URL(request.url).pathname, "/exchange");
-    const body = await request.json() as { code: string; state: string };
-    assert.equal(body.code, "code-fixture");
-    assert.equal(body.state, "state-fixture");
-    return Response.json({
-      accessCredential: "access-fixture",
-      apiDomain: "https://acme.pipedrive.com",
-      expiresAtMs: Date.now() + 3_600_000,
-    });
-  });
+  const deniedConnection = namespaceFor(async () =>
+    Response.json({ code: "tenant_admission_denied" }, { status: 403 }));
   await withJwks(fixture.jwk, async () => {
     const context = executionContext();
     const { value: response, logs } = await captureLogs(async () => {
       const result = await worker.fetch(
-        authorizedRequest(
-          "https://mcp.example.test/oauth/pipedrive/callback?code=code-fixture&state=state-fixture",
-          fixture.assertion,
-          { headers: { "cf-ray": "callback-success-ray" } },
-        ),
-        remoteEnv(failingNamespace(), tenantNamespace),
+        mcpRequest(fixture.assertion, {
+          jsonrpc: "2.0",
+          id: 1,
+          method: "initialize",
+          params: {
+            protocolVersion: "2025-06-18",
+            capabilities: {},
+            clientInfo: { name: "claude-fixture", version: "1.0.0" },
+          },
+        }),
+        remoteEnv(failingNamespace(), deniedConnection, failingNamespace()),
+        context.value,
+      );
+      await Promise.all(context.waits);
+      return result;
+    });
+    assert.equal(response.status, 503);
+    assert.equal(((await response.json()) as any).error.data.code, "tenant_admission_denied");
+    assert.equal(JSON.parse(logs[0] as string).errorCode, "tenant_admission_denied");
+  });
+
+  let usedCalls = 0;
+  const connection = namespaceFor(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path === "/credential") return Response.json(credential());
+    if (path === "/used") {
+      usedCalls += 1;
+      return Response.json({ code: "tenant_admission_denied" }, { status: 403 });
+    }
+    throw new Error(`unexpected_connection_path:${path}`);
+  });
+  await withJwks(fixture.jwk, async () => {
+    const env = remoteEnv(namespaceFor(async () => Response.json(writePolicy())), connection, failingNamespace());
+    const initialize = await worker.fetch(
+      mcpRequest(fixture.assertion, {
+        jsonrpc: "2.0",
+        id: 1,
+        method: "initialize",
+        params: {
+          protocolVersion: "2025-06-18",
+          capabilities: {},
+          clientInfo: { name: "claude-fixture", version: "1.0.0" },
+        },
+      }),
+      env,
+      executionContext().value,
+    );
+    assert.equal(initialize.status, 200);
+    assert.equal(usedCalls, 0, "protocol discovery must not mark provider use");
+
+    const context = executionContext();
+    const { value: response, logs } = await captureLogs(async () => {
+      const result = await worker.fetch(
+        mcpRequest(fixture.assertion),
+        env,
+        context.value,
+      );
+      await Promise.all(context.waits);
+      return result;
+    });
+    assert.equal(response.status, 503);
+    assert.equal(((await response.json()) as any).error.data.code, "tenant_admission_denied");
+    const event = JSON.parse(logs[0] as string);
+    assert.equal(event.outcome, "error");
+    assert.equal(event.errorCode, "tenant_admission_denied");
+  });
+  assert.equal(usedCalls, 1);
+});
+
+test("successful MCP audit carries pseudonymous actor and tenant correlation but no PII", async () => {
+  const fixture = await accessFixture("user@example.test", "user-one");
+  const connection = namespaceFor(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path === "/credential") return Response.json(credential());
+    if (path === "/used") return new Response(null, { status: 204 });
+    throw new Error(`unexpected_connection_path:${path}`);
+  });
+  const context = executionContext();
+  await withJwks(fixture.jwk, async () => {
+    const { value: response, logs } = await captureLogs(async () => {
+      const result = await worker.fetch(
+        mcpRequest(fixture.assertion),
+        remoteEnv(namespaceFor(async () => Response.json(writePolicy())), connection, failingNamespace()),
         context.value,
       );
       await Promise.all(context.waits);
       return result;
     });
     assert.equal(response.status, 200);
-    assert.match(await response.text(), /Pipedrive est connecté/);
-    const event = JSON.parse(logs[0]) as Record<string, unknown>;
-    assert.equal(event.operation, "oauth.callback");
+    const event = JSON.parse(logs[0] as string) as Record<string, unknown>;
+    assert.equal(event.tenantId, "tenant-opaque");
+    assert.equal(event.operation, "pipedrive_create_deal");
     assert.equal(event.outcome, "success");
-    assert.equal(event.httpStatus, 200);
+    assert.doesNotMatch(JSON.stringify(event), /user@example|user-one|oauth-access/);
   });
 });
 
-test("Worker allowlists callback failures without leaking OAuth canaries", async () => {
-  const fixture = await accessFixture("admin@example.com");
-  const tenantNamespace = namespaceFor(async () =>
-    Response.json({ code: "provider-canary-secret-token" }, { status: 502 }),
-  );
-  await withJwks(fixture.jwk, async () => {
-    const context = executionContext();
-    const { value: response, logs } = await captureLogs(async () => {
-      const result = await worker.fetch(
-        authorizedRequest(
-          "https://mcp.example.test/oauth/pipedrive/callback?code=oauth-code-canary&state=oauth-state-canary",
-          fixture.assertion,
-          { headers: { "cf-ray": "callback-failure-ray" } },
-        ),
-        remoteEnv(failingNamespace(), tenantNamespace),
-        context.value,
-      );
-      await Promise.all(context.waits);
-      return result;
-    });
-    assert.equal(response.status, 503);
-    const page = await response.text();
-    const allOutput = `${page}\n${logs.join("\n")}`;
-    assert.match(page, /tenant_internal_error/);
-    assert.match(page, /callback-failure-ray/);
-    assert.doesNotMatch(allOutput, /provider-canary-secret-token/);
-    assert.doesNotMatch(allOutput, /oauth-code-canary/);
-    assert.doesNotMatch(allOutput, /oauth-state-canary/);
-    const event = JSON.parse(logs[0]) as Record<string, unknown>;
-    assert.equal(event.errorCode, "tenant_internal_error");
-    assert.equal(event.httpStatus, 503);
-  });
+test("Worker uses only the declared multi-tenant namespaces", () => {
+  const source = JSON.stringify(remoteEnv(
+    failingNamespace(),
+    failingNamespace(),
+    failingNamespace(),
+  ));
+  assert.doesNotMatch(source, /TENANT_SECRETS/);
+  const registryNames: string[] = [];
+  namespaceFor(async () => Response.json({}), registryNames).idFromName(tenantRegistryObjectKey());
+  assert.deepEqual(registryNames, [tenantRegistryObjectKey()]);
+
+  const wrangler = readFileSync("wrangler.jsonc", "utf8");
+  const workerSource = readFileSync("src/remote/worker.ts", "utf8");
+  const policySource = readFileSync("src/remote/policy.ts", "utf8");
+  assert.match(wrangler, /"tag": "v1"[\s\S]*"tag": "v2"/);
+  assert.match(wrangler, /"USER_CONNECTION"[\s\S]*"TENANT_REGISTRY"/);
+  assert.doesNotMatch(wrangler, /"name": "TENANT_SECRETS"/);
+  assert.doesNotMatch(workerSource, /TENANT_SECRETS|tenantSecretsStub|idFromName\("tenant"\)/);
+  assert.doesNotMatch(policySource, /idFromName\(sub\)|idFromName\([^,]*sub[^,]*\)/);
 });
 
-test("Worker reports an allowlisted invalid state and a denied consent", async () => {
-  const fixture = await accessFixture("admin@example.com");
-  const invalidStateNamespace = namespaceFor(async () =>
-    Response.json({ code: "oauth_state_invalid" }, { status: 400 }),
-  );
-  await withJwks(fixture.jwk, async () => {
-    const invalidContext = executionContext();
-    const invalid = await worker.fetch(
-      authorizedRequest(
-        "https://mcp.example.test/oauth/pipedrive/callback?code=invalid&state=invalid",
-        fixture.assertion,
-      ),
-      remoteEnv(failingNamespace(), invalidStateNamespace),
-      invalidContext.value,
-    );
-    assert.equal(invalid.status, 400);
-    assert.match(await invalid.text(), /oauth_state_invalid/);
-    await Promise.all(invalidContext.waits);
+function credential() {
+  return {
+    accessCredential: "oauth-access-fixture",
+    apiDomain: "https://acme.pipedrive.com",
+    expiresAtMs: Date.now() + 60_000,
+    domain: "acme",
+    companyId: "company:42",
+    companyName: "Acme",
+    tenantId: "tenant-opaque",
+    generation: 7,
+  };
+}
 
-    let discardedState: Record<string, unknown> | undefined;
-    const deniedNamespace = namespaceFor(async (request) => {
-      assert.equal(new URL(request.url).pathname, "/state/discard");
-      discardedState = await request.json() as Record<string, unknown>;
-      return new Response(null, { status: 204 });
-    });
-    const deniedContext = executionContext();
-    const denied = await worker.fetch(
-      authorizedRequest(
-        "https://mcp.example.test/oauth/pipedrive/callback?error=access_denied&state=denied-state",
-        fixture.assertion,
-      ),
-      remoteEnv(failingNamespace(), deniedNamespace),
-      deniedContext.value,
-    );
-    assert.equal(denied.status, 400);
-    assert.match(await denied.text(), /oauth_authorization_denied/);
-    assert.deepEqual(discardedState, {
-      adminSub: "worker-user-1",
-      state: "denied-state",
-      redirectUri: "https://mcp.example.test/oauth/pipedrive/callback",
-    });
-    await Promise.all(deniedContext.waits);
-  });
-});
+function readOnlyPolicy() {
+  return { writes: false, deletes: false, mailbox: false, revision: 0, updatedAt: "1970-01-01T00:00:00.000Z" };
+}
 
-test("Worker preserves submitted settings while requesting confirmation", async () => {
-  const fixture = await accessFixture("user@example.com");
-  const policyNamespace = namespaceFor(async (request) => {
-    const path = new URL(request.url).pathname;
-    if (path === "/policy") {
-      return Response.json({
-        writes: false,
-        deletes: false,
-        mailbox: false,
-        revision: 0,
-        updatedAt: "1970-01-01T00:00:00.000Z",
-      });
-    }
-    if (path === "/csrf") {
-      return Response.json({ csrf: "csrf-fixture" });
-    }
-    return new Response("Not found", { status: 404 });
-  });
-  await withJwks(fixture.jwk, async () => {
-    const body = new URLSearchParams({
-      writes: "yes",
-      mailbox: "yes",
-      revision: "0",
-      csrf: "csrf-fixture",
-    });
-    const request = authorizedRequest(
-      "https://mcp.example.test/settings",
-      fixture.assertion,
-      {
-        method: "POST",
-        headers: {
-          origin: "https://mcp.example.test",
-          "content-type": "application/x-www-form-urlencoded",
-        },
-        body,
-      },
-    );
-    const response = await worker.fetch(
-      request,
-      remoteEnv(policyNamespace),
-      executionContext().value,
-    );
-    assert.equal(response.status, 400);
-    const page = await response.text();
-    assert.match(page, /name="writes" value="yes" checked/);
-    assert.match(page, /name="mailbox" value="yes" checked/);
-    assert.match(page, /Confirmez les conséquences/);
-  });
-});
-
-test("Worker maps a policy Durable Object failure to a JSON-RPC response", async () => {
-  const fixture = await accessFixture("user@example.com");
-  const policyNamespace = namespaceFor(async () =>
-    Response.json({ code: "storage_failed" }, { status: 500 }),
-  );
-  await withJwks(fixture.jwk, async () => {
-    const response = await worker.fetch(
-      authorizedRequest("https://mcp.example.test/mcp", fixture.assertion, {
-        method: "POST",
-        headers: {
-          accept: "application/json, text/event-stream",
-          "content-type": "application/json",
-          "mcp-protocol-version": "2025-06-18",
-        },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
-      }),
-      remoteEnv(policyNamespace),
-      executionContext().value,
-    );
-    assert.equal(response.status, 503);
-    const payload = await response.json() as {
-      jsonrpc: string;
-      error: { data: { code: string } };
-    };
-    assert.equal(payload.jsonrpc, "2.0");
-    assert.equal(payload.error.data.code, "policy_unavailable");
-  });
-});
-
-test("Worker fails fast when the admin has not connected Pipedrive", async () => {
-  const fixture = await accessFixture("user@example.com");
-  const policyNamespace = namespaceFor(async () =>
-    Response.json({
-      writes: false,
-      deletes: false,
-      mailbox: false,
-      revision: 0,
-      updatedAt: "1970-01-01T00:00:00.000Z",
-    }),
-  );
-  const tenantNamespace = namespaceFor(async () =>
-    Response.json({ code: "pipedrive_not_connected" }, { status: 404 }),
-  );
-  await withJwks(fixture.jwk, async () => {
-    const response = await worker.fetch(
-      authorizedRequest("https://mcp.example.test/mcp", fixture.assertion, {
-        method: "POST",
-        headers: {
-          accept: "application/json, text/event-stream",
-          "content-type": "application/json",
-          "mcp-protocol-version": "2025-06-18",
-        },
-        body: JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list", params: {} }),
-      }),
-      remoteEnv(policyNamespace, tenantNamespace),
-      executionContext().value,
-    );
-    assert.equal(response.status, 503);
-    const payload = await response.json() as { error: { data: { code: string } } };
-    assert.equal(payload.error.data.code, "pipedrive_not_connected");
-  });
-});
-
-test("Worker audits a real-write attempt blocked by the user's policy", async () => {
-  const fixture = await accessFixture("user@example.com");
-  const policyNamespace = namespaceFor(async () =>
-    Response.json({
-      writes: false,
-      deletes: false,
-      mailbox: false,
-      revision: 0,
-      updatedAt: "1970-01-01T00:00:00.000Z",
-    }),
-  );
-  const tenantNamespace = namespaceFor(async () =>
-    Response.json({
-      accessCredential: "oauth-access-fixture",
-      apiDomain: "https://acme.pipedrive.com",
-      expiresAtMs: Date.now() + 60_000,
-    }),
-  );
-  const logs: string[] = [];
-  const originalLog = console.log;
-  console.log = (value?: unknown) => logs.push(String(value));
-  try {
-    await withJwks(fixture.jwk, async () => {
-      const context = executionContext();
-      await worker.fetch(
-        authorizedRequest("https://mcp.example.test/mcp", fixture.assertion, {
-          method: "POST",
-          headers: {
-            accept: "application/json, text/event-stream",
-            "content-type": "application/json",
-            "mcp-protocol-version": "2025-06-18",
-          },
-          body: JSON.stringify({
-            jsonrpc: "2.0",
-            id: 1,
-            method: "tools/call",
-            params: {
-              name: "pipedrive_create_deal",
-              arguments: { title: "Blocked", dry_run: false },
-            },
-          }),
-        }),
-        remoteEnv(policyNamespace, tenantNamespace),
-        context.value,
-      );
-      await Promise.all(context.waits);
-    });
-    assert.equal(logs.length, 1);
-    const event = JSON.parse(logs[0]) as Record<string, unknown>;
-    assert.equal(event.outcome, "denied");
-    assert.equal(event.dryRun, true);
-    assert.equal(event.errorCode, "writes_disabled");
-    assert.equal(String(event.actorId).includes("worker-user-1"), false);
-  } finally {
-    console.log = originalLog;
-  }
-});
+function writePolicy() {
+  return { ...readOnlyPolicy(), writes: true, revision: 1 };
+}
 
 function remoteEnv(
-  policyNamespace: DurableObjectNamespace,
-  tenantNamespace: DurableObjectNamespace = failingNamespace(),
+  policy: DurableObjectNamespace,
+  connection: DurableObjectNamespace,
+  registry: DurableObjectNamespace,
 ): RemoteEnv {
-  const oauthClientSecretName = `PIPEDRIVE_OAUTH_CLIENT_${"SECRET"}`;
-  const auditKeyName = `AUDIT_HMAC_${"KEY"}`;
   return {
     ACCESS_ISSUER: issuer,
     ACCESS_AUD: audience,
     REMOTE_ADMIN_EMAIL: "admin@example.com",
     PIPEDRIVE_OAUTH_CLIENT_ID: "client-fixture",
-    [oauthClientSecretName]: "credential-fixture",
-    PIPEDRIVE_OAUTH_ENCRYPTION_KEY: base64Url(
-      Uint8Array.from({ length: 32 }, (_, index) => index),
-    ),
-    [auditKeyName]: base64Url(Uint8Array.from({ length: 32 }, (_, index) => 255 - index)),
-    USER_POLICY: policyNamespace,
-    TENANT_SECRETS: tenantNamespace,
-  } as unknown as RemoteEnv;
+    PIPEDRIVE_OAUTH_CLIENT_SECRET: "credential-fixture",
+    PIPEDRIVE_OAUTH_ENCRYPTION_KEY: base64Url(Uint8Array.from({ length: 32 }, (_, i) => i)),
+    AUDIT_HMAC_KEY: base64Url(Uint8Array.from({ length: 32 }, (_, i) => 255 - i)),
+    USER_POLICY: policy,
+    USER_CONNECTION: connection,
+    TENANT_REGISTRY: registry,
+  };
 }
 
 function namespaceFor(
   handler: (request: Request) => Promise<Response>,
+  names: string[] = [],
 ): DurableObjectNamespace {
   return {
-    idFromName: (name: string) => name,
-    get: () => ({
-      fetch: (input: RequestInfo | URL, init?: RequestInit) =>
-        handler(new Request(input, init)),
-    }),
+    idFromName(name: string) { names.push(name); return name as unknown as DurableObjectId; },
+    get() {
+      return { fetch: (input: RequestInfo | URL, init?: RequestInit) => handler(new Request(input, init)) };
+    },
   } as unknown as DurableObjectNamespace;
 }
 
 function failingNamespace(): DurableObjectNamespace {
-  return namespaceFor(async () => {
-    throw new Error("namespace_should_not_be_called");
-  });
+  return namespaceFor(async () => { throw new Error("namespace_should_not_be_called"); });
 }
 
 function executionContext(): { value: ExecutionContext; waits: Promise<unknown>[] } {
@@ -464,84 +647,87 @@ function executionContext(): { value: ExecutionContext; waits: Promise<unknown>[
   };
 }
 
-async function captureLogs<T>(run: () => Promise<T>): Promise<{ value: T; logs: string[] }> {
-  const logs: string[] = [];
-  const originalLog = console.log;
-  console.log = (value?: unknown) => logs.push(String(value));
-  try {
-    return { value: await run(), logs };
-  } finally {
-    console.log = originalLog;
-  }
-}
-
-function authorizedRequest(
-  url: string,
-  assertion: string,
-  init: RequestInit = {},
-): Request {
+function authorizedRequest(url: string, assertion: string, init: RequestInit = {}): Request {
   const headers = new Headers(init.headers);
   headers.set("cf-access-jwt-assertion", assertion);
   return new Request(url, { ...init, headers });
 }
 
-async function withJwks(jwk: JsonWebKey, run: () => Promise<void>): Promise<void> {
-  clearAccessJwksCache();
-  const originalFetch = globalThis.fetch;
-  globalThis.fetch = async () => Response.json({ keys: [jwk] });
-  try {
-    await run();
-  } finally {
-    globalThis.fetch = originalFetch;
-    clearAccessJwksCache();
-  }
+function authorizedForm(
+  url: string,
+  assertion: string,
+  fields: Record<string, string>,
+  origin = new URL(url).origin,
+): Request {
+  return authorizedRequest(url, assertion, {
+    method: "POST",
+    headers: { "content-type": "application/x-www-form-urlencoded", origin },
+    body: new URLSearchParams(fields),
+  });
 }
 
-async function accessFixture(email: string) {
-  const pair = await crypto.subtle.generateKey(
-    {
-      name: "RSASSA-PKCS1-v1_5",
-      modulusLength: 2048,
-      publicExponent: new Uint8Array([1, 0, 1]),
-      hash: "SHA-256",
+function mcpRequest(assertion: string, body: unknown = {
+  jsonrpc: "2.0",
+  id: 1,
+  method: "tools/call",
+  params: {
+    name: "pipedrive_create_deal",
+    arguments: { title: "Fixture", dry_run: true },
+  },
+}): Request {
+  return authorizedRequest("https://mcp.example.test/mcp", assertion, {
+    method: "POST",
+    headers: {
+      accept: "application/json, text/event-stream",
+      "content-type": "application/json",
+      "mcp-protocol-version": "2025-06-18",
     },
-    true,
-    ["sign", "verify"],
-  );
+    body: JSON.stringify(body),
+  });
+}
+
+async function captureLogs<T>(run: () => Promise<T>): Promise<{ value: T; logs: string[] }> {
+  const logs: string[] = [];
+  const original = console.log;
+  console.log = (value?: unknown) => logs.push(String(value));
+  try { return { value: await run(), logs }; } finally { console.log = original; }
+}
+
+async function withJwks(jwk: JsonWebKey, run: () => Promise<void>): Promise<void> {
+  clearAccessJwksCache();
+  const original = globalThis.fetch;
+  globalThis.fetch = async (input) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.origin === issuer && url.pathname === "/cdn-cgi/access/certs") {
+      return Response.json({ keys: [jwk] });
+    }
+    throw new Error(`unexpected_fetch:${url}`);
+  };
+  try { await run(); } finally { globalThis.fetch = original; clearAccessJwksCache(); }
+}
+
+async function accessFixture(email: string, sub: string) {
+  const pair = await crypto.subtle.generateKey({
+    name: "RSASSA-PKCS1-v1_5",
+    modulusLength: 2048,
+    publicExponent: new Uint8Array([1, 0, 1]),
+    hash: "SHA-256",
+  }, true, ["sign", "verify"]);
   const jwk = await crypto.subtle.exportKey("jwk", pair.publicKey);
-  Object.assign(jwk, { kid: "worker-key", alg: "RS256", use: "sig" });
-  const now = Math.floor(Date.now() / 1000);
-  const header = base64Url(
-    new TextEncoder().encode(JSON.stringify({ alg: "RS256", kid: "worker-key" })),
-  );
-  const payload = base64Url(
-    new TextEncoder().encode(
-      JSON.stringify({
-        iss: issuer,
-        aud: audience,
-        exp: now + 300,
-        iat: now,
-        nbf: now - 1,
-        sub: "worker-user-1",
-        email,
-      }),
-    ),
-  );
+  Object.assign(jwk, { kid: `key-${sub}`, alg: "RS256", use: "sig" });
+  const now = Math.floor(Date.now() / 1_000);
+  const header = base64Url(new TextEncoder().encode(JSON.stringify({ alg: "RS256", kid: jwk.kid })));
+  const payload = base64Url(new TextEncoder().encode(JSON.stringify({
+    iss: issuer, aud: audience, exp: now + 300, iat: now, nbf: now - 1, sub, email,
+  })));
   const signature = await crypto.subtle.sign(
     "RSASSA-PKCS1-v1_5",
     pair.privateKey,
     new TextEncoder().encode(`${header}.${payload}`),
   );
-  return {
-    assertion: `${header}.${payload}.${base64Url(new Uint8Array(signature))}`,
-    jwk,
-  };
+  return { jwk, assertion: `${header}.${payload}.${base64Url(new Uint8Array(signature))}` };
 }
 
-function base64Url(bytes: Uint8Array): string {
-  let binary = "";
-  for (const byte of bytes) {
-    binary += String.fromCharCode(byte);
-  }
-  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+function base64Url(value: Uint8Array): string {
+  return Buffer.from(value).toString("base64url");
 }

@@ -45,11 +45,11 @@ test("packed tarball builds from a clean checkout and exposes the published bin"
       { cwd: installDir, encoding: "utf-8", stdio: "pipe" },
     );
     assert.deepEqual(JSON.parse(smokeOutput), [
-      { profile: "read-only", toolCount: 46, hasMailbox: false, hasMailboxLink: false, hasDelete: false },
-      { profile: "mailbox-read-only", toolCount: 52, hasMailbox: true, hasMailboxLink: false, hasDelete: false },
-      { profile: "writes", toolCount: 73, hasMailbox: false, hasMailboxLink: false, hasDelete: false },
-      { profile: "writes-mailbox", toolCount: 80, hasMailbox: true, hasMailboxLink: true, hasDelete: false },
-      { profile: "writes-mailbox-delete", toolCount: 88, hasMailbox: true, hasMailboxLink: true, hasDelete: true },
+      { profile: "read-only", toolCount: 47, hasMailbox: false, hasMailboxLink: false, hasDelete: false },
+      { profile: "mailbox-read-only", toolCount: 53, hasMailbox: true, hasMailboxLink: false, hasDelete: false },
+      { profile: "writes", toolCount: 74, hasMailbox: false, hasMailboxLink: false, hasDelete: false },
+      { profile: "writes-mailbox", toolCount: 81, hasMailbox: true, hasMailboxLink: true, hasDelete: false },
+      { profile: "writes-mailbox-delete", toolCount: 89, hasMailbox: true, hasMailboxLink: true, hasDelete: true },
     ]);
   } finally {
     rmSync(workRoot, { recursive: true, force: true });

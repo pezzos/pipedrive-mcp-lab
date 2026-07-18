@@ -1,4 +1,5 @@
 import type { RemoteEnv } from "./env.js";
+import { userCompanyPolicyObjectKey } from "./objectKey.js";
 
 const POLICY_KEY = "policy";
 const CSRF_KEY = "csrf";
@@ -19,11 +20,14 @@ export type PolicyUpdate = {
   expectedRevision: number;
 };
 
-export interface KeyValueStorage {
+export interface KeyValueOps {
   get<T>(key: string): Promise<T | undefined>;
   put<T>(key: string, value: T): Promise<void>;
   delete(key: string): Promise<boolean>;
-  transaction<T>(closure: (transaction: KeyValueStorage) => Promise<T>): Promise<T>;
+}
+
+export interface KeyValueStorage extends KeyValueOps {
+  transaction<T>(closure: (transaction: KeyValueOps) => Promise<T>): Promise<T>;
 }
 
 type CsrfRecord = {
@@ -116,16 +120,27 @@ export class UserPolicy {
   }
 }
 
-export async function getUserPolicy(env: RemoteEnv, sub: string): Promise<UserPolicyRecord> {
-  const response = await userPolicyStub(env, sub).fetch("https://policy.internal/policy");
+export async function getUserPolicy(
+  env: RemoteEnv,
+  sub: string,
+  companyId: string,
+): Promise<UserPolicyRecord> {
+  const response = await userPolicyStub(env, sub, companyId)
+    .fetch("https://policy.internal/policy");
   if (!response.ok) {
     throw new Error("policy_unavailable");
   }
   return response.json<UserPolicyRecord>();
 }
 
-export function userPolicyStub(env: RemoteEnv, sub: string): DurableObjectStub {
-  return env.USER_POLICY.get(env.USER_POLICY.idFromName(sub));
+export function userPolicyStub(
+  env: RemoteEnv,
+  sub: string,
+  companyId: string,
+): DurableObjectStub {
+  return env.USER_POLICY.get(
+    env.USER_POLICY.idFromName(userCompanyPolicyObjectKey(sub, companyId)),
+  );
 }
 
 export function defaultUserPolicy(): UserPolicyRecord {
