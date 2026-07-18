@@ -6,10 +6,12 @@ and for users who should not maintain a local process. Cowork Web and Mobile are
 currently rolling out in beta; validate availability on the target account.
 The existing Desktop Extension remains supported for local Claude Desktop use.
 
-> **Deployment status:** this guide describes the checked-in, locally validated
-> multi-tenant Worker. This repository change did not inspect or change the
-> Worker currently live at any hostname. Verify the active deployment version
-> before applying these routes or procedures.
+> **Deployment status:** commit `c7398c9` is deployed on the sandbox Worker as
+> version `d0b493c2-7cbe-411d-af29-e7d08562c28a`. The v2 Durable Object
+> bindings are active, the legacy singleton was retained without purge, and
+> `/healthz`, the admin UI, the user route, and pre-OAuth MCP discovery were
+> smoke-tested. Real two-user/two-company OAuth acceptance, live suspension
+> checks, client rollout, and production promotion remain gated.
 
 ## User Experience
 
@@ -67,12 +69,11 @@ identity or token material.
 
 ## Implemented Tenancy Boundary And Deployment Gate
 
-`PRODUCT.md` records the single-tenant implementation baseline that existed at
-the 2026-07-16 decision point. Its statement that this guide still contains the
-old single-tenant boundary predates this documentation sync; `PRODUCT.md`
-remains authoritative for product intent, while this guide records the later
-local implementation and operating contract. Neither proves what Worker
-version is live; this goal did not inspect or mutate the deployed service.
+`PRODUCT.md` records the single-tenant baseline that existed at the 2026-07-16
+decision point and the approved multi-tenant contract. This guide records the
+implemented operating boundary. The sandbox deployment was subsequently
+verified at commit `c7398c9`; that evidence does not promote the Pipedrive app,
+complete real multi-user OAuth acceptance, or authorize production rollout.
 
 The repository implementation has this boundary:
 
@@ -102,13 +103,16 @@ npm run check
 npm run benchmark:server
 ```
 
-The deployment gate remains closed. A separately authorized phase must deploy
-the exact commit, configure secrets and Access, authorize the Pipedrive app,
-run real OAuth for at least two sandbox users/companies, verify suspension
-during deployed provider calls, and decide the legacy singleton cleanup. The
-v1 `TenantSecrets` class stays exported only for migration compatibility; v2
-has no `TENANT_SECRETS` binding, request route, credential read, or sub-only
-policy fallback. No singleton data is copied or purged automatically.
+The sandbox code-deployment step is complete for `c7398c9`. The active version
+preserves the four OAuth/audit secrets, uses `TENANT_REGISTRY`,
+`USER_CONNECTION`, and `USER_POLICY`, and keeps the legacy singleton without
+copying or purging it. The remaining acceptance gate must still run real OAuth
+for at least two sandbox users/companies, verify suspension during deployed
+provider calls, and decide the legacy singleton cleanup. Client rollout,
+Pipedrive app promotion, and production promotion remain separately
+authorized actions. The v1 `TenantSecrets` class stays exported only for
+migration compatibility; v2 has no `TENANT_SECRETS` binding, request route,
+credential read, or sub-only policy fallback.
 
 ## Permission Model
 

@@ -92,9 +92,11 @@ version. To create an email to-do, use `pipedrive_create_activity` with
 
 ## Remote Pipedrive Connection Administration
 
-> **Deployment gate:** the checked-in Worker is multi-tenant and locally
-> validated, but this change does not deploy it. Do not treat an existing
-> sandbox or production Worker as upgraded; complete the canonical
+> **Deployment gate:** commit `c7398c9` is deployed on the sandbox Worker as
+> version `d0b493c2-7cbe-411d-af29-e7d08562c28a`. Health, administration, user
+> routing, and pre-OAuth MCP discovery are verified. Do not treat this sandbox
+> smoke test as real two-user OAuth acceptance, client rollout, Pipedrive app
+> promotion, or production readiness; complete the remaining canonical
 > [deployment gate](REMOTE_MCP_CLOUDFLARE.md#implemented-tenancy-boundary-and-deployment-gate).
 
 Sign in through Cloudflare Access as `REMOTE_ADMIN_EMAIL` and open
@@ -164,11 +166,13 @@ validation prompts.
 
 ## Private Claude Delivery
 
-Before onboarding or handing out the hardcoded sandbox connector, verify the
-active Worker version and complete the separately authorized
+Before onboarding or handing out the hardcoded sandbox connector, verify that
+the active Worker is still version
+`d0b493c2-7cbe-411d-af29-e7d08562c28a` (or a later explicitly accepted
+version) and complete the remaining separately authorized
 [deployment gate](REMOTE_MCP_CLOUDFLARE.md#implemented-tenancy-boundary-and-deployment-gate).
-The local multi-tenant implementation does not prove the sandbox URL has been
-upgraded.
+The current sandbox smoke test does not prove real two-user OAuth, suspension,
+or client-surface acceptance.
 
 Use `npm run pack:claude-delivery` to stage the standalone skill ZIPs and the
 plugin. Routine paid delivery should use a private plugin repository or private
