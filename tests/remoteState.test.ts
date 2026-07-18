@@ -47,8 +47,11 @@ test("encrypts OAuth material with unique IVs and rejects tampering", async () =
   const second = await encryptMaterial(material, encodedKey);
   assert.notEqual(first.iv, second.iv);
   assert.deepEqual(await decryptMaterial(first, encodedKey), material);
+  // The first base64url character always changes data bits; the last can change only ignored padding bits.
+  const tamperedCiphertext =
+    `${first.ciphertext[0] === "A" ? "B" : "A"}${first.ciphertext.slice(1)}`;
   await assert.rejects(
-    decryptMaterial({ ...first, ciphertext: `${first.ciphertext.slice(0, -1)}A` }, encodedKey),
+    decryptMaterial({ ...first, ciphertext: tamperedCiphertext }, encodedKey),
     /oauth_material_invalid/,
   );
   const rotatedKey = base64Url(Uint8Array.from({ length: 32 }, (_, index) => 255 - index));
