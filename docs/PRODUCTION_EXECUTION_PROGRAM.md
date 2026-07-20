@@ -268,7 +268,7 @@ Allowed states are `not_started`, `planning`, `blocked_user`, `in_progress`,
 | Block | State | Commit or evidence | External gate |
 | --- | --- | --- | --- |
 | B0 Decisions and contract | completed | ADR-0001 + structured record; full local gate 2026-07-20: `WRANGLER_SEND_METRICS=false npm run check` 115/115, benchmark p95 3.295ms <20ms, `npm pack --dry-run`, `git diff --check`; original Sol PASS; compliance-legal PASS | D08 backup prerequisite remains for B7--B10 live/credentialed work |
-| B1 V1 baseline | not_started | Candidate `9de8d0c` to verify | Push/PR excluded |
+| B1 V1 baseline | completed | Candidate `9de8d0c69daeb6cd4a882d66a8e231eacf7f314b`; [B1 baseline evidence](../evidence/B1-v1-baseline.md): 118/118 local check, benchmark p95 3.34ms <20ms, 21-file pack exclusions, offline cache audit 0 (non-fresh), original Sol PASS, security-specialist PASS | Push/PR excluded; sandbox/live acceptance remains B8 |
 | B2 ChatGPT app and workflows | not_started |  | None for local package |
 | B3 ChatGPT lifecycle | not_started |  | Real ChatGPT/Access acceptance deferred |
 | B4 Impeccable UX/UI | not_started |  | Shape approval |

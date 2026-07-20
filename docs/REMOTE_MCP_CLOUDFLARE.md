@@ -98,6 +98,7 @@ timing or deployed concurrency.
 Reproduce the focused local evidence with:
 
 ```sh
+WRANGLER_SEND_METRICS=false npm run build:worker
 node --import tsx --test tests/tenantRegistry.test.ts tests/userConnection.test.ts tests/remoteWorker.test.ts tests/pipedriveAdminPage.test.ts tests/workerdDurableObjects.test.ts
 npm run check
 npm run benchmark:server

@@ -135,6 +135,146 @@ test("fails closed when suspension interleaves callback, refresh, or successful 
   await assert.rejects(core.markUsed("user-a", generation), /tenant_admission_denied/);
 });
 
+test("coalesces concurrent refreshes for the same connection generation", { timeout: 1_000 }, async () => {
+  let now = 1_000;
+  let refreshes = 0;
+  const refreshStarted = deferred<void>();
+  const releaseRefresh = deferred<void>();
+  const tenant = registry("acme", "company-a", "Tenant A");
+  const core = connection(new MemoryStorage(), tenant, async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.pathname === "/oauth/token") {
+      const fields = new URLSearchParams(String(init?.body));
+      if (fields.get("grant_type") === "refresh_token") {
+        refreshes += 1;
+        if (refreshes === 1) {
+          refreshStarted.resolve();
+          await releaseRefresh.promise;
+        }
+        return oauthResponse("refreshed", 3_600);
+      }
+      return oauthResponse(fields.get("code") ?? "initial", 1);
+    }
+    return currentUser("company-a", "Tenant A");
+  }, () => now);
+  await connect(core, "user-a", "a@example.test", "acme", "initial");
+  const initialGeneration = (await core.getStatus()).generation;
+  tenant.resetAdmissionChecks();
+
+  now += 120_000;
+  const first = core.getCredential("user-a");
+  let second: Promise<Awaited<ReturnType<typeof core.getCredential>>> | undefined;
+  try {
+    await within(tenant.waitForAdmissionChecks(2), "first refresh admission checks");
+    await within(refreshStarted.promise, "first refresh provider request");
+    second = core.getCredential("user-a");
+    await within(tenant.waitForAdmissionChecks(3), "second expired-credential admission check");
+    assert.equal(refreshes, 1);
+  } finally {
+    releaseRefresh.resolve();
+  }
+  assert.ok(second);
+  const [firstCredential, secondCredential] = await Promise.all([first, second]);
+  assert.equal(refreshes, 1);
+  assert.equal(firstCredential.accessCredential, "access-refreshed");
+  assert.equal(secondCredential.accessCredential, "access-refreshed");
+  assert.equal(firstCredential.generation, initialGeneration);
+  assert.equal(secondCredential.generation, initialGeneration);
+});
+
+test("a stale in-flight refresh cannot overwrite a reconnect", { timeout: 1_000 }, async () => {
+  let now = 1_000;
+  const refreshStarted = deferred<void>();
+  const releaseRefresh = deferred<void>();
+  const tenant = registry("acme", "company-a", "Tenant A");
+  const core = connection(new MemoryStorage(), tenant, async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.pathname === "/oauth/token") {
+      const fields = new URLSearchParams(String(init?.body));
+      if (fields.get("grant_type") === "refresh_token") {
+        refreshStarted.resolve();
+        await releaseRefresh.promise;
+        return oauthResponse("stale-refresh", 3_600);
+      }
+      const code = fields.get("code") ?? "initial";
+      return oauthResponse(code, code === "reconnected" ? 3_600 : 1);
+    }
+    return currentUser("company-a", "Tenant A");
+  }, () => now);
+  await connect(core, "user-a", "a@example.test", "acme", "initial");
+  const initialGeneration = (await core.getStatus()).generation;
+
+  now += 120_000;
+  const staleRefresh = core.getCredential("user-a");
+  let reconnectedGeneration: number | undefined;
+  try {
+    await within(refreshStarted.promise, "stale refresh provider request");
+    await core.selfDisconnect("user-a", await core.issueSelfAction("user-a"));
+    await connect(core, "user-a", "a@example.test", "acme", "reconnected");
+    reconnectedGeneration = (await core.getStatus()).generation;
+  } finally {
+    releaseRefresh.resolve();
+  }
+
+  await assert.rejects(staleRefresh, /oauth_state_stale/);
+  assert.equal(reconnectedGeneration, initialGeneration + 2);
+  const finalCredential = await core.getCredential("user-a");
+  assert.equal(finalCredential.accessCredential, "access-reconnected");
+  assert.equal(finalCredential.generation, reconnectedGeneration);
+  assert.equal((await core.getStatus()).generation, reconnectedGeneration);
+});
+
+test("a stale in-flight OAuth callback cannot resurrect a reconnect", { timeout: 1_000 }, async () => {
+  const callbackStarted = deferred<void>();
+  const releaseCallback = deferred<void>();
+  const tenant = registry("acme", "company-a", "Tenant A");
+  const core = connection(new MemoryStorage(), tenant, async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.pathname === "/oauth/token") {
+      const fields = new URLSearchParams(String(init?.body));
+      const code = fields.get("code") ?? "initial";
+      if (code === "stale") {
+        callbackStarted.resolve();
+        await releaseCallback.promise;
+      }
+      return oauthResponse(code, 3_600);
+    }
+    return currentUser("company-a", "Tenant A");
+  });
+  await connect(core, "user-a", "a@example.test", "acme", "initial");
+  const initialGeneration = (await core.getStatus()).generation;
+
+  const staleState = await core.createState({
+    accessSub: "user-a",
+    accessEmail: "a@example.test",
+    expectedDomain: "acme",
+    redirectUri,
+    actionToken: await core.issueSelfAction("user-a"),
+  });
+  const staleCallback = core.exchange({
+    accessSub: "user-a",
+    state: staleState,
+    code: "stale",
+    redirectUri,
+  });
+  let reconnectedGeneration: number | undefined;
+  try {
+    await within(callbackStarted.promise, "stale OAuth callback provider request");
+    await core.selfDisconnect("user-a", await core.issueSelfAction("user-a"));
+    await connect(core, "user-a", "a@example.test", "acme", "reconnected");
+    reconnectedGeneration = (await core.getStatus()).generation;
+  } finally {
+    releaseCallback.resolve();
+  }
+
+  await assert.rejects(staleCallback, /oauth_state_stale/);
+  assert.equal(reconnectedGeneration, initialGeneration + 2);
+  const finalCredential = await core.getCredential("user-a");
+  assert.equal(finalCredential.accessCredential, "access-reconnected");
+  assert.equal(finalCredential.generation, reconnectedGeneration);
+  assert.equal((await core.getStatus()).generation, reconnectedGeneration);
+});
+
 test("purges at 90 inactive days, retains safe metadata, and reconnects the same pair", async () => {
   let now = 10_000;
   const alarms: number[] = [];
@@ -251,9 +391,21 @@ function registry(domain: string, companyId: string, companyName: string) {
   let active = true;
   let pinned = false;
   let suspendAfterPin = false;
+  let admissionChecks = 0;
   const tenantId = `tenant-${domain}`;
   const projections: AdminConnectionProjectionInput[] = [];
   const removed: string[] = [];
+  const admissionWaiters: Array<{ target: number; resolve: () => void }> = [];
+  const recordAdmissionCheck = () => {
+    admissionChecks += 1;
+    for (let index = admissionWaiters.length - 1; index >= 0; index -= 1) {
+      const waiter = admissionWaiters[index];
+      if (admissionChecks >= waiter.target) {
+        admissionWaiters.splice(index, 1);
+        waiter.resolve();
+      }
+    }
+  };
   const record = (): TenantRecord => ({
     domain,
     status: active ? "active" : "suspended",
@@ -267,10 +419,13 @@ function registry(domain: string, companyId: string, companyName: string) {
     suspend(): void;
     resume(): void;
     suspendAfterNextPin(): void;
+    resetAdmissionChecks(): void;
+    waitForAdmissionChecks(target: number): Promise<void>;
     projections: AdminConnectionProjectionInput[];
     removed: string[];
   } = {
     async checkAdmission(candidate) {
+      recordAdmissionCheck();
       if (!active || candidate !== domain) throw new Error("tenant_admission_denied");
       return record();
     },
@@ -295,6 +450,14 @@ function registry(domain: string, companyId: string, companyName: string) {
     suspend() { if (active) { active = false; generation += 1; } },
     resume() { if (!active) { active = true; generation += 1; } },
     suspendAfterNextPin() { suspendAfterPin = true; },
+    resetAdmissionChecks() {
+      admissionChecks = 0;
+      admissionWaiters.length = 0;
+    },
+    waitForAdmissionChecks(target) {
+      if (admissionChecks >= target) return Promise.resolve();
+      return new Promise((resolve) => admissionWaiters.push({ target, resolve }));
+    },
     projections,
     removed,
   };
@@ -350,6 +513,40 @@ function oauthFetcher(domain: string, companyId: string, companyName: string): t
     }
     return currentUser(companyId, companyName);
   };
+}
+
+function oauthResponse(code: string, expiresIn: number): Response {
+  return Response.json({
+    access_token: `access-${code}`,
+    refresh_token: `refresh-${code}`,
+    expires_in: expiresIn,
+    api_domain: "https://acme.pipedrive.com",
+  });
+}
+
+function deferred<T>(): {
+  promise: Promise<T>;
+  resolve(value: T | PromiseLike<T>): void;
+} {
+  let resolve!: (value: T | PromiseLike<T>) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+async function within<T>(promise: Promise<T>, label: string, timeoutMs = 500): Promise<T> {
+  let timeout: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(() => reject(new Error(`timed out waiting for ${label}`)), timeoutMs);
+      }),
+    ]);
+  } finally {
+    if (timeout !== undefined) clearTimeout(timeout);
+  }
 }
 
 function currentUser(companyId: string, companyName: string): Response {

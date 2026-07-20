@@ -27,8 +27,8 @@
     "prepare:claude-plugin-release": "node scripts/release-claude-plugin.mjs",
     "release:claude-plugin": "node scripts/release-claude-plugin.mjs --publish",
     "prepack": "npm run build",
-    "test": "node --import tsx --test tests/*.test.ts",
-    "check": "npm run build && npm run build:worker && npm run build:plugin && npm test"
+    "test": "WRANGLER_SEND_METRICS=false npm run build:worker --silent && node --import tsx --test tests/*.test.ts",
+    "check": "npm run build && npm run build:plugin && npm test"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.29.0",
