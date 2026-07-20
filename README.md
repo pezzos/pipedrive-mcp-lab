@@ -202,7 +202,8 @@ alternative for local development or recovery, not part of the Cowork delivery.
 
 See [Operator Runbook](docs/OPERATOR_RUNBOOK.md), [Client Examples](docs/MCP_CLIENT_EXAMPLES.md),
 [Troubleshooting](docs/TROUBLESHOOTING.md), [Remote MCP](docs/REMOTE_MCP_CLOUDFLARE.md),
-and [API Mapping Notes](docs/API_MAPPING.md).
+[API Mapping Notes](docs/API_MAPPING.md), and the
+[production execution program](docs/PRODUCTION_EXECUTION_PROGRAM.md).
 
 Platform statements were checked on 2026-07-16 against Anthropic's
 [local MCP server guide](https://support.claude.com/en/articles/10949351-getting-started-with-local-mcp-servers-on-claude-desktop),

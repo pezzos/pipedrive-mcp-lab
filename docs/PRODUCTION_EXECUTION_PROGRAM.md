@@ -1,0 +1,1220 @@
+# Production Execution Program
+
+## Status and authority
+
+- **Purpose:** execute the remaining work from the current V1 candidate through
+  a clean production launch, the first customer cohort, stabilization, and the
+  approved V1.1 package.
+- **Product source of truth:** [`../PRODUCT.md`](../PRODUCT.md).
+- **Remote runtime and promotion contract:**
+  [`REMOTE_MCP_CLOUDFLARE.md`](REMOTE_MCP_CLOUDFLARE.md).
+- **Operational procedures:** [`OPERATOR_RUNBOOK.md`](OPERATOR_RUNBOOK.md).
+- **This document owns:** execution order, block boundaries, delegation,
+  validation, review, evidence, and promotion gates.
+- **This document does not own:** new product commitments, security or privacy
+  decisions, provider choices, retention decisions, live authorization, or
+  irreversible cleanup.
+- **Claude policy:** Claude is unavailable and must not be used for planning,
+  implementation, challenge, or code review. Existing Claude delivery remains
+  compatible until the operator explicitly decides to retire it.
+- **Codex policy:** Codex is the primary new client and skill delivery target.
+
+The current known candidate is branch
+`codex/rebaseline-v1-sandbox-acceptance`, commit `9de8d0c`. Before execution,
+the orchestrator must verify the actual Git state and must not assume that this
+reference is still current.
+
+## Target outcome
+
+The program is complete when:
+
+1. the V1 multi-tenant code is integrated and reproducible;
+2. Codex can install one supported Pipedrive plugin or selected skill bundles
+   without duplicate MCP registration;
+3. two real Access users can connect two different Pipedrive companies in
+   sandbox without cross-tenant leakage;
+4. production and sandbox infrastructure, secrets, data, and artifacts are
+   mechanically separated;
+5. durable audit export, alerting, incident response, offboarding, rollback,
+   and operating ownership are proven;
+6. Alexandre can use Codex against Pezzos Labs in a read-only production
+   canary;
+7. a first customer can connect their own Pipedrive identity and company
+   without a customer-specific Worker or credential;
+8. the service completes an agreed stabilization window with no unresolved
+   high-severity finding;
+9. the operator has made a separate decision on general availability and
+   legacy singleton cleanup;
+10. the approved V1.1 slices are implemented only after the V1 launch boundary
+    is satisfied.
+
+## Program invariants
+
+These rules apply to every block.
+
+### Product and security
+
+- Every Pipedrive connection is bound to the caller's verified Cloudflare
+  Access subject and verified Pipedrive company.
+- No credential is shared across users or companies.
+- Every new `(Access sub, company_id)` policy starts read-only.
+- Writes retain `dry_run=true` by default.
+- Delete and Mailbox authority remain independently gated.
+- Unknown, unapproved, and suspended domains fail closed without enumeration.
+- No rollback may restore a singleton credential path.
+- Tokens, assertions, OAuth codes, raw emails, raw CRM payloads, and secret
+  values never enter logs, evidence, prompts, documents, or reviewer reports.
+
+### Delegation
+
+- Material reasoning happens first with GPT-5.6 Sol.
+- Repository implementation is delegated to GPT-5.6 Tera.
+- Only one repository writer may be active at a time.
+- Children may not recursively delegate.
+- Reviewers are read-only unless a test command necessarily refreshes ignored
+  build artifacts; even then, no other writer may be active.
+- Live actions remain parent-controlled.
+- A child never commits, pushes, deploys, publishes, changes secrets, changes
+  Access, promotes a Pipedrive application, or handles customer credentials.
+
+### Documentation and verification
+
+- Behavior changes update canonical documentation in the same block.
+- Every stable block receives targeted tests, the relevant full gate, two
+  independent review perspectives, and an atomic commit.
+- Claims of completion require fresh evidence from the current checkout.
+- The tracked workflow observation log, if dirty, is preserved and excluded
+  from product commits.
+
+## Standard block protocol
+
+Every block is executed through the following state machine.
+
+### Phase A: intake and execution envelope
+
+The parent:
+
+1. verifies Git status, current commit, previous block evidence, and applicable
+   repository guidance;
+2. identifies user-owned decisions and live effects;
+3. establishes one bounded execution envelope for the block;
+4. names allowed task classes, files, tests, dirty-file policy, review cadence,
+   recovery budget, stop conditions, and delegation budget.
+
+Default local envelope:
+
+- allowed: read-only investigation, local repository writes, local builds,
+  local tests, local documentation, exact-path staging, and atomic commits;
+- excluded: fetch, pull, push, PR, release, publication, deployment, remote
+  configuration, secrets, OAuth, customer data, real CRM operations, provider
+  promotion, and destructive cleanup;
+- delegation: one Sol architect, one Tera writer, one specialist tester or
+  reviewer; concurrency is allowed only for read-only work; depth one; no
+  recursion.
+
+### Phase B: Sol architecture and challenge
+
+The Sol agent receives a narrow prompt and returns:
+
+- evidence and assumptions;
+- proposed architecture or change shape;
+- exact file ownership for the writer;
+- public and persisted contracts affected;
+- threat, privacy, UX, migration, and rollback analysis;
+- required tests;
+- documentation changes;
+- user-owned decisions;
+- stop conditions;
+- an implementation packet suitable for a context-light Tera agent.
+
+No writer is launched until the parent accepts this packet.
+
+### Phase C: Tera implementation
+
+The Tera agent:
+
+- uses `gpt-5.6-terra`;
+- receives the accepted packet rather than the full conversation;
+- owns only the named files;
+- is told that other work may exist and must not be reverted;
+- implements code, tests, and block documentation;
+- runs targeted checks;
+- reports changed paths, commands, results, risks, and remaining gaps;
+- stops on public-contract, security, retention, migration, UX, or live-effect
+  uncertainty.
+
+### Phase D: verification and review
+
+After the writer stops:
+
+1. the parent audits Git state and the changed paths;
+2. the specialist agent runs or reviews the block-specific tests;
+3. the original Sol agent receives a follow-up task to review conformance,
+   architecture, security, and unresolved findings;
+4. accepted agent-owned findings return to the same Tera agent;
+5. focused tests and both reviews are repeated after remediation;
+6. the parent runs the final full gate.
+
+### Phase E: documentation, commit, and transition
+
+The parent:
+
+- aligns durable documents;
+- records fresh evidence in this program's status table or a linked evidence
+  record;
+- stages exact owned paths;
+- creates one coherent commit;
+- marks the block complete only when all exit criteria pass;
+- moves to the next local block automatically;
+- pauses only for a user-owned decision or an external-effect gate.
+
+## UI and UX protocol
+
+Any work that affects HTML pages, onboarding, client-facing installation,
+confirmation flows, settings, error copy, visual metadata, or responsive
+behavior must use the `impeccable` skill.
+
+Current preconditions:
+
+- `PRODUCT.md` exists and is valid;
+- the register is `product`;
+- `DESIGN.md` is missing and must be created before UI implementation.
+
+Required sequence:
+
+1. run the Impeccable context loader;
+2. run `$impeccable document` to establish `DESIGN.md`;
+3. run a task-specific `$impeccable shape` interview;
+4. collect at least one user-answer round;
+5. resolve the image probe gate;
+6. present the brief and wait for explicit user confirmation;
+7. load the required craft references;
+8. before editing UI files, emit:
+
+```text
+IMPECCABLE_PREFLIGHT: context=pass product=pass command_reference=pass shape=pass image_gate=pass mutation=open
+```
+
+9. implement with the Tera writer;
+10. run Impeccable critique, audit, remediation, and polish;
+11. complete accessibility, keyboard, zoom, reflow, and responsive evidence.
+
+`PRODUCT.md`, `DESIGN.md`, or an agent-authored summary never substitutes for
+explicit shape-brief approval.
+
+## Authority gates
+
+| Gate | Allowed effects | Typical examples |
+| --- | --- | --- |
+| `L0` | Local read only | Repository inspection, planning, diff review |
+| `L1` | Local writes | Code, tests, docs, builds, artifacts, commits |
+| `SR` | Sandbox or external read | Deployment list, health, logs, read-only checks |
+| `SW` | Sandbox mutation | Deploy, rollback, Access change, OAuth, disposable write |
+| `PW` | Production or publish mutation | DNS, secrets, deploy, app promotion, release |
+| `CW` | Customer-scoped effect | Access admission, tenant approval, CRM read/write, offboarding |
+| `DW` | Destructive effect | Singleton purge, token revocation, tenant deletion |
+
+No gate inherits the authority of a later gate. A production deploy does not
+authorize publication, onboarding, customer reads, writes, or cleanup.
+
+## Dependency map
+
+```mermaid
+flowchart TD
+    B0["B0: decisions and contract"]
+    B1["B1: V1 baseline"]
+    B2["B2: Codex plugin and bundles"]
+    B3["B3: Codex lifecycle"]
+    B4["B4: Impeccable UX and UI"]
+    B5["B5: production topology"]
+    B6["B6: security and rotation"]
+    B7["B7: audit and operations"]
+    B8["B8: sandbox acceptance"]
+    B9["B9: personal production canary"]
+    B10["B10: publish and first customer"]
+    B11["B11: stabilize and close V1"]
+    B12["B12: V1.1 diagnostic"]
+    B13["B13: V1.1 write safety"]
+    B14["B14: V1.1 workflows"]
+
+    B0 --> B1
+    B0 --> B2
+    B1 --> B2
+    B2 --> B3
+    B0 --> B4
+    B1 --> B4
+    B1 --> B5
+    B5 --> B6
+    B6 --> B7
+    B3 --> B8
+    B4 --> B8
+    B7 --> B8
+    B8 --> B9
+    B9 --> B10
+    B10 --> B11
+    B11 --> B12
+    B12 --> B13
+    B13 --> B14
+```
+
+## Progress register
+
+Allowed states are `not_started`, `planning`, `blocked_user`, `in_progress`,
+`review`, `completed`, and `superseded`.
+
+| Block | State | Commit or evidence | External gate |
+| --- | --- | --- | --- |
+| B0 Decisions and contract | not_started |  | User decisions |
+| B1 V1 baseline | not_started | Candidate `9de8d0c` to verify | Push/PR excluded |
+| B2 Codex plugin and bundles | not_started |  | None for local package |
+| B3 Codex lifecycle | not_started |  | Real Codex OAuth deferred |
+| B4 Impeccable UX/UI | not_started |  | Shape approval |
+| B5 Production topology | not_started |  | Remote reservation excluded |
+| B6 Security and rotation | not_started |  | Secret/MFA drill excluded |
+| B7 Audit and operations | not_started |  | Logpush/SIEM setup excluded |
+| B8 Sandbox acceptance | not_started |  | `SR` and `SW` |
+| B9 Personal production canary | not_started |  | `PW` |
+| B10 Publish and first customer | not_started |  | `PW` and `CW` |
+| B11 Stabilize and close V1 | not_started |  | `DW` for singleton purge |
+| B12 V1.1 diagnostic | not_started |  | Publication deferred |
+| B13 V1.1 write safety | not_started |  | Real write tests deferred |
+| B14 V1.1 workflows | not_started |  | Publication and customer use deferred |
+
+## B0: decisions and execution contract
+
+### Objective
+
+Close all decisions that affect production, distribution, customer commitment,
+security, privacy, retention, costs, and irreversible actions.
+
+### Entry
+
+- Current repository and canonical documents are readable.
+- No live authority is required.
+
+### Sol assignment
+
+Create a decision dossier covering:
+
+- Codex surfaces promised;
+- Pipedrive sandbox and production application strategy;
+- private or public Pipedrive distribution;
+- private or public Codex marketplace;
+- production hostname and Cloudflare account boundary;
+- skill bundle composition;
+- existing Claude delivery compatibility or retirement;
+- audit destination, retention, access, deletion, alerting, and cost;
+- administrator, backup operator, support, incident, and offboarding owners;
+- SLO, RTO, RPO, capacity, and cost budgets;
+- encryption and HMAC rotation posture;
+- canary users, companies, records, permissions, and soak window;
+- privacy notice, DPA, subprocessors, DSAR, and breach workflow;
+- passive singleton retention and future purge conditions.
+
+Use `grill-me` for dependent user-owned decisions after inspectable facts are
+exhausted.
+
+### Tera ownership
+
+- this execution program;
+- a delivery ADR;
+- a structured decision record;
+- product and operator documentation only after decisions are accepted.
+
+### Tests and review
+
+- no unresolved decision on the first-client critical path;
+- no contradiction with `PRODUCT.md`;
+- no secret or customer PII;
+- review by the original Sol agent and `compliance-legal`.
+
+### Exit
+
+Every critical decision has a value, owner, evidence, review date, and revisit
+trigger. No `TBD` remains on the B1 through B10 path.
+
+### Stop
+
+Stop before B5 or any live work when retention, privacy, audit, production
+admin, app distribution, incident, or offboarding ownership remains open.
+
+## B1: integrate and qualify the V1 baseline
+
+### Objective
+
+Integrate the current candidate as one coherent V1 baseline before Codex or
+production adaptations.
+
+### Sol assignment
+
+Verify:
+
+- actual diff from `main`;
+- branch and commit identity;
+- multi-tenant invariants;
+- v2 Durable Object compatibility;
+- test and documentation freshness;
+- rollback compatibility;
+- unrelated dirty paths.
+
+### Tera ownership
+
+Only defects found in:
+
+- V1 remote runtime;
+- tenancy and security tests;
+- operator documentation;
+- build configuration.
+
+Do not implement V1.1 or Codex packaging here.
+
+### Validation
+
+```sh
+npm ci
+WRANGLER_SEND_METRICS=false npm run check
+npm run benchmark:server
+npm pack --dry-run
+git diff --check
+npm audit --audit-level=high
+```
+
+Focused tests must cover isolation, domain and company mismatch, refresh
+coalescing, callback and disconnect races, suspension, purge, admin projection,
+redaction, workerd routing, and the absence of singleton fallback.
+
+### Documentation
+
+Record the exact candidate, fresh evidence, remaining live gates, and rollback
+requirements.
+
+### Review
+
+Original Sol agent plus `security-specialist`.
+
+### Exit
+
+Clean product paths, fresh green gates, aligned status, atomic commit, and an
+exact candidate ready for a separately authorized push or PR.
+
+## B2: Codex plugin, canonical skills, and bundles
+
+### Objective
+
+Add a native Codex distribution without creating divergent skill sources or
+weakening the existing delivery.
+
+### Sol assignment
+
+Freeze:
+
+- canonical skill source;
+- bundle catalog and naming;
+- Codex plugin manifest;
+- MCP config contract;
+- marketplace metadata;
+- version coupling;
+- standalone limitations;
+- Claude compatibility boundary.
+
+The low-risk starting point is to keep the current seven skill files as the
+canonical source and generate Codex artifacts from them. A later move to a
+neutral source directory must be atomic and byte-verifiable.
+
+### Tera ownership
+
+- `plugin/codex/**`;
+- skill catalog and bundle manifest;
+- Codex pack scripts;
+- package commands;
+- Codex package tests.
+
+### Required artifacts
+
+- `.codex-plugin/plugin.json`;
+- `.mcp.json` containing exactly one approved Pipedrive MCP;
+- Codex marketplace entry;
+- full seven-skill plugin;
+- selected skill or thematic bundle artifacts defined by B0;
+- deterministic hashes and version metadata.
+
+Bundles organize workflows only. They never enable Writes, Deletes, Mailbox,
+Access membership, tenant approval, or OAuth.
+
+### Validation
+
+- catalog and filesystem exact-set checks;
+- frontmatter and directory-name checks;
+- byte identity across delivery targets;
+- required dry-run and approval instructions;
+- one MCP server only;
+- exact environment URL;
+- no secret, header, token, source, test, symlink, nested archive, local
+  server, or MCPB in the Codex artifact;
+- deterministic rebuild.
+
+### Documentation
+
+Create `CODEX_DELIVERY.md`, bundle tables, installation overview, limitations,
+and duplicate-server warnings.
+
+### Review
+
+Original Sol agent plus `workflow-tester`.
+
+### Exit
+
+A local, deterministic, sandbox-labelled Codex plugin and bundle set passes all
+artifact tests.
+
+## B3: Codex install, update, uninstall, and clean-profile acceptance
+
+### Objective
+
+Prove the complete Codex lifecycle without mutating a real user profile during
+automated tests.
+
+### Sol assignment
+
+Define installation through a marketplace, direct MCP fallback, standalone
+skills, IDE fallback, conflict detection, update, disable, uninstall, remote
+disconnect, and provider revocation semantics.
+
+### Tera ownership
+
+- clean `CODEX_HOME` fixtures;
+- lifecycle scripts;
+- release manifest;
+- lifecycle tests;
+- Codex install and troubleshooting documentation.
+
+### Automated matrix
+
+1. Empty profile discovers the marketplace.
+2. Install adds the intended skills and one MCP server.
+3. No package file requests a secret.
+4. Update replaces managed content without duplication.
+5. Disable and enable preserve intended state.
+6. Uninstall removes only plugin-managed state.
+7. Unrelated profile data remains unchanged.
+8. Reinstall succeeds.
+9. Existing same-name MCP produces a clear conflict.
+10. Offline MCP produces actionable guidance.
+11. Selective and full skill installs are deterministic.
+
+### External acceptance
+
+Deferred to B8:
+
+- current Codex version;
+- `codex mcp login`;
+- Cloudflare Access;
+- tool discovery;
+- `/pipedrive`;
+- first safe read.
+
+### Documentation
+
+Explain the difference between plugin uninstall, `/pipedrive` disconnect,
+Access removal, and provider-side Pipedrive revocation.
+
+### Review
+
+Original Sol agent plus `workflow-tester`.
+
+### Exit
+
+Install, update, disable, uninstall, and reinstall pass in a clean isolated
+profile with no residue or duplicate connector.
+
+## B4: Impeccable UI and onboarding
+
+### Objective
+
+Create a coherent, accessible, server-rendered product UI for Codex onboarding,
+connection, settings, administration, confirmation, errors, and recovery.
+
+### Required design phases
+
+1. Create and approve `DESIGN.md` with `$impeccable document`.
+2. Run one shape flow for end-user onboarding, `/pipedrive`, and `/settings`.
+3. Run a second shape flow for `/admin/pipedrive` and confirmation pages.
+4. Resolve image probes and north-star comparisons.
+5. Obtain explicit user approval for both briefs.
+6. Open the mutation gate and launch the Tera writer.
+
+### Sol assignment
+
+Analyze user journeys, safety language, content ranges, error and reconnect
+states, administration density, CSP constraints, accessibility, and the
+boundary between current V1 and future V1.1 UI.
+
+### Tera ownership
+
+- shared server-rendered page shell and style tokens;
+- `userConnectionPage.ts`;
+- `settingsPage.ts`;
+- `pipedriveAdminPage.ts`;
+- confirmation surfaces;
+- browser and accessibility fixtures;
+- approved plugin visual metadata.
+
+### UI invariants
+
+- no client JavaScript without separate justification and CSP review;
+- nonce-bound CSS and existing fail-closed security remain intact;
+- restrained product color strategy using OKLCH;
+- system-font product typography;
+- no pure black or white;
+- no decorative motion, glassmorphism, gradient text, side stripe, artificial
+  card grids, or non-standard form affordances;
+- clear current company and next safe action;
+- read-only default remains visible;
+- destructive and authority-increasing consequences precede confirmation;
+- cancellation and recovery routes are explicit.
+
+### Validation
+
+- HTML escaping and CSP;
+- headings, landmarks, labels, descriptions, status semantics;
+- keyboard-only navigation;
+- focus and touch targets;
+- axe WCAG AA;
+- contrast;
+- zoom at 200 percent;
+- mobile, tablet, and desktop reflow;
+- long domain, company, and email fixtures;
+- empty, success, error, reconnect, disconnected, and dense-admin states;
+- existing PII and token leakage assertions;
+- Impeccable critique, audit, remediation, polish, and final audit.
+
+### Review
+
+Original Sol agent plus `accessibility-tester`.
+
+### Exit
+
+Both briefs are accepted, browser evidence passes, accessibility findings are
+closed, security is unchanged, and UI documentation matches the implementation.
+
+## B5: production topology and release boundary
+
+### Objective
+
+Make sandbox and production mechanically distinct and reproducible.
+
+### Sol assignment
+
+Choose and document:
+
+- separate Wrangler environments or config files;
+- Worker names and hostnames;
+- Access applications and audiences;
+- Pipedrive applications and callbacks;
+- Durable Object namespaces and migrations;
+- variable and secret boundaries;
+- manual protected deployment;
+- artifact provenance.
+
+### Tera ownership
+
+- Wrangler configuration;
+- environment validators;
+- CI and release workflows;
+- provenance manifest;
+- configuration tests;
+- promotion and rollback documentation.
+
+### Requirements
+
+- no environment depends on ambiguous `keep_vars` behavior;
+- production artifacts contain no sandbox URL;
+- sandbox artifacts contain no production URL;
+- secrets are referenced by name only;
+- CI does not automatically deploy production;
+- release records include Git SHA, lockfile hash, Node/Wrangler versions,
+  Worker dry-run bundle hash, client hashes, and target environment;
+- deployment requires a protected manual gate.
+
+### Validation
+
+- Worker dry-run for each environment;
+- config schema and binding validation;
+- migration validation;
+- environment URL scans;
+- reproducible clean build;
+- provenance and artifact hash comparison.
+
+### Review
+
+Original Sol agent plus `devops-automator`.
+
+### Exit
+
+Sandbox and production cannot share a hostname, callback, audience, namespace,
+or client artifact accidentally.
+
+## B6: security hardening, capacity, and rotation
+
+### Objective
+
+Close remaining abuse, key, secret, administrator, and capacity risks before
+live acceptance.
+
+### Sol assignment
+
+Produce a focused threat model for:
+
+- request size and resource exhaustion;
+- per-user, tenant, IP, and provider rate limits;
+- concurrency and load shedding;
+- registry capacity;
+- admin compromise;
+- OAuth client-secret compromise;
+- encryption-key compromise and planned rotation;
+- HMAC rotation and correlation epochs;
+- Access issuer and audience cutover.
+
+### Tera ownership
+
+- input and body limits;
+- stable redacted rate-limit errors;
+- key validation;
+- audit-key epoch;
+- optional encryption `kid` and keyring selected in B0;
+- security tests;
+- rotation and compromise runbooks.
+
+### Validation
+
+- missing or invalid keys fail closed;
+- unknown and retired key identifiers;
+- previous/current key behavior when enabled;
+- audit epoch behavior;
+- oversized requests;
+- bounded concurrency and rate limiting;
+- Pipedrive 429 handling;
+- exact admin denial;
+- no secret in logs, errors, or evidence;
+- full tenancy, race, and security tests;
+- full `npm run check`.
+
+### Review
+
+Original Sol agent plus `security-specialist`.
+
+### Exit
+
+Abuse controls and compromise recovery are tested, and the selected rotation
+posture is explicit.
+
+## B7: durable audit, observability, operations, and legal readiness
+
+### Objective
+
+Remove the explicit production blocker caused by console-only audit events and
+unowned operations.
+
+### Sol assignment
+
+Define:
+
+- Logpush or SIEM destination;
+- retention, access, deletion, immutability, and costs;
+- audit schema and environment/version fields;
+- export freshness;
+- dashboards and alerts;
+- SLO, RTO, RPO;
+- incident and offboarding workflows;
+- customer support and legal artifacts.
+
+### Tera ownership
+
+- audit schema and validation;
+- export configuration templates;
+- alert and dashboard definitions where code-manageable;
+- validation scripts;
+- runbooks and evidence templates;
+- privacy, support, and offboarding drafts.
+
+### Minimum signals
+
+- Access and JWKS failures;
+- OAuth starts, callbacks, refresh, reconnect, and invalid grants;
+- tenant admission and registry failures;
+- authority increases and reductions;
+- approval, suspension, resume, and disconnect;
+- Durable Object error, latency, alarm delay, and purge;
+- Pipedrive 401, 403, 429, 5xx, and timeout;
+- route latency and outcome;
+- export freshness and parse failure;
+- registry capacity;
+- request, CPU, storage, and provider cost.
+
+### Validation
+
+Local:
+
+- one schema-valid audit for every authority-changing action;
+- redacted success, denial, and error events;
+- observable export failure;
+- bounded identifiers and versions;
+- no email, token, JWT, secret, or CRM payload.
+
+Sandbox, under `SW` authorization:
+
+1. produce one anonymous denial;
+2. perform one safe read;
+3. change one permission;
+4. suspend and resume one sandbox tenant;
+5. find all events by request ID;
+6. trigger and acknowledge export-freshness and provider-error alerts.
+
+### Review
+
+Original Sol agent plus `compliance-legal`; the parent additionally verifies
+security-sensitive findings.
+
+### Exit
+
+Audit is durable and queryable, alert routing is proven, owners are named, and
+legal or privacy blockers are closed.
+
+## B8: complete sandbox and Codex acceptance
+
+### Objective
+
+Prove V1 isolation, lifecycle, UI, Codex delivery, and operations with two real
+users and two distinct Pipedrive companies.
+
+### Entry
+
+- B1 through B7 complete;
+- Pipedrive application installable in two distinct non-production companies;
+- two named test identities;
+- safe expected records;
+- durable audit active;
+- candidate and v2-compatible rollback recorded;
+- exact `SR` and `SW` authorization.
+
+### Sol assignment
+
+Finalize the evidence plan, safe record scope, concurrency recipe, negative
+cross-tenant probes, stop conditions, and rollback triggers.
+
+### Tera ownership
+
+- acceptance scripts;
+- Codex prompt/evaluation corpus;
+- redacted evidence template;
+- local fixtures only.
+
+The parent performs live steps. Defects return to the owning earlier block and
+must requalify all affected gates.
+
+### Acceptance sequence
+
+1. `/healthz` reports Streamable HTTP.
+2. Anonymous `/mcp` is denied and audited.
+3. A clean Codex profile installs and authenticates the MCP.
+4. User A connects Company A.
+5. User B connects Company B.
+6. Each verifies `/pipedrive` and `pipedrive_connection_check`.
+7. Each performs one known read.
+8. Known reads run interleaved and concurrently.
+9. Cross-tenant selection attempts through all controllable surfaces fail.
+10. Failed replacement preserves the current connection.
+11. New connections start read-only.
+12. Writes require explicit elevation and retain dry-run by default.
+13. One disposable sandbox write runs only if exactly authorized.
+14. Refresh is coalesced.
+15. Suspension during OAuth, callback, refresh, and MCP fails closed.
+16. Resume restores only retained valid connections.
+17. Self-disconnect affects one user.
+18. Force-disconnect affects one selected user.
+19. Admin pages expose only bounded approved metadata.
+20. The inactivity alarm proves purge behavior within the operational window.
+21. All seven Codex skills trigger and remain within their safety contracts.
+22. Update, disable, uninstall, and reinstall remain clean.
+
+### Evidence
+
+Keep only hashes, version IDs, request IDs, pseudonymous users, expected company
+IDs, bounded record IDs, timestamps, audit receipts, and pass/fail results.
+
+### Review
+
+Original Sol agent plus `api-tester` or `workflow-tester`.
+
+### Exit
+
+Every V1 acceptance criterion passes. Any cross-tenant observation freezes the
+rollout and opens an incident; it is never treated as an ordinary retry.
+
+## B9: personal production canary
+
+### Objective
+
+Let Alexandre use Codex against Pezzos Labs before any customer is admitted.
+
+### Entry
+
+- B8 complete;
+- go-live packet accepted;
+- exact `PW` authorization for each production action;
+- production rollback target recorded;
+- incident and global-freeze paths staffed.
+
+### Sol assignment
+
+Review the exact candidate, config, audit, rollback, smoke sequence, observation
+window, and stop thresholds.
+
+### Tera ownership
+
+Only local smoke scripts, evidence templates, or in-scope defect fixes.
+
+### Parent-controlled production sequence
+
+1. Rebuild the accepted source and compare provenance.
+2. Configure the separate production Worker, DNS, Access, secrets, bindings,
+   audit, and Pipedrive application.
+3. Deploy and record the resulting version.
+4. Verify health, anonymous denial, Access, audit, admin, and empty tenant state.
+5. Allow only Alexandre.
+6. Approve only Pezzos Labs.
+7. Install the private staged Codex artifact.
+8. Connect Alexandre's own Pipedrive identity.
+9. Verify company, identity, connection, and one safe read.
+10. Keep Writes, Deletes, and Mailbox disabled.
+11. Exercise suspension and disconnect.
+12. Observe for the B0-approved canary window.
+
+### Stop
+
+Stop and roll back or freeze on version mismatch, missing audit, wrong identity
+or company, unexpected write authority, sensitive log content, repeated refresh
+failure, unexplained tenant state, or incompatible rollback.
+
+### Review
+
+Original Sol agent plus `workflow-tester`.
+
+### Exit
+
+Pezzos Labs is stable in read-only production use, telemetry is healthy, and
+rollback remains available.
+
+## B10: publish Codex delivery and onboard the first customer
+
+### Objective
+
+Publish the accepted production artifact and onboard one customer without a
+customer-specific Worker, token, or code fork.
+
+### Entry
+
+- B9 complete;
+- support coverage active;
+- exact publication and customer authorization;
+- accepted production artifact and hashes.
+
+### Sol assignment
+
+Review release immutability, customer expectations, permissions, validation
+records, support, privacy, offboarding, and V1 limitations.
+
+### Tera ownership
+
+- release orchestration;
+- manifests and hashes;
+- release notes;
+- English and French onboarding;
+- customer checklist;
+- troubleshooting and offboarding.
+
+### Publication
+
+- production URL only;
+- immutable versioned artifact;
+- verified marketplace or private distribution;
+- fresh-profile install from the published source;
+- no sandbox, secret, local server, or duplicate Pipedrive connector.
+
+### Customer sequence
+
+1. Admit the exact user or group through Access.
+2. Approve the exact company domain.
+3. Install and authenticate Codex.
+4. Complete personal Pipedrive OAuth.
+5. Verify the displayed company and identity.
+6. Perform a known read-only query.
+7. Repeat Pezzos/customer interleaved isolation.
+8. Explain permissions, dry-run, support, suspension, and offboarding.
+9. Exercise safe suspension or disconnect where contractually agreed.
+10. Keep Writes, Deletes, and Mailbox disabled through the first customer
+    canary unless separately authorized.
+
+### Review
+
+Original Sol agent plus `end-user-critic`.
+
+### Exit
+
+The first customer confirms the correct identity, company, records, read-only
+default, support route, and offboarding expectations.
+
+## B11: stabilize, close V1, and decide general availability
+
+### Objective
+
+Convert the bounded pilot into a supportable production service and close the
+V1 release.
+
+### Sol assignment
+
+Analyze the agreed observation window across errors, latency, refresh, alarms,
+audit, costs, support, capacity, incidents, and customer feedback.
+
+### Tera ownership
+
+Only accepted reliability, instrumentation, documentation, packaging, and
+regression fixes.
+
+### Validation
+
+- no cross-tenant anomaly;
+- no unresolved high-severity finding;
+- refresh and alarms healthy;
+- alert routing proven;
+- costs within budget;
+- support and offboarding workable;
+- registry capacity below the accepted threshold;
+- rollback and incident paths still available.
+
+### Final review waves
+
+Run with no active writer.
+
+Wave A:
+
+- `security-specialist`;
+- `backend-architect`;
+- `api-tester`.
+
+Wave B:
+
+- `workflow-tester`;
+- `accessibility-tester`;
+- `documentation-steward`.
+
+Use separate read-only review envelopes of at most three agents. Accepted
+findings return to one serial Tera remediation pass, followed by both relevant
+review waves and the full verification gate.
+
+### Legacy singleton
+
+Singleton purge requires a separate `DW` authorization. Before purge:
+
+- prove all intended users use per-user credentials;
+- prove no route or fallback reads the singleton;
+- ensure no allowed rollback can restore singleton behavior;
+- record the destructive scope and recovery consequence.
+
+### Exit
+
+The operator explicitly chooses limited pilot, a new cohort, or general
+availability. V1.1 starts only after this boundary or another explicit product
+decision.
+
+## B12: V1.1 diagnostic, capabilities, and guided repair
+
+### Objective
+
+Implement the first approved V1.1 slice without changing the V1 authority
+model.
+
+### Sol assignment
+
+Design user-scoped diagnostic snapshots, environment classification,
+capability evidence, provider check rate limiting, guided repair, privacy,
+connection revisions, and inactivity-clock semantics.
+
+### Tera ownership
+
+- user-scoped diagnostic and capability state;
+- cache and one-per-minute live provider check;
+- production/sandbox configuration;
+- repair codes and allowlisted actions;
+- invalidation after reconnect;
+- tests and Codex skill updates.
+
+### Validation
+
+- cross-user and cross-company isolation;
+- freshness and stale behavior;
+- missing scope or suite;
+- provider outage and 429;
+- repair ownership;
+- no secret or PII;
+- diagnostic and capability probes do not postpone token cleanup.
+
+### UI/UX
+
+Any diagnostic or environment UI requires a new Impeccable shape, approval,
+craft, audit, and polish cycle.
+
+### Review
+
+Original Sol agent plus `api-tester`.
+
+### Exit
+
+The slice passes its local and sandbox acceptance and receives separate release
+authorization.
+
+## B13: V1.1 account reminder, duplicate protection, and safe links
+
+### Objective
+
+Make real writes safer through account context, durable replay protection,
+bounded duplicate detection, uncertain-outcome reconciliation, and verified
+links.
+
+### Sol assignment
+
+Design identity revision, reminder precedence, approval binding, operation
+ledger, 24-hour retention, replay, override, uncertain state, reconciliation,
+and safe route templates.
+
+### Tera ownership
+
+- user and domain reminder state;
+- approval invalidation;
+- operation ledger;
+- exact replay;
+- probable duplicate evidence;
+- uncertain reconciliation;
+- cleanup;
+- allowlisted Pipedrive links;
+- tests and skill synchronization.
+
+### Validation
+
+- domain reminder cannot be weakened by the user;
+- reconnect invalidates pending approval;
+- exact retry creates one record;
+- uncertain result is never blindly repeated;
+- override requires a new preview and approval;
+- state cannot cross user, tenant, identity, or workflow step;
+- hostile host, path, and record IDs cannot create a link;
+- cleanup occurs after 24 hours.
+
+### UI/UX
+
+Reminder, warning, settings, and repair surfaces require an approved Impeccable
+brief and full completion cycle.
+
+### Review
+
+Original Sol agent plus `security-specialist`.
+
+### Exit
+
+The slice passes sandbox write-safety acceptance and receives separate release
+authorization.
+
+## B14: V1.1 business workflows, hygiene, and Codex skills
+
+### Objective
+
+Deliver the morning brief, meeting preparation, controlled meeting report, and
+read-only pipeline hygiene audit.
+
+### Sol assignment
+
+Design deterministic ranking, capability omissions, exact batch approval,
+partial failure, uncertain step reconciliation, 24-hour resume, expiry,
+bounded pagination, coverage, domain thresholds, and skill contracts.
+
+### Tera ownership
+
+- morning brief;
+- meeting preparation;
+- controlled meeting report;
+- workflow and step state;
+- resume and expiry;
+- hygiene rules and cursors;
+- threshold and mapping configuration;
+- Codex skills and bundle synchronization;
+- tests and documentation.
+
+### Validation
+
+- briefs and audits never write;
+- ordering and reason codes are deterministic;
+- missing capability differs from empty data;
+- approval covers exactly one displayed batch;
+- resume never repeats a completed step;
+- expired state requires new reads and preview;
+- partial coverage is explicit;
+- cursors, findings, and state remain isolated;
+- custom-field behavior requires explicit mapping;
+- clean-profile Codex and package hashes pass.
+
+### UI/UX
+
+Configuration and operator workflows require a new Impeccable shape and
+approval. Skill-only output copy is reviewed for clarity and safety.
+
+### Review
+
+Original Sol agent plus `workflow-tester`.
+
+### Exit
+
+V1.1 passes full local, sandbox, Codex, accessibility, security, and release
+acceptance, followed by separately authorized canary and publication.
+
+## Evidence record requirements
+
+Every completed block records:
+
+- block ID and completion timestamp;
+- source commit before and after;
+- changed paths;
+- Sol packet reference;
+- Tera writer identity and model;
+- reviewer identities and roles;
+- targeted and full commands;
+- pass/fail and known skips;
+- documentation updated;
+- user-owned decisions consumed;
+- external effects performed, if separately authorized;
+- remaining risks;
+- next block.
+
+Evidence must be concise, redacted, and reproducible. Raw agent transcripts are
+not canonical evidence.
+
+## Orchestrator completion behavior
+
+The orchestrator continues from one completed local block to the next without
+asking for routine implementation choices. It pauses only when:
+
+- a user-owned decision is unresolved;
+- an Impeccable shape brief requires user confirmation;
+- a live, credentialed, publish, customer, costly, destructive, or irreversible
+  action requires exact authority;
+- repository state is ambiguous or overlaps user work;
+- correctness or security cannot be proven;
+- a stop condition in the current block is triggered.
+
+When paused, it reports:
+
+- completed blocks and commits;
+- current block;
+- exact blocker;
+- evidence already collected;
+- the smallest decision or authorization needed;
+- actions that remain excluded.
