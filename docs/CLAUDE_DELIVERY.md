@@ -24,17 +24,17 @@ This hostname and the connected Pipedrive tenant are for the sandbox pilot.
 Publishing a production artifact or changing the hostname is a separate
 operator-controlled promotion.
 
-This repository change neither inspected nor changed the Worker currently live
-at that hostname. Verify its active deployment version before onboarding: the
-hardcoded URL does not prove that the new multi-tenant code has been deployed.
+Commit `c7398c9` was deployed and smoke-tested at that hostname as Worker
+version `d0b493c2-7cbe-411d-af29-e7d08562c28a`. Verify the active deployment
+before onboarding: the hardcoded URL does not prove which version is currently
+serving traffic.
 
-The checked-in Worker now isolates one Pipedrive OAuth connection per Access
-subject and one permission policy per `(Access sub, company_id)`. The global
-platform administrator approves, suspends, and resumes Pipedrive company
-subdomains but never receives a user's OAuth token. This code is locally
-validated only: do not distribute it as deployed multi-tenant behavior until
-the canonical [deployment gate](REMOTE_MCP_CLOUDFLARE.md#implemented-tenancy-boundary-and-deployment-gate)
-has passed.
+The checked-in Worker isolates one Pipedrive OAuth connection per Access subject
+and one permission policy per `(Access sub, company_id)`. The global platform
+administrator approves, suspends, and resumes Pipedrive company subdomains but
+never receives a user's OAuth token. Real two-user/two-company OAuth, deployed
+suspension, client rollout, and production promotion remain behind the canonical
+[deployment gate](REMOTE_MCP_CLOUDFLARE.md#implemented-tenancy-boundary-and-deployment-gate).
 
 The remote Worker owns Pipedrive OAuth storage and refresh. Each Claude user
 authenticates through Cloudflare Access and receives only their effective tool

@@ -99,16 +99,16 @@ export function remoteOAuthErrorMessage(code: RemoteOAuthErrorCode): string {
     return "La confirmation d’administration a expiré ou a déjà été utilisée. Rechargez la page.";
   }
   if (code === "oauth_authorization_denied") {
-    return "L’autorisation Pipedrive a été refusée. Recommencez depuis la page d’administration si vous souhaitez connecter le serveur.";
+    return "L’autorisation Pipedrive a été refusée. Recommencez depuis votre page de connexion Pipedrive si vous souhaitez connecter votre compte.";
   }
   if (code === "oauth_state_invalid" || code === "oauth_code_invalid") {
-    return "La session OAuth a expiré ou a déjà été utilisée. Recommencez depuis la page d’administration.";
+    return "La session OAuth a expiré ou a déjà été utilisée. Recommencez depuis votre page de connexion Pipedrive.";
   }
   if (code === "oauth_redirect_invalid") {
     return "L’adresse de callback OAuth est invalide. Vérifiez la configuration du domaine Worker.";
   }
   if (code === "pipedrive_reconnect_required" || code === "oauth_material_invalid") {
-    return "La connexion Pipedrive doit être renouvelée depuis la page d’administration.";
+    return "Votre connexion Pipedrive doit être renouvelée depuis votre page de connexion Pipedrive.";
   }
   if (code === "oauth_encryption_key_invalid" || code === "oauth_encryption_failed") {
     return "La configuration de chiffrement OAuth est invalide. Vérifiez la clé du Worker avant de recommencer.";

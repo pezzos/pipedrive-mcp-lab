@@ -201,6 +201,31 @@ local repository validation.
 
 Before production promotion, exercise the following with non-production data:
 
+Before any live step, record the exact candidate and rollback evidence:
+
+```sh
+git rev-parse HEAD
+shasum -a 256 package-lock.json
+WRANGLER_SEND_METRICS=false npm run check
+./node_modules/.bin/wrangler --version
+shasum -a 256 dist/worker/worker.js
+```
+
+The live operator then records the active Worker version and one previously
+healthy rollback version from `npx wrangler deployments list`. Record variable
+and secret names, never their values. The candidate record must therefore
+contain the Git commit, lockfile hash, local dry-run Worker bundle hash, local
+Wrangler version, deployed candidate version, rollback version, test identities,
+expected companies, and final go/no-go decision. `wrangler deploy` rebundles
+from source, so the dry-run hash is a reproducibility reference for the recorded
+inputs, not proof of byte identity with the uploaded Worker.
+
+The two-company criterion is literal. If the Pipedrive application is still
+`DRAFT` and cannot be installed in a second company, stop before the live
+recipe. Use a second installable non-production company or obtain separate
+authorization for Pipedrive application promotion. Two users connected to the
+same developer sandbox do not satisfy the approved two-company acceptance.
+
 1. `/healthz` returns `200` with `transport: "streamable-http"`, then
    `pipedrive_connection_check` confirms a live read-only Pipedrive request.
 2. An unauthenticated `/mcp` request is rejected and produces a redacted audit
@@ -218,6 +243,11 @@ Before production promotion, exercise the following with non-production data:
 9. Two Access users connected to different approved sandbox companies can read
    concurrently without cross-user, cross-company, callback, policy, refresh,
    or disconnect leakage.
+   Run `pipedrive_connection_check` for User A, then User B, then one known
+   read-only query for both users concurrently. For each user, compare the
+   current-user result and returned record identifiers with the company shown
+   on `/pipedrive`. Retain request IDs and bounded expected identifiers only;
+   do not copy CRM payloads, emails, assertions, or tokens into the evidence.
 10. A forced per-user token refresh is coalesced. Suspension during OAuth,
     refresh, or MCP fails closed before and after provider paths; resume
     restores retained connections without sharing credentials.
@@ -238,16 +268,23 @@ Before every sandbox deployment, record the currently active version with
 `npx wrangler deployments list`. If the new Worker regresses, run
 `npx wrangler rollback <version-id>` with that captured healthy version, then
 repeat `/healthz`, the anonymous `/mcp` rejection, the protected admin page,
-and two-user isolation checks. A Worker rollback does not restore deleted OAuth tokens and must not
-change Access, rotate secrets, or uninstall the Pipedrive application.
+and two-user isolation checks. The rollback target must already use the v2
+`TENANT_REGISTRY`, `USER_CONNECTION`, and `USER_POLICY` topology; never roll
+back to a singleton credential path. A Worker rollback does not reverse Durable
+Object migrations or restore deleted OAuth tokens. It must not change Access,
+rotate secrets, or uninstall the Pipedrive application.
 
 ## Production Promotion
 
-Promote the same verified commit and Worker artifact. Replace the sandbox
-Pipedrive OAuth application values with the production application values,
-review Access membership and durations, then repeat allowlist approval,
-per-user connections, and acceptance smoke tests against deliberately selected
-production records.
+Promote from the same verified source commit, lockfile, and Wrangler version.
+Rebuild from those exact inputs and compare the local dry-run Worker bundle hash
+with the accepted sandbox reference before deployment. Because `wrangler
+deploy` rebundles from source, this comparison proves reproducible local inputs,
+not byte identity with the uploaded Worker. Record the resulting production
+version after deployment. Replace the sandbox Pipedrive OAuth application values
+with the production application values, review Access membership and durations,
+then repeat allowlist approval, per-user connections, and acceptance smoke tests
+against deliberately selected production records.
 
 A private Pipedrive application in `DRAFT` can be tested only in its developer
 sandbox. Changing it to live is a separate manual and irreversible promotion;

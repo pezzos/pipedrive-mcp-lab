@@ -221,5 +221,6 @@ Mailbox draft creation and email sending are not supported.
 
 Remote clients use the deployed Streamable HTTP URL ending in `/mcp` instead
 of a local `mcpServers` command. Cloudflare Access handles the client login;
-the admin-owned Pipedrive OAuth grant and per-user permissions are described in
+each user owns their Pipedrive OAuth grant, while the platform administrator
+controls company admission and suspension as described in
 [Remote MCP On Cloudflare](REMOTE_MCP_CLOUDFLARE.md).

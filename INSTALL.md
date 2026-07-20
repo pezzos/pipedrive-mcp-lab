@@ -7,8 +7,10 @@ https://pipedrive-mcp-sandbox.pezzoslabs.com/mcp
 ```
 
 The remote connector works through Cloudflare Access. Users never enter a
-Pipedrive token: an administrator connects the sandbox Pipedrive tenant and the
-service refreshes that OAuth grant.
+Pipedrive token. The platform administrator approves the intended Pipedrive
+company domain, then each Access user opens `/pipedrive` and completes OAuth
+with their own Pipedrive identity. The service stores and refreshes that user's
+encrypted grant only.
 
 Choose exactly one installation path. Do not enable the remote connector and
 the local `.mcpb` Desktop Extension at the same time: both expose
@@ -17,7 +19,14 @@ the local `.mcpb` Desktop Extension at the same time: both expose
 Before either path, the operator must add the user's exact email address or
 identity-provider group to the Cloudflare Access **Allow** policy for this
 application. Access is the per-user login gate in front of the MCP server; it
-is separate from the shared Pipedrive OAuth connection.
+does not approve a Pipedrive company or create that user's Pipedrive OAuth
+connection.
+
+> **Pilot gate:** the sandbox Worker has been deployed and smoke-tested, but
+> two-user/two-company OAuth and deployed suspension acceptance are still
+> required before client rollout. Confirm the active Worker version and the
+> [remaining sandbox acceptance](docs/REMOTE_MCP_CLOUDFLARE.md#sandbox-acceptance)
+> before handing out either installation path.
 
 ## Claude Free: standalone skills
 
@@ -60,6 +69,21 @@ connector.
 Team and Enterprise owners can distribute the plugin through the organization
 marketplace. Each user still authenticates individually through Access.
 
+## Connect your Pipedrive identity
+
+After the connector has completed Cloudflare Access authentication:
+
+1. The platform administrator approves the intended Pipedrive subdomain at
+   `https://pipedrive-mcp-sandbox.pezzoslabs.com/admin/pipedrive`.
+2. The user opens
+   [`https://pipedrive-mcp-sandbox.pezzoslabs.com/pipedrive`](https://pipedrive-mcp-sandbox.pezzoslabs.com/pipedrive),
+   enters that approved subdomain, and completes OAuth with their own Pipedrive
+   identity.
+3. The user verifies the connected company shown on `/pipedrive`. Do not infer
+   it from the OAuth success screen alone.
+4. The user opens `/settings` and confirms that the new user-company pair starts
+   read-only.
+
 ## Supported pilot surfaces
 
 | Surface | Free standalone skills | Paid plugin |
@@ -84,16 +108,18 @@ Cowork Web only when each beta surface is enabled for the target pilot account
 or organization:
 
 ```text
-Validate Pipedrive MCP without writing anything. First run
-pipedrive_health_check, then pipedrive_get_current_user. Use only pipedrive_*
-tools.
+Validate my Pipedrive MCP connection without writing anything. First run
+pipedrive_connection_check, then pipedrive_get_current_user and one known
+read-only query. Report the current user and whether the returned records match
+the company shown on /pipedrive. Use only pipedrive_* tools.
 ```
 
 Expected result:
 
 - Claude can see and call the `pipedrive_*` tools;
 - Access authentication completes for the current user;
-- `pipedrive_get_current_user` reaches the sandbox Pipedrive account;
+- `pipedrive_connection_check` accepts that user's OAuth credential;
+- the current user and known records match the company shown on `/pipedrive`;
 - the user starts read-only.
 
 Open

@@ -58,7 +58,7 @@ Mailbox reads may return sensitive email metadata or body content. Body reads
 require `include_body=true`; the default is `false`. Some Pipedrive accounts may
 require `PIPEDRIVE_ACCESS_TOKEN` with Mailbox scopes instead of an API token.
 The local server accepts externally supplied OAuth tokens. The remote Worker
-obtains and refreshes one encrypted tenant OAuth grant.
+obtains and refreshes one encrypted OAuth grant per verified Access subject.
 
 ## Activity Person Links
 

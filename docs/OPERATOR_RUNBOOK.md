@@ -84,7 +84,7 @@ Add `PIPEDRIVE_ENABLE_WRITES=true` only when mail linking is required.
 
 Some accounts may require OAuth scopes for Mailbox. The local server accepts an
 externally supplied `PIPEDRIVE_ACCESS_TOKEN`; the remote Worker obtains and
-refreshes the tenant OAuth grant.
+refreshes the current user's encrypted OAuth grant.
 
 Mailbox draft creation, sending, and replies are not supported by this MCP
 version. To create an email to-do, use `pipedrive_create_activity` with
@@ -137,6 +137,11 @@ limited to its developer sandbox. Changing it to live is manual, irreversible,
 and requires explicit authorization; a Worker deployment never performs or
 authorizes that promotion.
 
+The approved V1 acceptance requires two users connected to two different
+companies. If the application cannot be installed in a second non-production
+company, stop the live acceptance; two users in the same developer sandbox are
+not a substitute.
+
 When the application is installable in the target company, the platform admin
 approves its subdomain, then each intended user connects from `/pipedrive` and
 verifies the returned company before running `pipedrive_connection_check` and
@@ -147,9 +152,11 @@ a known read. Do not infer the account from an OAuth success screen alone.
 Before deploying a Worker update, capture `npx wrangler deployments list`. If
 smoke tests regress, run `npx wrangler rollback <version-id>` with the captured
 healthy version and repeat `/healthz`, anonymous `/mcp`, Access protection, the
-admin page, and two-user isolation. A Worker rollback does not restore locally deleted OAuth tokens
-and must not change Access, rotate secrets, or uninstall the Pipedrive
-application.
+admin page, and two-user isolation. The rollback target must already be
+compatible with the v2 `TENANT_REGISTRY`, `USER_CONNECTION`, and `USER_POLICY`
+topology; never restore a singleton credential path. A Worker rollback does not
+reverse Durable Object migrations or restore locally deleted OAuth tokens and
+must not change Access, rotate secrets, or uninstall the Pipedrive application.
 
 ## Private Package Delivery
 

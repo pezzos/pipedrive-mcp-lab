@@ -176,9 +176,11 @@ This platform behavior was checked on 2026-07-16 against Anthropic's
 ## Remote Connector Errors
 
 > The routes and error codes below describe the checked-in multi-tenant Worker.
-> This repository change did not inspect or change the live deployment. Verify
-> the active Worker version before assuming these procedures apply; see the
-> [deployment gate](REMOTE_MCP_CLOUDFLARE.md#implemented-tenancy-boundary-and-deployment-gate).
+> Commit `c7398c9` was deployed and smoke-tested on the sandbox as version
+> `d0b493c2-7cbe-411d-af29-e7d08562c28a`, but later local changes are not
+> implicitly deployed. Verify the active Worker version before assuming these
+> procedures apply; see the [deployment
+> gate](REMOTE_MCP_CLOUDFLARE.md#implemented-tenancy-boundary-and-deployment-gate).
 
 Use `pipedrive_connection_check` for an end-to-end read-only verification. It
 calls Pipedrive's current-user endpoint and reports only non-sensitive status

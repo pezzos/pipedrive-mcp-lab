@@ -13,10 +13,16 @@ Cowork Mobile is required when Anthropic's beta rollout has reached the test
 account. Cowork Web must also be validated on the target account or organization
 before it is promised to a client.
 
-After installation, each user completes Cloudflare Access authentication. The
-plugin contains no Pipedrive token, OAuth client secret, Access token, or local
-server. Use only the `pipedrive_*` tools; Claude's official Pipedrive connector
-does not share this package's safety defaults.
+> **Pilot gate:** the sandbox Worker has been deployed and smoke-tested, but
+> two-user/two-company OAuth and deployed suspension acceptance remain required
+> before client rollout. Verify the active Worker version and complete the
+> installation guide's remaining acceptance steps before onboarding.
+
+After installation, each user completes Cloudflare Access authentication, then
+connects their own approved Pipedrive company at `/pipedrive`. The plugin
+contains no Pipedrive token, OAuth client secret, Access token, or local server.
+Use only the `pipedrive_*` tools; Claude's official Pipedrive connector does not
+share this package's safety defaults.
 
 Do not activate the local `.mcpb` Desktop Extension or a legacy
 `claude_desktop_config.json` Pipedrive entry at the same time. Those alternative

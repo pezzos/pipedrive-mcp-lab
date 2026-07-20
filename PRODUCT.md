@@ -9,7 +9,7 @@
   administration, user permissions, isolation, and migration
 - **Current implementation baseline:** Multi-tenant per-user connections,
   tenant admission, isolated policies, administration, and migration-safe
-  Durable Object routing on branch `codex/fix-pipedrive-connection-check`
+  Durable Object routing integrated on `main` at `8dcb634`
 - **Documentation status:** `docs/REMOTE_MCP_CLOUDFLARE.md` and the operator
   documentation describe the checked-in multi-tenant boundary; real client
   onboarding still requires two-user/two-company OAuth acceptance and deployed
