@@ -1,8 +1,40 @@
 # Operator Runbook
 
-This runbook covers local and private-client operation of `pipedrive-mcp`.
+This runbook covers local and named-private-pilot operation of `pipedrive-mcp`.
 For the Cloudflare Worker, Access, and Pipedrive OAuth procedure, use the
 [remote MCP runbook](REMOTE_MCP_CLOUDFLARE.md).
+
+## B0 private-pilot operating constraints
+
+The pilot is Pezzos Labs plus one authorized customer, not a public service.
+Its first-class customer surfaces are the unified ChatGPT desktop app (with
+Codex) and ChatGPT Web; Codex CLI/IDE are technical/operator fallbacks.
+Existing Claude delivery is compatibility-only and does not establish a new
+customer surface or acceptance promise.
+
+Alexandre is the sole temporary production administrator and owner of support,
+incident command, and offboarding. This is an explicit concentration risk. No
+B7--B10 live, credentialed operation or rollout may begin until a distinct
+named backup operator is accepted and their access/recovery is validated.
+
+Production audit is specified as Cloudflare Logpush to a dedicated production
+R2 bucket with 90-day retention, pipeline-only writes, controlled
+immutability/versioning, automatic expiry deletion, and a documented legal
+hold. While no backup exists, audit reads are Alexandre-only. Critical alerts
+email Alexandre only, with no 24/7 promise; a security or tenancy alert freezes
+rollout until acknowledged. The observability allocation is at most EUR 10
+excluding tax/month, and the global infrastructure-plus-observability cap is
+EUR 25 excluding tax/month (excluding existing ChatGPT/Pipedrive
+subscriptions). These are future live gates, not completed configuration.
+
+The pilot is limited to two companies, four named users, and 1,000 tool
+calls/day. Freeze onboarding at 80% of a limit; do not increase a plan or quota
+automatically. The service is best effort, with a one-business-day recovery
+target, 24-hour RPO for configuration/audit, and no contractual SLA.
+
+See [`decisions/0001-production-delivery-contract.md`](decisions/0001-production-delivery-contract.md)
+and [`decisions/B0-production-decisions.json`](decisions/B0-production-decisions.json)
+for the full decision record.
 
 ## Install And Build
 
@@ -14,12 +46,15 @@ npm run build
 
 Use `node dist/server.js` as the MCP command.
 
-For both Claude delivery variants:
+For the existing Claude compatibility delivery only:
 
 ```sh
 npm run pack:claude-delivery
-claude plugin validate dist/claude-plugin/pipedrive-mcp
 ```
+
+This program does not invoke the Claude CLI. Any compatibility-specific Claude
+CLI validation is optional, outside B0--B14 acceptance, and cannot be a gate
+for this production program.
 
 Standalone ZIPs are staged at `dist/claude-skills/`. The plugin artifact is
 staged at `dist/claude-plugin/pipedrive-mcp/`.
@@ -171,7 +206,7 @@ The tarball should contain runtime files, README, LICENSE, config example, and
 docs only. It must not include source, tests, historical validation notes, or
 validation prompts.
 
-## Private Claude Delivery
+## Claude Compatibility Delivery (not a first-class pilot surface)
 
 Before onboarding or handing out the hardcoded sandbox connector, verify that
 the active Worker is still version
@@ -192,11 +227,14 @@ plugin. Free users import selected ZIP assets from the latest GitHub Release and
 same remote `/mcp` URL manually. Each archive must contain one top-level skill
 folder with its `SKILL.md`, and no connector or credentials.
 
-Cowork Desktop and Cowork Mobile are mandatory pilot acceptance surfaces.
-Validate Cowork Web when it is enabled for the target organization. Users
-authenticate through Cloudflare Access, connect their own approved Pipedrive
-identity at `/pipedrive`, and manage only that company pair at `/settings`;
-the admin controls the global allowlist without receiving user tokens.
+The first-class pilot acceptance surfaces are the unified ChatGPT desktop app
+(with Codex) and ChatGPT Web. The B2/B3 implementation defines their private
+installation and lifecycle evidence. Claude/Cowork instructions in this
+section preserve compatibility only and cannot be used as B8/B9/B10 acceptance
+evidence. Users still authenticate through Cloudflare Access, connect their own
+approved Pipedrive identity at `/pipedrive`, and manage only that company pair
+at `/settings`; the admin controls the global allowlist without receiving user
+tokens.
 
 Before handing off either installation path, add the user's exact email or IdP
 group to the Cloudflare Access application's Allow policy. Record who owns this
@@ -279,10 +317,12 @@ npm run check
 npm run benchmark:server
 npm run pack:claude-delivery
 npm run prepare:claude-plugin-release
-claude plugin validate .
-claude plugin validate dist/claude-plugin/pipedrive-mcp
 npm pack --dry-run
 ```
+
+The deterministic commands above are the local validation path for this
+program. Claude CLI validation, if an operator later chooses to run it for
+compatibility, is optional and outside this program's acceptance path.
 
 Do not run live writes as part of ordinary validation. If live credentials are
 already configured, limit manual checks to read-only tools unless an operator

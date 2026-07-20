@@ -17,7 +17,10 @@
 - **Claude policy:** Claude is unavailable and must not be used for planning,
   implementation, challenge, or code review. Existing Claude delivery remains
   compatible until the operator explicitly decides to retire it.
-- **Codex policy:** Codex is the primary new client and skill delivery target.
+- **Customer-surface policy:** the primary V1 customer surfaces are the
+  unified ChatGPT desktop app (with Codex) and ChatGPT Web. Codex CLI/IDE are
+  technical/operator fallbacks, not a customer promise. Existing Claude
+  delivery remains compatibility-only.
 
 The current known candidate is branch
 `codex/rebaseline-v1-sandbox-acceptance`, commit `9de8d0c`. Before execution,
@@ -29,16 +32,16 @@ reference is still current.
 The program is complete when:
 
 1. the V1 multi-tenant code is integrated and reproducible;
-2. Codex can install one supported Pipedrive plugin or selected skill bundles
-   without duplicate MCP registration;
+2. the private ChatGPT Pipedrive app can be installed by named pilot
+   workspaces/users without duplicate MCP registration;
 3. two real Access users can connect two different Pipedrive companies in
    sandbox without cross-tenant leakage;
 4. production and sandbox infrastructure, secrets, data, and artifacts are
    mechanically separated;
 5. durable audit export, alerting, incident response, offboarding, rollback,
    and operating ownership are proven;
-6. Alexandre can use Codex against Pezzos Labs in a read-only production
-   canary;
+6. Alexandre can use the private ChatGPT Pipedrive app against Pezzos Labs in
+   a read-only production canary;
 7. a first customer can connect their own Pipedrive identity and company
    without a customer-specific Worker or credential;
 8. the service completes an agreed stabilization window with no unresolved
@@ -223,8 +226,8 @@ authorize publication, onboarding, customer reads, writes, or cleanup.
 flowchart TD
     B0["B0: decisions and contract"]
     B1["B1: V1 baseline"]
-    B2["B2: Codex plugin and bundles"]
-    B3["B3: Codex lifecycle"]
+    B2["B2: ChatGPT app and workflows"]
+    B3["B3: ChatGPT lifecycle"]
     B4["B4: Impeccable UX and UI"]
     B5["B5: production topology"]
     B6["B6: security and rotation"]
@@ -264,18 +267,18 @@ Allowed states are `not_started`, `planning`, `blocked_user`, `in_progress`,
 
 | Block | State | Commit or evidence | External gate |
 | --- | --- | --- | --- |
-| B0 Decisions and contract | not_started |  | User decisions |
+| B0 Decisions and contract | completed | ADR-0001 + structured record; full local gate 2026-07-20: `WRANGLER_SEND_METRICS=false npm run check` 115/115, benchmark p95 3.295ms <20ms, `npm pack --dry-run`, `git diff --check`; original Sol PASS; compliance-legal PASS | D08 backup prerequisite remains for B7--B10 live/credentialed work |
 | B1 V1 baseline | not_started | Candidate `9de8d0c` to verify | Push/PR excluded |
-| B2 Codex plugin and bundles | not_started |  | None for local package |
-| B3 Codex lifecycle | not_started |  | Real Codex OAuth deferred |
+| B2 ChatGPT app and workflows | not_started |  | None for local package |
+| B3 ChatGPT lifecycle | not_started |  | Real ChatGPT/Access acceptance deferred |
 | B4 Impeccable UX/UI | not_started |  | Shape approval |
 | B5 Production topology | not_started |  | Remote reservation excluded |
 | B6 Security and rotation | not_started |  | Secret/MFA drill excluded |
-| B7 Audit and operations | not_started |  | Logpush/SIEM setup excluded |
-| B8 Sandbox acceptance | not_started |  | `SR` and `SW` |
-| B9 Personal production canary | not_started |  | `PW` |
-| B10 Publish and first customer | not_started |  | `PW` and `CW` |
-| B11 Stabilize and close V1 | not_started |  | `DW` for singleton purge |
+| B7 Audit and operations | not_started |  | D08 backup prerequisite plus Logpush/R2 setup excluded |
+| B8 Sandbox acceptance | not_started |  | D08 backup prerequisite plus `SR` and `SW` |
+| B9 Personal production canary | not_started |  | D08 backup prerequisite plus `PW` |
+| B10 Publish and first customer | not_started |  | D08 backup prerequisite plus `DW`, `PW`, and `CW` |
+| B11 Stabilize and close V1 | not_started |  | Verifies prior singleton-purge evidence only |
 | B12 V1.1 diagnostic | not_started |  | Publication deferred |
 | B13 V1.1 write safety | not_started |  | Real write tests deferred |
 | B14 V1.1 workflows | not_started |  | Publication and customer use deferred |
@@ -296,10 +299,10 @@ security, privacy, retention, costs, and irreversible actions.
 
 Create a decision dossier covering:
 
-- Codex surfaces promised;
+- ChatGPT customer surfaces promised;
 - Pipedrive sandbox and production application strategy;
 - private or public Pipedrive distribution;
-- private or public Codex marketplace;
+- private or public ChatGPT installation;
 - production hostname and Cloudflare account boundary;
 - skill bundle composition;
 - existing Claude delivery compatibility or retirement;
@@ -321,6 +324,10 @@ exhausted.
 - a structured decision record;
 - product and operator documentation only after decisions are accepted.
 
+The accepted B0 contract is recorded in
+[`decisions/0001-production-delivery-contract.md`](decisions/0001-production-delivery-contract.md)
+and [`decisions/B0-production-decisions.json`](decisions/B0-production-decisions.json).
+
 ### Tests and review
 
 - no unresolved decision on the first-client critical path;
@@ -330,8 +337,10 @@ exhausted.
 
 ### Exit
 
-Every critical decision has a value, owner, evidence, review date, and revisit
-trigger. No `TBD` remains on the B1 through B10 path.
+Every critical decision has a value, owner, evidence, ISO last-reviewed date,
+next review gate, and revisit trigger. No `TBD` remains on the B1 through B10 path. The missing backup
+operator is an accepted D08 exception with a hard B7--B10 live gate, not an
+unresolved decision.
 
 ### Stop
 
@@ -342,7 +351,7 @@ admin, app distribution, incident, or offboarding ownership remains open.
 
 ### Objective
 
-Integrate the current candidate as one coherent V1 baseline before Codex or
+Integrate the current candidate as one coherent V1 baseline before ChatGPT app or
 production adaptations.
 
 ### Sol assignment
@@ -366,7 +375,7 @@ Only defects found in:
 - operator documentation;
 - build configuration.
 
-Do not implement V1.1 or Codex packaging here.
+Do not implement V1.1 or ChatGPT app packaging here.
 
 ### Validation
 
@@ -397,66 +406,65 @@ Original Sol agent plus `security-specialist`.
 Clean product paths, fresh green gates, aligned status, atomic commit, and an
 exact candidate ready for a separately authorized push or PR.
 
-## B2: Codex plugin, canonical skills, and bundles
+## B2: private ChatGPT Pipedrive app and canonical workflows
 
 ### Objective
 
-Add a native Codex distribution without creating divergent skill sources or
-weakening the existing delivery.
+Add one private ChatGPT Pipedrive app without creating divergent workflow
+sources or weakening the existing compatibility delivery.
 
 ### Sol assignment
 
 Freeze:
 
-- canonical skill source;
-- bundle catalog and naming;
-- Codex plugin manifest;
-- MCP config contract;
-- marketplace metadata;
+- canonical workflow source;
+- one-app catalog and naming;
+- ChatGPT app packaging and installation contract;
+- one MCP configuration contract;
+- private-distribution metadata;
 - version coupling;
 - standalone limitations;
 - Claude compatibility boundary.
 
-The low-risk starting point is to keep the current seven skill files as the
-canonical source and generate Codex artifacts from them. A later move to a
-neutral source directory must be atomic and byte-verifiable.
+The low-risk starting point is to keep the current seven workflow files as the
+canonical source and generate the private ChatGPT artifact from them. A later
+move to a neutral source directory must be atomic and byte-verifiable.
 
 ### Tera ownership
 
-- `plugin/codex/**`;
-- skill catalog and bundle manifest;
-- Codex pack scripts;
+- ChatGPT app packaging paths selected by B2;
+- workflow catalog and app manifest;
+- ChatGPT app pack scripts;
 - package commands;
-- Codex package tests.
+- ChatGPT app package tests.
 
 ### Required artifacts
 
-- `.codex-plugin/plugin.json`;
-- `.mcp.json` containing exactly one approved Pipedrive MCP;
-- Codex marketplace entry;
-- full seven-skill plugin;
-- selected skill or thematic bundle artifacts defined by B0;
+- one private ChatGPT Pipedrive app containing exactly one approved Pipedrive
+  MCP;
+- all seven canonical workflows in that app;
+- private-installation metadata for named pilot workspaces/users;
 - deterministic hashes and version metadata.
 
-Bundles organize workflows only. They never enable Writes, Deletes, Mailbox,
-Access membership, tenant approval, or OAuth.
+The app does not split workflows into thematic bundles. It never enables
+Writes, Deletes, Mailbox, Access membership, tenant approval, or OAuth.
 
 ### Validation
 
-- catalog and filesystem exact-set checks;
-- frontmatter and directory-name checks;
-- byte identity across delivery targets;
+- canonical seven-workflow exact-set checks;
+- packaging metadata and directory-name checks;
+- byte identity where a compatibility delivery shares a workflow source;
 - required dry-run and approval instructions;
 - one MCP server only;
 - exact environment URL;
 - no secret, header, token, source, test, symlink, nested archive, local
-  server, or MCPB in the Codex artifact;
+  server, or MCPB in the private ChatGPT artifact;
 - deterministic rebuild.
 
 ### Documentation
 
-Create `CODEX_DELIVERY.md`, bundle tables, installation overview, limitations,
-and duplicate-server warnings.
+Create `CHATGPT_DELIVERY.md`, an installation overview, limitations, and
+duplicate-server warnings. Keep Claude documentation compatibility-only.
 
 ### Review
 
@@ -464,33 +472,34 @@ Original Sol agent plus `workflow-tester`.
 
 ### Exit
 
-A local, deterministic, sandbox-labelled Codex plugin and bundle set passes all
-artifact tests.
+A local, deterministic, sandbox-labelled private ChatGPT app with all seven
+canonical workflows passes all artifact tests.
 
-## B3: Codex install, update, uninstall, and clean-profile acceptance
+## B3: ChatGPT install, update, uninstall, and clean-profile acceptance
 
 ### Objective
 
-Prove the complete Codex lifecycle without mutating a real user profile during
+Prove the complete ChatGPT app lifecycle without mutating a real user profile during
 automated tests.
 
 ### Sol assignment
 
-Define installation through a marketplace, direct MCP fallback, standalone
-skills, IDE fallback, conflict detection, update, disable, uninstall, remote
+Define private installation, direct MCP technical fallback, Codex CLI/IDE
+technical fallback, conflict detection, update, disable, uninstall, remote
 disconnect, and provider revocation semantics.
 
 ### Tera ownership
 
-- clean `CODEX_HOME` fixtures;
+- clean app-profile fixtures;
 - lifecycle scripts;
 - release manifest;
 - lifecycle tests;
-- Codex install and troubleshooting documentation.
+- ChatGPT app installation and troubleshooting documentation.
 
 ### Automated matrix
 
-1. Empty profile discovers the marketplace.
+1. Empty named-pilot profile receives the private app through the accepted
+   installation path.
 2. Install adds the intended skills and one MCP server.
 3. No package file requests a secret.
 4. Update replaces managed content without duplication.
@@ -506,8 +515,8 @@ disconnect, and provider revocation semantics.
 
 Deferred to B8:
 
-- current Codex version;
-- `codex mcp login`;
+- current ChatGPT desktop/web surface;
+- accepted ChatGPT/Access sign-in path;
 - Cloudflare Access;
 - tool discovery;
 - `/pipedrive`;
@@ -531,7 +540,7 @@ profile with no residue or duplicate connector.
 
 ### Objective
 
-Create a coherent, accessible, server-rendered product UI for Codex onboarding,
+Create a coherent, accessible, server-rendered product UI for ChatGPT app onboarding,
 connection, settings, administration, confirmation, errors, and recovery.
 
 ### Required design phases
@@ -715,6 +724,13 @@ posture is explicit.
 Remove the explicit production blocker caused by console-only audit events and
 unowned operations.
 
+### Entry
+
+- Local implementation may proceed under `L1`.
+- Before any live, credentialed B7 action, a distinct named backup operator is
+  accepted and their access and recovery path are validated (D08). Ordinary
+  `SR` or `SW` authority does not bypass this prerequisite.
+
 ### Sol assignment
 
 Define:
@@ -735,7 +751,9 @@ Define:
 - alert and dashboard definitions where code-manageable;
 - validation scripts;
 - runbooks and evidence templates;
-- privacy, support, and offboarding drafts.
+- privacy, support, and offboarding drafts. The final privacy notice, DPA,
+  subprocessor, DSAR, and breach-response pack remains due after B9 and before
+  B10, as defined by B0.
 
 ### Minimum signals
 
@@ -778,18 +796,22 @@ security-sensitive findings.
 ### Exit
 
 Audit is durable and queryable, alert routing is proven, owners are named, and
-legal or privacy blockers are closed.
+the legal/privacy draft package is ready for its mandatory post-B9, pre-B10
+finalization gate.
 
-## B8: complete sandbox and Codex acceptance
+## B8: complete sandbox and ChatGPT app acceptance
 
 ### Objective
 
-Prove V1 isolation, lifecycle, UI, Codex delivery, and operations with two real
+Prove V1 isolation, lifecycle, UI, ChatGPT app delivery, and operations with two real
 users and two distinct Pipedrive companies.
 
 ### Entry
 
 - B1 through B7 complete;
+- before any live, credentialed B8 action, a distinct named backup operator is
+  accepted and their access and recovery path are validated (D08); `SR` and
+  `SW` authority does not bypass this prerequisite;
 - Pipedrive application installable in two distinct non-production companies;
 - two named test identities;
 - safe expected records;
@@ -805,7 +827,7 @@ cross-tenant probes, stop conditions, and rollback triggers.
 ### Tera ownership
 
 - acceptance scripts;
-- Codex prompt/evaluation corpus;
+- ChatGPT app prompt/evaluation corpus;
 - redacted evidence template;
 - local fixtures only.
 
@@ -816,7 +838,7 @@ must requalify all affected gates.
 
 1. `/healthz` reports Streamable HTTP.
 2. Anonymous `/mcp` is denied and audited.
-3. A clean Codex profile installs and authenticates the MCP.
+3. A clean named-pilot ChatGPT profile installs and authenticates the MCP.
 4. User A connects Company A.
 5. User B connects Company B.
 6. Each verifies `/pipedrive` and `pipedrive_connection_check`.
@@ -834,7 +856,7 @@ must requalify all affected gates.
 18. Force-disconnect affects one selected user.
 19. Admin pages expose only bounded approved metadata.
 20. The inactivity alarm proves purge behavior within the operational window.
-21. All seven Codex skills trigger and remain within their safety contracts.
+21. All seven canonical workflows trigger and remain within their safety contracts.
 22. Update, disable, uninstall, and reinstall remain clean.
 
 ### Evidence
@@ -855,12 +877,20 @@ rollout and opens an incident; it is never treated as an ordinary retry.
 
 ### Objective
 
-Let Alexandre use Codex against Pezzos Labs before any customer is admitted.
+Let Alexandre use the private ChatGPT Pipedrive app against Pezzos Labs before
+any customer is admitted.
 
 ### Entry
 
 - B8 complete;
+- a distinct named backup operator is accepted and their access and recovery
+  path are validated (D08); `PW` authority does not bypass this prerequisite;
 - go-live packet accepted;
+- a controlled canary authorization/evidence packet accepts the exact opaque
+  IDs for a dedicated synthetic organization, person, deal, and activity. The
+  corpus has no email, phone, notes, or real data; its creation remains a
+  separately authorized live action, and no opaque ID belongs in canonical or
+  public documentation;
 - exact `PW` authorization for each production action;
 - production rollback target recorded;
 - incident and global-freeze paths staffed.
@@ -883,12 +913,15 @@ Only local smoke scripts, evidence templates, or in-scope defect fixes.
 4. Verify health, anonymous denial, Access, audit, admin, and empty tenant state.
 5. Allow only Alexandre.
 6. Approve only Pezzos Labs.
-7. Install the private staged Codex artifact.
+7. Install the private staged ChatGPT Pipedrive app.
 8. Connect Alexandre's own Pipedrive identity.
-9. Verify company, identity, connection, and one safe read.
+9. Verify company, identity, connection, and one safe read against only the
+   controlled packet's synthetic corpus; do not record opaque IDs in canonical
+   or public evidence.
 10. Keep Writes, Deletes, and Mailbox disabled.
 11. Exercise suspension and disconnect.
-12. Observe for the B0-approved canary window.
+12. Observe for seven calendar days and at least five successful active
+    sessions, as approved in B0.
 
 ### Stop
 
@@ -905,7 +938,7 @@ Original Sol agent plus `workflow-tester`.
 Pezzos Labs is stable in read-only production use, telemetry is healthy, and
 rollback remains available.
 
-## B10: publish Codex delivery and onboard the first customer
+## B10: deliver the private ChatGPT app and onboard the first customer
 
 ### Objective
 
@@ -915,6 +948,18 @@ customer-specific Worker, token, or code fork.
 ### Entry
 
 - B9 complete;
+- a distinct named backup operator is accepted and their access and recovery
+  path are validated (D08); `DW`, `PW`, or `CW` authority does not bypass this
+  prerequisite;
+- an operator checklist/evidence reference records the completed review of
+  Alexandre's support, incident-command, and offboarding concentration risk;
+- after B9, the final privacy notice, DPA, subprocessor list, DSAR workflow,
+  and breach-response pack are accepted in the required operator/legal review.
+  This is an entry requirement, not a claim that approval already exists;
+- before customer onboarding, the singleton purge is completed under separate
+  explicit `DW` authorization within 14 days after cutover, after proof of no
+  route, fallback, or v2 binding read path, all intended per-user credentials,
+  rollback independence, and a redacted audit receipt;
 - support coverage active;
 - exact publication and customer authorization;
 - accepted production artifact and hashes.
@@ -945,7 +990,7 @@ records, support, privacy, offboarding, and V1 limitations.
 
 1. Admit the exact user or group through Access.
 2. Approve the exact company domain.
-3. Install and authenticate Codex.
+3. Install and authenticate the private ChatGPT Pipedrive app.
 4. Complete personal Pipedrive OAuth.
 5. Verify the displayed company and identity.
 6. Perform a known read-only query.
@@ -1012,14 +1057,12 @@ Use separate read-only review envelopes of at most three agents. Accepted
 findings return to one serial Tera remediation pass, followed by both relevant
 review waves and the full verification gate.
 
-### Legacy singleton
+### Legacy singleton evidence verification
 
-Singleton purge requires a separate `DW` authorization. Before purge:
-
-- prove all intended users use per-user credentials;
-- prove no route or fallback reads the singleton;
-- ensure no allowed rollback can restore singleton behavior;
-- record the destructive scope and recovery consequence.
+B11 verifies the redacted evidence that the required singleton purge completed
+before customer onboarding in B10. It does not schedule, authorize, or perform
+purge. Provider-grant revocation remains separately authorized only when the
+grant can be safely identified without secret exposure.
 
 ### Exit
 
@@ -1047,7 +1090,7 @@ connection revisions, and inactivity-clock semantics.
 - production/sandbox configuration;
 - repair codes and allowlisted actions;
 - invalidation after reconnect;
-- tests and Codex skill updates.
+- tests and ChatGPT app workflow updates.
 
 ### Validation
 
@@ -1124,7 +1167,7 @@ Original Sol agent plus `security-specialist`.
 The slice passes sandbox write-safety acceptance and receives separate release
 authorization.
 
-## B14: V1.1 business workflows, hygiene, and Codex skills
+## B14: V1.1 business workflows, hygiene, and ChatGPT app workflows
 
 ### Objective
 
@@ -1146,7 +1189,7 @@ bounded pagination, coverage, domain thresholds, and skill contracts.
 - resume and expiry;
 - hygiene rules and cursors;
 - threshold and mapping configuration;
-- Codex skills and bundle synchronization;
+- ChatGPT app workflow synchronization;
 - tests and documentation.
 
 ### Validation
@@ -1160,7 +1203,7 @@ bounded pagination, coverage, domain thresholds, and skill contracts.
 - partial coverage is explicit;
 - cursors, findings, and state remain isolated;
 - custom-field behavior requires explicit mapping;
-- clean-profile Codex and package hashes pass.
+- clean-profile ChatGPT app and package hashes pass.
 
 ### UI/UX
 
@@ -1173,7 +1216,7 @@ Original Sol agent plus `workflow-tester`.
 
 ### Exit
 
-V1.1 passes full local, sandbox, Codex, accessibility, security, and release
+V1.1 passes full local, sandbox, ChatGPT app, accessibility, security, and release
 acceptance, followed by separately authorized canary and publication.
 
 ## Evidence record requirements

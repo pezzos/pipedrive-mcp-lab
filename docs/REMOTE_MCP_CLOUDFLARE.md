@@ -1,10 +1,10 @@
 # Remote MCP On Cloudflare
 
-This is the operator guide for the multi-tenant remote Pipedrive MCP. It is
-the recommended delivery for Claude Web/Desktop Chat and paid Cowork surfaces,
-and for users who should not maintain a local process. Cowork Web and Mobile are
-currently rolling out in beta; validate availability on the target account.
-The existing Desktop Extension remains supported for local Claude Desktop use.
+This is the operator guide for the multi-tenant remote Pipedrive MCP. The
+first-class private-pilot delivery is the private ChatGPT Pipedrive app on the
+unified ChatGPT desktop app (with Codex) and ChatGPT Web, for users who should
+not maintain a local process. Existing Claude delivery remains compatibility-
+only; it is not a new pilot surface or acceptance promise.
 
 > **Deployment status:** commit `c7398c9` is deployed on the sandbox Worker as
 > version `d0b493c2-7cbe-411d-af29-e7d08562c28a`. The v2 Durable Object
@@ -17,7 +17,7 @@ The existing Desktop Extension remains supported for local Claude Desktop use.
 
 Before onboarding, an operator adds the user's exact email or IdP group to the
 Access application's Allow policy. An allowed user then connects the remote MCP
-URL in Claude and completes the Cloudflare Access login once. Access then refreshes the client authorization
+URL in the private ChatGPT Pipedrive app and completes the Cloudflare Access login once. Access then refreshes the client authorization
 and re-evaluates the Access policy without a routine user action. The user can
 open `/pipedrive` to connect their own approved Pipedrive company, then open
 `/settings` to manage only the permissions for that verified user-company pair.
@@ -29,7 +29,7 @@ days, or refresh returns `invalid_grant`.
 
 Pipedrive authorization is per Access user. Access and refresh tokens are
 encrypted inside that user's `USER_CONNECTION` Durable Object; they are never
-sent to Claude, shared with another user, or shown to the platform admin. The
+sent to the client, shared with another user, or shown to the platform admin. The
 named admin uses `/admin/pipedrive` only to approve, suspend, or resume company
 subdomains and to force-disconnect a selected indexed connection. The page may
 show Access email and bounded operational metadata, but never Pipedrive user
@@ -114,6 +114,54 @@ authorized actions. The v1 `TenantSecrets` class stays exported only for
 migration compatibility; v2 has no `TENANT_SECRETS` binding, request route,
 credential read, or sub-only policy fallback.
 
+## B0 private-pilot production contract
+
+This section records the accepted contract; it does not authorize or claim any
+Cloudflare, Pipedrive, DNS, OAuth, Access, Logpush, R2, billing, or production
+change.
+
+- Sandbox and production use separate Pipedrive OAuth applications, callbacks,
+  secrets, identifiers, Workers, Access apps/audiences, namespaces/bindings,
+  and hostnames in the existing Pezzos Labs Cloudflare account. The
+  account-level shared blast radius is accepted for the pilot.
+- The production Pipedrive endpoint is
+  `https://pipedrive-mcp.pezzoslabs.com/mcp`; sandbox stays separate. One
+  externally distinct MCP exists per CRM. A future `crm-mcp.pezzoslabs.com`
+  can be additive orchestration/discovery only, never shared CRM credentials,
+  OAuth clients, registries, policies, keys, or migration state without a new
+  ADR/program rebaseline.
+- Alexandre is the sole temporary production administrator. No B7--B10 live,
+  credentialed operation or rollout may proceed until a distinct named backup
+  operator is accepted and access/recovery is validated.
+- Production audit uses Cloudflare Logpush to a dedicated production R2 bucket:
+  90-day retention, pipeline-only writes, Alexandre-only reads while no backup
+  exists, controlled immutability/versioning, automatic expiry deletion, and a
+  documented legal hold. Critical alerts email Alexandre only; there is no
+  24/7 promise, and security/tenancy alerts freeze rollout until acknowledged.
+- The service is best effort: one-business-day recovery target and 24-hour RPO
+  for configuration/audit, with no contractual SLA. The pilot is limited to
+  two companies, four named users, and 1,000 tool calls/day. Infrastructure
+  plus observability is capped at EUR 25 excluding tax/month, excluding
+  existing ChatGPT/Pipedrive subscriptions; onboarding freezes at 80% and no
+  plan/quota increases automatically.
+- B9 is Alexandre plus Pezzos Labs only, read-only and limited to a dedicated
+  synthetic organization, person, deal, and activity with no email, phone,
+  notes, or real data. Creating the corpus is separately authorized live work.
+  A controlled canary authorization/evidence packet accepts exact opaque record
+  IDs before B9; no ID belongs in canonical or public documentation. The canary
+  lasts seven calendar days and at least five successful active sessions;
+  Writes, Deletes, and Mailbox stay disabled. B8 remains a separate
+  two-user/two-company sandbox acceptance.
+- The legacy singleton remains application-unreadable through B9 exit and for
+  at most 14 days after cutover. Purge completes before B10 customer onboarding
+  under separate irreversible authorization and evidence of no route, fallback,
+  or v2 read path/binding, intended per-user credentials, rollback
+  independence, and a redacted audit receipt.
+
+See [`decisions/0001-production-delivery-contract.md`](decisions/0001-production-delivery-contract.md)
+and [`decisions/B0-production-decisions.json`](decisions/B0-production-decisions.json)
+for per-decision ownership, review dates, and revisit triggers.
+
 ## Permission Model
 
 Every new `(Access sub, company_id)` pair starts read-only. After connecting at
@@ -147,10 +195,14 @@ their contents:
 | `PIPEDRIVE_OAUTH_ENCRYPTION_KEY` | Secret | Random 32-byte base64url key used for AES-256-GCM token encryption. |
 | `AUDIT_HMAC_KEY` | Secret | Independent random base64url key of at least 32 bytes for actor pseudonyms. |
 
-Keep the encryption and audit keys independent. Rotation of the encryption key
-requires reconnecting Pipedrive because existing OAuth material can no longer
-be decrypted. Rotating the audit key deliberately breaks actor correlation
-with older audit events.
+Keep the encryption and audit keys independent. B6 must implement versioned
+AES-256-GCM envelopes with a `kid`, a primary key and an old decrypt-only key:
+planned annual rotation, immediate compromise rotation, bounded re-encryption,
+and old-key retirement only after zero-use evidence plus 30 days. A compromise
+can require reconnection. Audit HMAC uses quarterly explicit epochs: the
+current emit key and prior correlation key remain available for at most 90
+days, historical logs are not rewritten, and compromise starts a new epoch
+immediately with bounded administrator-only cross-epoch correlation.
 
 ## Sandbox Setup
 
@@ -174,7 +226,7 @@ with older audit events.
    calls this an MCP server application; the dashboard creation tile is the
    self-hosted application type for a customer-managed Worker.
 4. Edit that Access application, open **Advanced settings**, and enable
-   **Managed OAuth**. Add only the redirect URIs required by the target Claude
+   **Managed OAuth**. Add only the redirect URIs required by the target ChatGPT
    clients. A practical starting point is a 5–15 minute Access token and a 1–2
    week grant; select the exact values to match the client's security policy.
 5. Create a Pipedrive Developer Sandbox and an OAuth application with only the
@@ -291,10 +343,11 @@ sandbox. Changing it to live is a separate manual and irreversible promotion;
 it is never implied by deploying this Worker and requires explicit operator
 authorization.
 
-Production is blocked until console audit events are exported to a durable
-Logpush or SIEM destination with agreed retention, access control, alerting,
-and cost ownership. The Worker currently emits structured redacted JSON to the
-console; console output alone is not a production retention strategy.
+Production is blocked until console audit events are exported through Logpush
+to the dedicated production R2 bucket with the accepted 90-day retention,
+access control, alerting, legal hold, and cost limits. The Worker currently
+emits structured redacted JSON to the console; console output alone is not a
+production retention strategy.
 
 ## Incident Guide
 
@@ -306,9 +359,9 @@ intentionally omitted.
 | Symptom or code | Action |
 | --- | --- |
 | `/healthz` fails | Check Worker deployment and Cloudflare status before investigating Pipedrive. |
-| `mcp_registration_failed` | Confirm Managed OAuth and the Claude callback allowlist, then recreate the connector after configuration changes. |
+| `mcp_registration_failed` | Confirm Managed OAuth and the ChatGPT callback allowlist, then recreate the connector after configuration changes. |
 | `access_denied` or `access_configuration_invalid` | Verify Worker variables, Access policy, issuer, and audience. |
-| `access_token_missing` or `access_token_invalid` | Reconnect the Claude connector and verify that the user remains allowed by Access. |
+| `access_token_missing` or `access_token_invalid` | Reconnect the private ChatGPT Pipedrive app and verify that the user remains allowed by Access. |
 | `access_jwks_unavailable` or `access_jwks_invalid` | Check Access availability and the issuer certificate endpoint; do not bypass JWT validation. |
 | `policy_unavailable` | Check the `USER_POLICY` Durable Object binding and recent Worker errors. Do not bypass the policy. |
 | `pipedrive_not_connected` | The affected user opens `/pipedrive` and starts a fresh connection to an approved domain. |

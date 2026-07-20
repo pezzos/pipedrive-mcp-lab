@@ -32,6 +32,23 @@ administrator-owned Pipedrive token is shared between users.
 The product remains read-only by default. Each user manages their own Writes,
 Deletes, and Mailbox capabilities for the connected Pipedrive company.
 
+## Private Pilot Delivery Contract
+
+V1 is a named private pilot for Pezzos Labs and one authorized customer; it is
+not publicly available. The first-class customer surfaces are the unified
+ChatGPT desktop app (with Codex) and ChatGPT Web. Codex CLI/IDE are technical
+or operator fallbacks, and existing Claude delivery is compatibility-only with
+no new surface or acceptance promise.
+
+The pilot uses one full private ChatGPT Pipedrive app containing all seven
+canonical workflows, installed only for named pilot workspaces/users. Pipedrive
+distribution is private or unlisted for the named pilot companies. These
+delivery decisions, the production endpoint, operating gates, retention,
+budgets, canary, and singleton-purge constraints are defined by
+[`docs/decisions/0001-production-delivery-contract.md`](docs/decisions/0001-production-delivery-contract.md).
+They do not assert that an external installation, publication, or production
+resource already exists.
+
 ## Problem
 
 The original Worker authenticated every Claude user independently through
@@ -64,7 +81,8 @@ The feature is successful when:
 4. A suspended company is blocked immediately for existing and new requests.
 5. Failed, cancelled, stale, or cross-tenant OAuth flows cannot replace a valid
    connection or resurrect deleted credentials.
-6. Users can install the same Claude plugin and complete onboarding without
+6. Named pilot users can install the same private ChatGPT Pipedrive app and
+   complete onboarding without
    receiving secrets or requiring a dedicated Worker deployment.
 7. Inactive OAuth tokens are removed after 90 days without successful MCP use.
 
@@ -83,7 +101,8 @@ The single operator identified by `REMOTE_ADMIN_EMAIL`. This person:
 
 ### End User
 
-A person allowed by Cloudflare Access who uses Claude and Pipedrive. This
+A person allowed by Cloudflare Access who uses the supported private ChatGPT
+Pipedrive app and Pipedrive. This
 person:
 
 - enters the Pipedrive company domain they want to connect;
@@ -179,7 +198,8 @@ Every connection and MCP call passes three independent gates.
 
 ### 2. User Connects Pipedrive
 
-1. The user installs or enables the Claude connector and authenticates through
+1. The user installs or enables the private ChatGPT Pipedrive app and
+   authenticates through
    Cloudflare Access.
 2. They open their connection page and enter their Pipedrive subdomain.
 3. The Worker verifies that the domain is active before redirecting to
@@ -388,8 +408,11 @@ The multi-tenant release uses a clean cutover:
    old singleton.
 6. The encrypted singleton may remain untouched for a bounded passive
    inspection window, but no application path may read or use it during that
-   window. This is not a functional fallback. Production cleanup is a separate
-   explicit operator action.
+   window. This is not a functional fallback. It remains application-unreadable
+   through B9 exit and for at most 14 days after cutover; production cleanup
+   must complete before B10 customer onboarding under separate explicit
+   irreversible authorization after the accepted no-read-path, per-user
+   credential, rollback-independence, and redacted-audit-receipt proofs.
 7. Promotion requires evidence that all intended users are using per-user
    credentials before the singleton is removed.
 
@@ -486,9 +509,10 @@ Tenant A/Tenant B tests pass:
 - Destructive company deletion and bulk credential purge; suspension is the
   V1 company offboarding mechanism.
 - Automatic migration or claiming of the singleton OAuth credential.
-- Production audit-retention policy, Logpush/SIEM ownership, billing, or legal
-  retention decisions. Those remain explicit production gates owned by the
-  platform operator.
+- Production audit-retention implementation, Logpush/R2 setup, billing action,
+  or legal-hold execution. The accepted policy is a 90-day Logpush export to a
+  dedicated production R2 bucket with controlled access, automatic expiry, and
+  documented legal hold; live setup remains a separate production gate.
 - Pipedrive app promotion from draft to live, production deployment, or client
   onboarding as part of the implementation commit.
 
@@ -522,8 +546,10 @@ Before production promotion, the operator must separately approve and verify:
 
 - Pipedrive private app distribution status and callback;
 - Cloudflare migration and rollback plan;
-- Access membership and platform administrator ownership;
-- durable audit export, retention, access, alerting, and cost ownership;
+- named-pilot Access membership, Alexandre's temporary administration, and the
+  accepted distinct backup operator with validated access/recovery;
+- durable Logpush-to-R2 audit export, 90-day retention, controlled access,
+  email alerting, and the B0 cost caps;
 - the concrete Alexandre/Romain isolation acceptance sequence.
 
 ## Product And Design Principles
@@ -649,12 +675,10 @@ The phrase `domain stale threshold` refers only to the number of inactive days
 used by morning briefs and hygiene findings. It is not a logging, audit-event,
 rate-limit, or security threshold.
 
-User-visible results must behave consistently through the remote connector on
-Cowork Desktop and Cowork Mobile. Cowork Web receives the same behavior when
-that surface supports the required custom connector and plugin capabilities.
-The PRD does not claim support on a Claude surface that cannot install or use
-the required connector. No workflow may depend on local Desktop-only
-filesystem state.
+User-visible results must behave consistently through the private ChatGPT
+Pipedrive app on the unified ChatGPT desktop app (with Codex) and ChatGPT Web.
+The PRD makes no promise for a surface that cannot install or use the required
+connector. No workflow may depend on local desktop-only filesystem state.
 
 ### 1. Complete Connection Diagnostic
 
@@ -745,7 +769,8 @@ than failing the whole diagnostic.
 
 #### User Outcome
 
-Claude knows which Pipedrive features are usable before proposing or attempting
+The supported ChatGPT Pipedrive app knows which Pipedrive features are usable
+before proposing or attempting
 a workflow. Missing OAuth scopes, disabled user policy, unavailable Pipedrive
 suites, and temporary provider failures produce different explanations and
 different repair actions.
@@ -794,11 +819,13 @@ assigned a provider capability status such as `unavailable` or `degraded`.
 - Capability probes share bounded rate-limit handling and must not fan out
   unbounded provider calls.
 
-When a capability is definitively unavailable, Claude must not recommend a
+When a capability is definitively unavailable, the supported ChatGPT Pipedrive
+app must not recommend a
 workflow that depends on it. Where dynamic tool catalogs are supported, the
 unavailable tool may be omitted. Otherwise, invocation returns a stable
 `capability_unavailable` result with the same structured repair object.
-Capabilities in `unknown` state may remain usable, but Claude must state the
+Capabilities in `unknown` state may remain usable, but the supported ChatGPT
+Pipedrive app must state the
 uncertainty and handle a safe provider rejection.
 
 Exact Pipedrive scope, entitlement, suite, and error mappings must be verified
@@ -812,7 +839,7 @@ single ambiguous error.
    distinguished from missing OAuth scope and temporary provider outage.
 2. A user-disabled write policy is distinguished from a provider restriction.
 3. No capability probe writes CRM data or exposes probed CRM content.
-4. Claude omits or safely declines an unavailable workflow before partial
+4. The supported ChatGPT Pipedrive app omits or safely declines an unavailable workflow before partial
    execution begins.
 5. Snapshot freshness and last probe outcome are visible in the connection
    diagnostic.
@@ -871,7 +898,8 @@ record automatically.
 
 #### User Outcome
 
-When enabled, Claude reminds the user exactly which Pipedrive company and
+When enabled, the supported ChatGPT Pipedrive app reminds the user exactly
+which Pipedrive company and
 identity will receive a write before the user authorizes it. This reduces
 wrong-account writes for consultants, sandbox users, and people who recently
 reconnected.
@@ -1058,7 +1086,7 @@ projects, project tasks, and notes, must be verified before implementation.
 
 All workflows use only the caller's visible Pipedrive data and the current
 capability snapshot. Missing optional capabilities are stated explicitly; they
-do not cause Claude to invent unavailable context.
+do not cause the supported ChatGPT Pipedrive app to invent unavailable context.
 
 #### Morning Sales Brief
 
@@ -1102,7 +1130,8 @@ A meeting report may propose an exact batch containing:
 - explicit deal or contact field/status updates requested by the user;
 - creation of a next activity.
 
-Claude first presents one complete dry-run preview listing every step, target,
+The supported ChatGPT Pipedrive app first presents one complete dry-run preview
+listing every step, target,
 payload summary, account identity, and expected effect. One explicit approval
 authorizes that exact batch. Any added or changed step requires a new preview
 and approval.
@@ -1131,8 +1160,8 @@ supported:
   which durable remote guarantees are unavailable without the service;
 - plugin and standalone manifests, skill archives, documentation, version
   coupling, and package smoke tests remain synchronized;
-- workflow behavior must not depend on a Desktop-only local filesystem and
-  must remain usable on supported Cowork Mobile and Web surfaces.
+- workflow behavior must not depend on a desktop-only local filesystem and
+  must remain usable on the accepted ChatGPT desktop and web surfaces.
 
 `Paid plugin` is a distribution and packaging distinction only. It does not
 add an authorization gate and never replaces Cloudflare Access, domain
@@ -1241,8 +1270,8 @@ V1.1 is accepted only when:
 9. Tenant A/User A cannot read or mutate Tenant B/User B diagnostic snapshots,
    capabilities, preferences, operation ledger, workflow state, audit cursors,
    links, or results.
-10. The same remote product behavior is available on supported Cowork Desktop,
-    Mobile, and Web surfaces without relying on Desktop-only local state.
+10. The same remote product behavior is available on the accepted ChatGPT
+    desktop and web surfaces without relying on desktop-only local state.
 11. Environment, reminder, stale-threshold, and critical-field domain changes
     use confirmation, CSRF, exact-origin, no-store, and pseudonymous audit.
 12. Another user's OAuth connection or reauthorization cannot invalidate,
@@ -1270,8 +1299,8 @@ V1.1 is accepted only when:
   platform-wide sales analytics.
 - Automatic interpretation of tenant custom fields without explicit
   administrator mapping.
-- Supporting a Claude surface that does not expose the required custom
-  connector or plugin capability.
+- Supporting a surface that does not expose the required private ChatGPT app
+  connector capability.
 
 ### V1.1 Delivery And Validation Gates
 
@@ -1289,8 +1318,8 @@ Implementation must separately validate:
   manifest/package synchronization;
 - hygiene rule determinism, threshold isolation, bounded pagination, coverage,
   and no-write behavior;
-- connector and skill behavior on each supported Claude surface.
+- connector and workflow behavior on each accepted ChatGPT surface.
 
-Real provider probes, Claude-surface acceptance, deployment, publication,
+Real provider probes, ChatGPT-surface acceptance, deployment, publication,
 secrets, production data, and client onboarding remain external promotion
 gates requiring separate authorization.
