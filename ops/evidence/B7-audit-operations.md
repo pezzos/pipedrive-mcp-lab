@@ -4,7 +4,7 @@ Date: 2026-07-21 (Europe/Paris)
 
 Status: `in_progress`
 
-Scope: deterministic local verification only; no external effects were performed.
+Scope: this document records deterministic local verification. The separate hash-verified live-configuration receipt records limited Cloudflare sandbox configuration and destination validation; it does not establish B7 completion.
 
 ## Receipt hashes
 
@@ -39,20 +39,22 @@ These are local code and fixture outcomes only. They do not prove live export du
 
 Remediation verification: targeted audit, parser, and AJV-equivalence tests passed 13/13 after canonical UUID, route, context, and paired-correlation parity checks were added. This does not rerun or replace the prior full-suite receipt.
 
-## Live/external checks: NOT RUN / UNPROVEN
+## Live/external configuration: partial / remaining proof unproven
 
-- Cloudflare Logpush delivery.
-- Dedicated sandbox R2 durability, queryability, 30-day retention, and legal-hold behavior.
+- Proven configuration: dedicated sandbox R2 with 30-day lifecycle and lock, pipeline-only filtered Logpush job, destination-validation write connectivity, and Alexandre-only alert configuration.
+- Actual Worker trace delivery, immutable export receipt, queryability, and 30-day lifecycle/lock behavior under real audit data remain unproven.
 - Alert email receipt and acknowledgement.
 - Live sandbox trace query.
-- Live billing signals.
+- Hard cost enforcement; the observed USD warning and zero billable usage are not enforcement proof.
 
 ## Gates and boundaries
 
-D08 is designated-not-activated: Davy Guittard of Keilintech still requires notification, acceptance, least-privilege access provisioning, and recovery validation. Exact `SW` authorization is recorded in the expurgated, hash-verified `B7-sw-authority.json` receipt, issued 2026-07-21 and expiring 2026-07-22 at 23:59 Europe/Paris. It is conditional on the recorded pilot exception receipt, safe expected sandbox data, and no active security incident. Configuration remains unrun and unproven. B7 remains `in_progress`; no external effects are claimed. Privacy and legal drafts are **NON-FINAL** pending post-B9/pre-B10 finalization.
+D08 is designated-not-activated: Davy Guittard of Keilintech still requires notification, acceptance, least-privilege access provisioning, and recovery validation. Exact `SW` authorization is recorded in the expurgated, hash-verified `B7-sw-authority.json` receipt, issued 2026-07-21 and expiring 2026-07-22 at 23:59 Europe/Paris. The hash-verified `B7-live-configuration.json` records partial Cloudflare sandbox configuration: dedicated locked 30-day R2, pipeline-only Logpush configuration, destination-write connectivity, and Alexandre-only email alert configuration. It does not prove Worker trace delivery, an immutable export receipt, queryability, or alert acknowledgement. The intended sandbox Worker is absent; exact separate deployment authority is required and the filter was not broadened. B7 remains `in_progress`; legal/privacy drafts are **NON-FINAL**.
 
 The sandbox policy is accepted as a dedicated R2 bucket, 30-day retention, pipeline-only writes, and Alexandre-only reads. The expurgated, hash-verified `B7-pilot-exception.json` records an operator-owned self-pilot acceptance for Alexandre's own Pipedrive account. For B7 it permits synthetic audit records only, no Pipedrive access, no external-party access, no charge, and no SLA/24×7. The five stop triggers remain active. This receipt creates no bucket or live configuration by itself.
 
 When recorded, the sandbox receipt must be revalidated within 30 days of its review date. Its incident ledger receipt is the immutable, monotone anchor for containment, closure, and renewed authority; verification must follow the ledger chain rather than infer a cleared incident from current flags.
 
-Read-only gate verification uses `node scripts/validate-audit-operations.mjs --evidence <path> --block B7 --as-of <ISO> --prior-incident-head <hash> --prior-incident-ever-triggered false`; use `--customer-effect true|false` for B8 only. The prior head must come from the last verified immutable receipt, never from the candidate evidence packet.
+Read-only gate verification uses `node scripts/validate-audit-operations.mjs --evidence <path> --block B7 --as-of <ISO> --prior-incident-head <hash> --prior-incident-ever-triggered false --expected-candidate-binding <hash>`; use `--customer-effect true|false` for B8 only. The prior head must come from the last verified immutable receipt, and the expected candidate binding must come from the independently accepted candidate receipt, never from the candidate evidence packet.
+
+The current exact `SW` expires at `2026-07-22T21:59:00.000Z`. After that point, Logpush use, configuration mutation, and testing are prohibited without fresh exact SW, except the already-authorized expiry rollback. That rollback is limited to disabling Logpush and alerts, retaining objects to their expiry, and no destructive delete. The token outlives SW through observed date 2026-08-20: renewal is prohibited without fresh exact token and SW authority; revocation is not authorized, will not happen automatically, and remains a residual risk requiring separate exact `DW` authority. B7 progression remains blocked on exact sandbox deployment authority, exact `DW` authority for token cleanup, then trace delivery, immutable receipt, queryability, and alert-ack proof work.

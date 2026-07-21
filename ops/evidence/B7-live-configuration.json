@@ -1,0 +1,131 @@
+{
+  "schema": "b7-live-configuration-receipt",
+  "version": 1,
+  "status": "partial",
+  "hash_algorithm": "sha256",
+  "recorded_at": "2026-07-21T19:31:30.000Z",
+  "live_claims": true,
+  "environment": "sandbox",
+  "configuration": {
+    "r2": {
+      "bucket_id_hash": "13decf6feca3b39441f00236ce1407a0c7f6cb1876e1d5576a3e37bd764b4a4b",
+      "region": "WEUR",
+      "storage_class": "Standard",
+      "custom_domain": false,
+      "public_dev_url": false,
+      "cors": false,
+      "worker_r2_binding": false,
+      "lifecycle_days": 30,
+      "lifecycle_rule_name_hash": "4e02e031313243712832a7f1f7ccd99180adbda8f7427cada3ed585af042c3cd",
+      "bucket_lock_days": 30,
+      "bucket_lock_rule_name_hash": "973cc9f0fee5cba2019f8fcd157c02cf050759a64f70292c05a5eaa262f71122"
+    },
+    "token": {
+      "scope": "Object Read & Write",
+      "one_bucket_only": true,
+      "policy_hash": "c7d281ac74497a5dfc9254e49a270174087f440ffb370a97018f6eeba2532291",
+      "expires_on": "2026-08-20",
+      "ttl_days": 30
+    },
+    "logpush": {
+      "enabled": true,
+      "dataset": "workers_trace_events",
+      "default_field_count": 12,
+      "job_id_hash": "43cc99a40e46bef2d0600036ecce6156b606a18bd91789af295ea8eae94eb0b7",
+      "destination_bucket_hash": "13decf6feca3b39441f00236ce1407a0c7f6cb1876e1d5576a3e37bd764b4a4b",
+      "filter_hash": "09101a7b86d8b465ddec108e0c7816f32042bde32104b4285526bdfb1b8a8402",
+      "pipeline_only": true,
+      "direct_r2_binding": false
+    },
+    "destination_validation": {
+      "written_at": "2026-07-21T19:31:30.000Z",
+      "object_key_hash": "aacec4988608f0c5c4868d29459176152a8972b9e2ea4d9df956414e16640032",
+      "bytes": 48,
+      "content_type": "application/json",
+      "locked": true
+    },
+    "alerts": {
+      "logpush_disabled": {
+        "enabled": true,
+        "name_hash": "b00122d9976a0d85cdc925e09c4ebcf05005b71399ff7f013eabfeb8bfd4441e",
+        "recipient_identity_hash": "192e52a0ac7db369a7ee845346811c6d61995baa8c680c766810539cec98b615",
+        "semantics": "native failing Logpush job disabled >24h",
+        "email_only": true
+      },
+      "budget_warning": {
+        "enabled": true,
+        "name_hash": "e3bd544500966385275e72c9c26a97361ea2a095bc9d8e4878d186eb585e2411",
+        "threshold_usd": 8,
+        "current_usage_usd": 0,
+        "email_only": true,
+        "warning_only": true,
+        "recipient_identity_hash": "192e52a0ac7db369a7ee845346811c6d61995baa8c680c766810539cec98b615"
+      }
+    }
+  },
+  "proven": [
+    "dedicated_bucket_configuration",
+    "destination_write_connectivity",
+    "logpush_job_configuration",
+    "alert_configuration"
+  ],
+  "unproven": [
+    "sandbox_worker_trace_delivery",
+    "immutable_export_receipt",
+    "queryability",
+    "alert_email_receipt_test_ack",
+    "budget_enforcement",
+    "token_revocation_cleanup_requires_exact_DW_authority"
+  ],
+  "deployment_blocker": "intended sandbox Worker absent; exact separate deployment authority required; filter was not broadened",
+  "anomaly": {
+    "type": "bucket_lock_initial_indefinite_value",
+    "remediated_before_logpush_or_data": true,
+    "no_data": true,
+    "no_exposure": true,
+    "security_incident": false
+  },
+  "stop_triggers": {
+    "customer_billing": false,
+    "additional_customer_access": false,
+    "real_production_data_or_traffic": false,
+    "public_availability": false,
+    "security_incident": false
+  },
+  "rollback": [
+    "disable_logpush",
+    "disable_alerts",
+    "retain_objects_until_30_day_expiry",
+    "no_destructive_delete"
+  ],
+  "cost_semantics": "USD 8 warning is conservative only; not EUR cap exchange-rate or spend-enforcement proof",
+  "token_expiry_risk": "token validity outlives SW; renewal is prohibited without fresh exact token and SW authority; cleanup requires exact DW authority; sensitive token material and identifier omitted",
+  "authority_receipts": {
+    "SW": "355a0cb047a7c686027a7f1383bfa98598fbb6d6debedf73c59f6cbe43880c46",
+    "pilot": "2f8ac60bb9ed174f22de36cbf8a6d91839e1ba6ba08705ae6c98c4bbf668ac7f"
+  },
+  "negative_effect_facts": {
+    "pipedrive_access_or_change": false,
+    "production_change": false,
+    "destructive_delete": false
+  },
+  "authority_expiry_control": {
+    "sw_expires_at": "2026-07-22T21:59:00.000Z",
+    "post_expiry_logpush_or_alert_mutation": "prohibited_without_fresh_exact_SW_except_authorized_expiry_rollback",
+    "authorized_expiry_rollback": [
+      "disable_logpush",
+      "disable_alerts",
+      "retain_objects_until_30_day_expiry",
+      "no_destructive_delete"
+    ],
+    "token_outlives_sw_until": "2026-08-20",
+    "token_renewal": "prohibited_without_fresh_exact_token_and_SW_authority",
+    "token_revocation": "not_authorized_requires_separate_exact_DW_authority",
+    "progression_blockers": [
+      "exact_sandbox_deploy_authority",
+      "exact_DW_authority_for_token_cleanup",
+      "trace_receipt_queryability_alert_ack_proof"
+    ]
+  },
+  "receipt_hash": "2ce376c9be08e85876e57cdd76d227424a8a4f7681062d11a1a8c8d42cf5d51c"
+}
