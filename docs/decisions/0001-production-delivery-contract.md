@@ -55,13 +55,10 @@ operate those concerns.
 1. Alexandre is the sole temporary production administrator and owns support,
    incident command, and offboarding for the named pilot. This is an accepted
    concentration risk, not a TBD.
-2. **Hard gate:** no B7, B8, B9, or B10 live, credentialed operation or rollout
-   may proceed until a distinct named backup operator is accepted and their
-   access and recovery path are validated. The gate does not prohibit permitted
-   local implementation.
+2. **Hard gate:** Davy Guittard of Keilintech is the designated future backup, not informed or accepted, with no access and unvalidated recovery. Access may be provisioned only during separately authorized production activation. No B7, B8, B9, or B10 live, credentialed operation or rollout may proceed until notification, acceptance, least-privilege access, and recovery validation are recorded. The gate does not prohibit permitted local implementation.
 3. Cloudflare Logpush exports production audit events to a dedicated production
    R2 bucket. Audit retention is 90 days with pipeline-only writes,
-   Alexandre-only reads while no backup exists, controlled
+   Alexandre-only reads while D08 is designated-not-activated, controlled
    immutability/versioning, automatic expiry deletion, and a documented legal
    hold procedure.
 4. Critical alerts route by email to Alexandre only. The pilot has no 24/7
@@ -125,6 +122,6 @@ date, next review gate, and trigger per decision.
 
 - Later blocks must implement and verify these decisions; this ADR is not
   evidence that any external resource or acceptance test exists.
-- The missing backup operator prevents B7--B10 live execution, even though the
+- The designated-but-inactive D08 backup gate prevents B7--B10 live execution, even though the
   decisions are complete enough for local B0 documentation work.
 - Private distribution and bounded scope avoid a public-availability claim.

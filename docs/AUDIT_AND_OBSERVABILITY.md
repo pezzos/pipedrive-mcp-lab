@@ -31,7 +31,7 @@ Best-effort recovery targets one business day with an RPO of 24h. These are not 
 
 ## Production policy and gates
 
-Any production export requires a dedicated R2 bucket with 90d retention, pipeline-only writes, controlled immutability, expiry, legal hold, and Alexandre-only reads pending a backup. The exact live gates are accepted **D08** and **SW** approval; neither is implied by local artifacts.
+Any production export requires a dedicated R2 bucket with 90d retention, pipeline-only writes, controlled immutability, expiry, legal hold, and Alexandre-only reads while Davy Guittard of Keilintech is D08 designated-not-activated; notification, acceptance, least-privilege access provisioning, and recovery validation remain required before activation. The exact live gates are accepted **D08** and **SW** approval; neither is implied by local artifacts.
 
 Sandbox bucket, retention, and read access remain placeholders. Use a separate bucket recommendation rather than treating sandbox and production as a shared durable boundary.
 

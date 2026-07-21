@@ -338,9 +338,7 @@ and [`decisions/B0-production-decisions.json`](decisions/B0-production-decisions
 ### Exit
 
 Every critical decision has a value, owner, evidence, ISO last-reviewed date,
-next review gate, and revisit trigger. No `TBD` remains on the B1 through B10 path. The missing backup
-operator is an accepted D08 exception with a hard B7--B10 live gate, not an
-unresolved decision.
+next review gate, and revisit trigger. No `TBD` remains on the B1 through B10 path. D08 is designated-not-activated: Davy Guittard of Keilintech is not informed, accepted, provisioned, or recovery-validated. Access is production-activation-only; Alexandre-only audit reads and alert routing remain until completion. This is a hard B7--B10 live gate, not an unresolved decision.
 
 ### Stop
 

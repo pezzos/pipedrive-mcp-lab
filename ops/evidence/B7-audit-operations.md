@@ -49,4 +49,4 @@ Remediation verification: targeted audit, parser, and AJV-equivalence tests pass
 
 ## Gates and boundaries
 
-`D08` remains the distinct backup gate. Exact `SW` authorization/configuration remains a live gate. B7 remains `in_progress`; no external effects are claimed. Privacy and legal drafts are **NON-FINAL** pending post-B9/pre-B10 finalization.
+D08 is designated-not-activated: Davy Guittard of Keilintech still requires notification, acceptance, least-privilege access provisioning, and recovery validation. Exact `SW` authorization/configuration remains a live gate. B7 remains `in_progress`; no external effects are claimed. Privacy and legal drafts are **NON-FINAL** pending post-B9/pre-B10 finalization.

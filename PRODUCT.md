@@ -547,7 +547,7 @@ Before production promotion, the operator must separately approve and verify:
 - Pipedrive private app distribution status and callback;
 - Cloudflare migration and rollback plan;
 - named-pilot Access membership, Alexandre's temporary administration, and the
-  accepted distinct backup operator with validated access/recovery;
+  Davy Guittard of Keilintech as designated future D08 backup, with notification, acceptance, least-privilege access provisioning only at separately authorized production activation, and recovery validation still required;
 - durable Logpush-to-R2 audit export, 90-day retention, controlled access,
   email alerting, and the B0 cost caps;
 - the concrete Alexandre/Romain isolation acceptance sequence.

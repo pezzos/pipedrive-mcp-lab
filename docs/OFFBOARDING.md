@@ -1,6 +1,6 @@
 # Offboarding runbook
 
-Accepted D09 assigns owner **Alexandre**. D08 backup is a separate live-response and access gate; second-person verification is blocked until D08 is accepted. This is a preparation runbook, not a claim that any live action occurred.
+Accepted D09 assigns owner **Alexandre**. Davy Guittard of Keilintech is D08 designated-not-activated; second-person verification is blocked until notification, acceptance, least-privilege access provisioning, and recovery validation. This is a preparation runbook, not a claim that any live action occurred.
 
 ## Trigger and authorization
 

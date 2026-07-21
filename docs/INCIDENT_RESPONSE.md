@@ -1,6 +1,6 @@
 # Incident response runbook
 
-**NON-FINAL; no live claim, 24x7 commitment, or SLA.** Alexandre is primary. `D08_pending` is the backup hard gate. Customer, regulator, legal, and escalation contacts require approved placeholders.
+**NON-FINAL; no live claim, 24x7 commitment, or SLA.** Alexandre is the sole current primary and recipient. Davy Guittard of Keilintech is designated future D08 backup, not informed or accepted, with no access or validated recovery; it remains the hard gate. Customer, regulator, legal, and escalation contacts require approved placeholders.
 
 ## Scope, severity, and intake
 

@@ -131,12 +131,9 @@ change.
   can be additive orchestration/discovery only, never shared CRM credentials,
   OAuth clients, registries, policies, keys, or migration state without a new
   ADR/program rebaseline.
-- Alexandre is the sole temporary production administrator. No B7--B10 live,
-  credentialed operation or rollout may proceed until a distinct named backup
-  operator is accepted and access/recovery is validated.
+- Alexandre is the sole temporary production administrator. Davy Guittard of Keilintech is designated-not-activated and may receive access only at separately authorized production activation; B7--B10 live work remains blocked until notification, acceptance, least-privilege access, and recovery validation.
 - Production audit uses Cloudflare Logpush to a dedicated production R2 bucket:
-  90-day retention, pipeline-only writes, Alexandre-only reads while no backup
-  exists, controlled immutability/versioning, automatic expiry deletion, and a
+  90-day retention, pipeline-only writes, Alexandre-only reads while D08 remains designated-not-activated, controlled immutability/versioning, automatic expiry deletion, and a
   documented legal hold. Critical alerts email Alexandre only; there is no
   24/7 promise, and security/tenancy alerts freeze rollout until acknowledged.
 - The service is best effort: one-business-day recovery target and 24-hour RPO

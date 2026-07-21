@@ -13,14 +13,12 @@ Existing Claude delivery is compatibility-only and does not establish a new
 customer surface or acceptance promise.
 
 Alexandre is the sole temporary production administrator and owner of support,
-incident command, and offboarding. This is an explicit concentration risk. No
-B7--B10 live, credentialed operation or rollout may begin until a distinct
-named backup operator is accepted and their access/recovery is validated.
+incident command, and offboarding. Davy Guittard of Keilintech is designated-not-activated: not informed, not accepted, with no access or validated recovery. No B7--B10 live, credentialed operation or rollout may begin until notification, acceptance, least-privilege access provisioning, and recovery validation are recorded.
 
 Production audit is specified as Cloudflare Logpush to a dedicated production
 R2 bucket with 90-day retention, pipeline-only writes, controlled
 immutability/versioning, automatic expiry deletion, and a documented legal
-hold. While no backup exists, audit reads are Alexandre-only. Critical alerts
+hold. While D08 is designated-not-activated, audit reads are Alexandre-only. Critical alerts
 email Alexandre only, with no 24/7 promise; a security or tenancy alert freezes
 rollout until acknowledged. The observability allocation is at most EUR 10
 excluding tax/month, and the global infrastructure-plus-observability cap is

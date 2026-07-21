@@ -42,4 +42,4 @@ Redacted evidence template: `incident_id`, `time_window`, `systems`, `containmen
 
 ## B0 and approval boundaries
 
-Production is planned as a dedicated R2 export path with 90-day retention, pipeline-only writes, controlled versioning/expiry/legal hold, and Alexandre-only reads pending backup. There is no 24x7 commitment or SLA; RTO is one business day and RPO is 24h best effort; budgets remain approval-bound. Sandbox bucket, retention and read access are user-owned placeholders; use a separate-bucket recommendation. D08 backup is a hard gate. Final acceptance is post-B9 and pre-B10.
+Production is planned as a dedicated R2 export path with 90-day retention, pipeline-only writes, controlled versioning/expiry/legal hold, and Alexandre-only reads while D08 is designated-not-activated. There is no 24x7 commitment or SLA; RTO is one business day and RPO is 24h best effort; budgets remain approval-bound. Sandbox bucket, retention and read access are user-owned placeholders; use a separate-bucket recommendation. D08 backup is a hard gate. Final acceptance is post-B9 and pre-B10.
