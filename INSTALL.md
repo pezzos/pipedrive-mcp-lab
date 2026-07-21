@@ -1,6 +1,6 @@
 # Install Pipedrive MCP In Claude
 
-This guide covers the version `0.3.3` sandbox pilot. It uses only:
+This guide covers the version `0.3.4` sandbox pilot. It uses only:
 
 ```text
 https://pipedrive-mcp-sandbox.pezzoslabs.com/mcp
@@ -27,6 +27,22 @@ connection.
 > required before client rollout. Confirm the active Worker version and the
 > [remaining sandbox acceptance](docs/REMOTE_MCP_CLOUDFLARE.md#sandbox-acceptance)
 > before handing out either installation path.
+
+## ChatGPT private app (listing and installation preparation)
+
+The primary pilot package is **Pipedrive Sandbox**. Build it locally with:
+
+```sh
+npm run pack:chatgpt-plugin
+```
+
+It contains seven controlled workflows, the one approved sandbox app reference,
+and the safety labels **Private sandbox** then **Read-only by default**. It does
+not include a local MCP server, a `.mcp.json`, credentials, headers, or OAuth
+state. Installation is private to named pilot workspaces/users and remains a B3
+/ B8 acceptance step; do not claim a connection or tool action from this local
+package alone. Do not install a second manual Pipedrive MCP connector alongside
+the managed ChatGPT app.
 
 ## Claude Free: standalone skills
 

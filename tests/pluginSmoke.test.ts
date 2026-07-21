@@ -135,6 +135,15 @@ test("all coupled delivery manifests use the package version", () => {
   assert.match(readFileSync(join(process.cwd(), "src", "tools.ts"), "utf8"), new RegExp(`version: "${packageVersion.replaceAll(".", "\\.")}"`));
 });
 
+test("canonical workflows use neutral assistant wording where delivery is shared", () => {
+  const addActivity = readFileSync(join(process.cwd(), "plugin", "claude", "skills", "pipedrive-add-activity", "SKILL.md"), "utf8");
+  const emailActivity = readFileSync(join(process.cwd(), "plugin", "claude", "skills", "pipedrive-email-activity", "SKILL.md"), "utf8");
+  assert.match(addActivity, /asks the assistant to compose or refine email content/);
+  assert.match(emailActivity, /when the assistant must compose or refine/);
+  assert.doesNotMatch(addActivity, /asks Claude to compose/);
+  assert.doesNotMatch(emailActivity, /when Claude must compose/);
+});
+
 test("Claude plugin release script stages versioned and latest MCPB artifacts", { timeout: 180_000 }, () => {
   execFileSync("npm", ["run", "build:plugin"], { cwd: process.cwd(), stdio: "pipe" });
   execFileSync("npm", ["run", "pack:claude-plugin"], { cwd: process.cwd(), stdio: "pipe" });

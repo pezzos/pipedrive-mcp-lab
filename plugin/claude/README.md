@@ -40,5 +40,5 @@ Start here:
 - [Guide d'installation en français](INSTALL.fr.md)
 - [Claude delivery details](docs/CLAUDE_DELIVERY.md)
 
-Version `0.3.3` is a sandbox pilot. Production promotion and a production MCP
+Version `0.3.4` is a sandbox pilot. Production promotion and a production MCP
 hostname require a separate operator-approved release.

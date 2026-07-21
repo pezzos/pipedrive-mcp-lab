@@ -9,7 +9,7 @@
       "name": "pipedrive-mcp",
       "source": "./plugin/claude",
       "description": "Pipedrive skills for the Pipedrive MCP connector.",
-      "version": "0.3.3",
+      "version": "0.3.4",
       "author": {
         "name": "PezzosLabs"
       },

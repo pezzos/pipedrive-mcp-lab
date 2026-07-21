@@ -11,7 +11,7 @@ Requires Pipedrive MCP. Use only `pipedrive_*` tools. Do not use the official Pi
 
 Use this skill for requests like "ajoute une relance demain pour Jean", "prévois un appel avec Acme vendredi", "mets un mail à faire sur l'affaire Dupont", or "planifie une réunion avec ce prospect".
 
-If the user asks Claude to compose or refine email content rather than only schedule an email activity, use the Pipedrive email activity workflow.
+If the user asks the assistant to compose or refine email content rather than only schedule an email activity, use the Pipedrive email activity workflow.
 
 ## Interpret The Request
 

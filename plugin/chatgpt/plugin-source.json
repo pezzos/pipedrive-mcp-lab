@@ -1,0 +1,24 @@
+{
+  "name": "Pipedrive Sandbox",
+  "description": "Private sandbox for seven controlled Pipedrive workflows. Read-only by default.",
+  "mcp_url": "https://pipedrive-mcp-sandbox.pezzoslabs.com/mcp",
+  "app_id": "plugin_asdk_app_6a5f066a2b788191b7694a13343b6da0",
+  "required": true,
+  "listing": {
+    "private": true,
+    "safety_labels": [
+      "Private sandbox",
+      "Read-only by default"
+    ],
+    "starter_prompts": [
+      "Show my overdue Pipedrive activities and recommend the next safe action.",
+      "Draft a follow-up activity for a deal, preview it, and ask before saving.",
+      "Find the latest notes for a company and summarize the pipeline context."
+    ],
+    "visual": "Controlled Pipeline"
+  },
+  "marketplace": {
+    "name": "pipedrive-sandbox",
+    "description": "Private sandbox catalog for controlled Pipedrive workflows."
+  }
+}

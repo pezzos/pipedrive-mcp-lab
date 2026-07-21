@@ -1,9 +1,8 @@
 # Pipedrive MCP
 
-Model Context Protocol server for Pipedrive CRM operations. The recommended
-client delivery uses a remote Cloudflare Worker with either standalone skills
-for Claude Free or a plugin for Pro, Max, Team, and Enterprise. A local Claude
-Desktop Extension remains available as an alternative fallback. The server
+Model Context Protocol server for Pipedrive CRM operations. The primary pilot
+delivery is the private **Pipedrive Sandbox** ChatGPT app; Claude delivery and
+the local Claude Desktop Extension remain compatibility alternatives. The server
 exposes read tools by default and gates writes, Mailbox, and deletes explicitly.
 
 For client installation, start with
@@ -43,20 +42,20 @@ gate](docs/REMOTE_MCP_CLOUDFLARE.md#implemented-tenancy-boundary-and-deployment-
 
 ## Quick Start
 
-Build both Claude delivery variants:
+Build the local private ChatGPT package:
 
 ```sh
 npm install
 npm run check
-npm run pack:claude-delivery
-claude plugin validate dist/claude-plugin/pipedrive-mcp
+npm run pack:chatgpt-plugin
 ```
 
-The output contains individual skill ZIPs under `dist/claude-skills/` and the
-paid plugin under `dist/claude-plugin/pipedrive-mcp/`. See
-[Claude delivery](docs/CLAUDE_DELIVERY.md). For Cowork Desktop, Cowork Mobile,
-Cowork Web, or a managed client rollout, use the
-[Cloudflare remote MCP guide](docs/REMOTE_MCP_CLOUDFLARE.md).
+The output is a deterministic, local-only package under
+`dist/chatgpt-plugin/pipedrive-sandbox-0.3.4/`, with its adjacent SHA-256
+receipt. See [ChatGPT delivery](docs/CHATGPT_DELIVERY.md). This package does not
+install an app, connect OAuth, or call Pipedrive. Claude compatibility packages
+remain available through `npm run pack:claude-delivery`; see
+[Claude delivery](docs/CLAUDE_DELIVERY.md).
 
 For a plain MCP host or repository checkout:
 
@@ -99,7 +98,8 @@ standalone skills, and Claude plugin. Plugin source files live under
 `plugin/claude/`, the monorepo marketplace is declared in
 `.claude-plugin/marketplace.json`, and staged output lives under `dist/`.
 
-The version `0.3.3` plugin contains the seven skills and a strict root
+The version `0.3.4` delivery contains the seven canonical skills. The ChatGPT
+package uses an `.app.json` app reference; the Claude plugin retains a strict root
 `.mcp.json` that declares only the remote sandbox connector. Free-plan users
 import selected standalone ZIPs and add the same `/mcp` URL manually. The ZIPs
 contain no connector or credentials.

@@ -1,6 +1,6 @@
 # Installer Pipedrive MCP dans Claude
 
-Ce guide concerne le pilote sandbox en version `0.3.3`. Il utilise uniquement :
+Ce guide concerne le pilote sandbox en version `0.3.4`. Il utilise uniquement :
 
 ```text
 https://pipedrive-mcp-sandbox.pezzoslabs.com/mcp

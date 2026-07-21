@@ -16,8 +16,12 @@ const forbiddenContentPatterns = [
 
 export function assertSafeTextTree(root, options = {}) {
   const allowedMcpConfig = options.allowedMcpConfig ?? null;
+  const allowedFiles = options.allowedFiles ? new Set(options.allowedFiles) : null;
   for (const file of walk(root)) {
     const relativePath = relative(root, file);
+    if (allowedFiles && !allowedFiles.has(relativePath)) {
+      throw new Error(`Unexpected file in artifact: ${relativePath}`);
+    }
     const parts = relativePath.split(/[\\/]/);
     if (parts.some((part) => forbiddenPathParts.has(part))) {
       throw new Error(`Forbidden path in artifact: ${relativePath}`);
