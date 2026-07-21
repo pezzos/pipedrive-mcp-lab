@@ -233,6 +233,14 @@ test("admin action tickets are one-shot and bound to actor, action, target, gene
     generation: 2,
     connectedAtMs: 1,
   });
+  const displayTicket = await core.issueAdminActionTicket(
+    "admin-sub", "force-disconnect", "opaque-user-ref",
+  );
+  assert.deepEqual(Object.keys(displayTicket.forceDisconnectTarget ?? {}).sort(), [
+    "accessEmail", "connectedAtMs", "connectionRef", "domain", "generation", "state",
+  ]);
+  assert.equal(displayTicket.forceDisconnectTarget?.connectionRef, "opaque-user-ref");
+  assert.doesNotMatch(JSON.stringify(displayTicket.forceDisconnectTarget), /accessSub|tenantId|token|secret|oauth|crm|pipedrive/i);
   const forceTicket = await core.issueAdminAction(
     "admin-sub",
     "force-disconnect",

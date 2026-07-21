@@ -346,3 +346,12 @@ Platform behavior was checked on 2026-07-16 against Anthropic's
 [Cowork surface guide](https://support.claude.com/en/articles/15520349-use-claude-cowork-on-web-desktop-and-mobile).
 The monorepo marketplace layout was checked separately against Anthropic's
 [plugin marketplace documentation](https://code.claude.com/docs/en/plugin-marketplaces).
+
+## Server-rendered recovery pages
+
+Use the normal same-origin pages for recovery. `/pipedrive` explains safe
+connection, cancellation, mismatch, and local-token recovery states; `/settings`
+keeps capability changes scoped to the verified connection; `/admin/pipedrive`
+uses one-shot, generation-bound confirmations. Reload an expired confirmation
+instead of replaying it. Local disconnect removes Worker-held OAuth material
+only; it changes neither Access, the ChatGPT app, nor the provider grant.

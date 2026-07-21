@@ -11,7 +11,6 @@ import { loadRemoteConfig, type RemoteConfig, type RemoteEnv } from "./env.js";
 import {
   normalizeRemoteOAuthErrorCode,
   remoteOAuthDependencyStatus,
-  remoteOAuthErrorMessage,
   remoteOAuthErrorStatus,
   type RemoteOAuthErrorCode,
 } from "./oauthErrors.js";
@@ -36,6 +35,7 @@ import {
   normalizePipedriveSubdomain,
   type TenantAdminAction,
   type TenantAdminProjection,
+  type AdminActionTicket,
 } from "./tenantRegistry.js";
 import {
   UserConnection,
@@ -44,6 +44,7 @@ import {
   type UserCredential,
 } from "./userConnection.js";
 import { renderUserConnectionPage } from "./userConnectionPage.js";
+import { htmlResponse, noStoreRedirect } from "./pageResponse.js";
 import { handleMcpRequest } from "./transport.js";
 
 // TenantSecrets must stay exported so the already-declared v1 Durable Object
@@ -141,9 +142,10 @@ export default {
       }
     } catch (error) {
       const code = safeErrorCode(error, "remote_dependency_unavailable");
-      return url.pathname === "/mcp"
+      const recovery = browserUiRecovery(request, url);
+      return recovery ?? (url.pathname === "/mcp"
         ? mcpFailure(code)
-        : noStoreJson({ code }, { status: dependencyStatus(code) });
+        : noStoreJson({ code }, { status: dependencyStatus(code) }));
     }
 
     return new Response("Not found", { status: 404 });
@@ -278,20 +280,23 @@ async function handlePipedriveAdmin(
     );
   }
   const registry = tenantRegistryStub(env);
+  const url = new URL(request.url);
   const response = await registry.fetch("https://registry.internal/admin/projection");
   if (!response.ok) {
-    const code = await responseErrorCode(response, "tenant_registry_unavailable");
-    return noStoreJson({ code }, { status: response.status });
+    if (adminError(url.searchParams.get("error")) === "registry") {
+      const nonce = styleNonce();
+      return htmlResponse(renderPipedriveAdminPage({ projection: { tenants: [], connections: [] }, nonce, error: "registry" }), 503, nonce);
+    }
+    return noStoreRedirect(new URL("/admin/pipedrive?error=registry", request.url), 303);
   }
   const projection = await response.json<TenantAdminProjection>();
   const nonce = styleNonce();
-  const url = new URL(request.url);
-  return html(
+  return htmlResponse(
     renderPipedriveAdminPage({
       projection,
       nonce,
-      notice: url.searchParams.get("notice") ?? undefined,
-      error: url.searchParams.get("error") ?? undefined,
+      notice: adminNotice(url.searchParams.get("notice")),
+      error: adminError(url.searchParams.get("error")),
     }),
     200,
     nonce,
@@ -314,14 +319,19 @@ async function handleAdminActionConfirmation(
   const target = action === "force-disconnect"
     ? String(form.get("connection_ref") ?? "")
     : String(form.get("domain") ?? "");
-  const actionToken = await issueRegistryAction(
-    tenantRegistryStub(env),
-    identity.sub,
+  let ticket: AdminActionTicket;
+  try { ticket = await issueRegistryAction(tenantRegistryStub(env), identity.sub, action, target); } catch { return noStoreRedirect(new URL("/admin/pipedrive?error=ticket", request.url), 303); }
+  const nonce = styleNonce();
+  if (action === "force-disconnect" && !ticket.forceDisconnectTarget) {
+    return noStoreJson({ code: "tenant_registry_unavailable" }, { status: 503 });
+  }
+  return htmlResponse(renderAdminActionConfirmation({
     action,
     target,
-  );
-  const nonce = styleNonce();
-  return html(renderAdminActionConfirmation({ action, target, actionToken, nonce }), 200, nonce);
+    actionToken: ticket.actionToken,
+    nonce,
+    ...(ticket.forceDisconnectTarget ? { forceTarget: ticket.forceDisconnectTarget } : {}),
+  }), 200, nonce);
 }
 
 async function handleApproveConfirmation(
@@ -337,12 +347,13 @@ async function handleApproveConfirmation(
   try {
     domain = normalizePipedriveSubdomain(form.get("domain"));
   } catch {
-    return noStoreJson({ code: "tenant_domain_invalid" }, { status: 400 });
+    return noStoreRedirect(new URL("/admin/pipedrive?error=conflict", request.url), 303);
   }
   const registry = tenantRegistryStub(env);
-  const actionToken = await issueRegistryAction(registry, identity.sub, "approve", domain);
+  let ticket: AdminActionTicket;
+  try { ticket = await issueRegistryAction(registry, identity.sub, "approve", domain); } catch { return noStoreRedirect(new URL("/admin/pipedrive?error=ticket", request.url), 303); }
   const nonce = styleNonce();
-  return html(renderApproveConfirmation({ domain, actionToken, nonce }), 200, nonce);
+  return htmlResponse(renderApproveConfirmation({ domain, actionToken: ticket.actionToken, nonce }), 200, nonce);
 }
 
 async function handleTenantAdminAction(
@@ -393,8 +404,8 @@ async function handleTenantAdminAction(
     typeof tenantId === "string" ? tenantId : undefined,
   ).catch(() => undefined));
   return response.ok
-    ? Response.redirect(new URL(`/admin/pipedrive?notice=${action}`, request.url), 303)
-    : noStoreJson({ code }, { status: response.status });
+    ? noStoreRedirect(new URL(`/admin/pipedrive?notice=${action}`, request.url), 303)
+    : noStoreRedirect(new URL(`/admin/pipedrive?error=${code === "tenant_registry_conflict" ? "conflict" : "ticket"}`, request.url), 303);
 }
 
 async function handleAdminForceDisconnect(
@@ -426,8 +437,7 @@ async function handleAdminForceDisconnect(
     },
   );
   if (!consumed.ok) {
-    const code = await responseErrorCode(consumed, "tenant_admin_action_invalid");
-    return noStoreJson({ code }, { status: consumed.status });
+    return noStoreRedirect(new URL("/admin/pipedrive?error=ticket", request.url), 303);
   }
   const target = await consumed.json<{
     accessSub: string;
@@ -460,8 +470,8 @@ async function handleAdminForceDisconnect(
     target.tenantId,
   ).catch(() => undefined));
   return disconnected.ok
-    ? Response.redirect(new URL("/admin/pipedrive?notice=force-disconnected", request.url), 303)
-    : noStoreJson({ code }, { status: disconnected.status });
+    ? noStoreRedirect(new URL("/admin/pipedrive?notice=force-disconnected", request.url), 303)
+    : noStoreRedirect(new URL("/admin/pipedrive?error=conflict", request.url), 303);
 }
 
 async function handleSettings(
@@ -471,7 +481,20 @@ async function handleSettings(
   config: RemoteConfig,
   context: ExecutionContext,
 ): Promise<Response> {
-  const credential = await getUserCredential(env, identity.sub);
+  if (request.method === "GET" && new URL(request.url).searchParams.get("error") === "policy") {
+    return noStoreRedirect(new URL("/pipedrive?notice=storage", request.url), 303);
+  }
+  let credential: UserCredential;
+  try {
+    credential = await getUserCredential(env, identity.sub);
+  } catch (error) {
+    if (request.method === "GET" || (request.method === "POST" && hasExactOrigin(request))) {
+      const code = safeErrorCode(error, "pipedrive_credential_unavailable");
+      const notice = code === "pipedrive_not_connected" ? "not-connected" : code === "pipedrive_reconnect_required" ? "reconnect" : "storage";
+      return noStoreRedirect(new URL(`/pipedrive?notice=${notice}`, request.url), 303);
+    }
+    return noStoreJson({ code: "settings_request_invalid" }, { status: 403 });
+  }
   const stub = userPolicyStub(env, identity.sub, credential.companyId);
   if (request.method === "GET") {
     const [policyResponse, csrfResponse] = await Promise.all([
@@ -479,18 +502,21 @@ async function handleSettings(
       stub.fetch("https://policy.internal/csrf", { method: "POST" }),
     ]);
     if (!policyResponse.ok || !csrfResponse.ok) {
-      return noStoreJson({ code: "policy_unavailable" }, { status: 503 });
+      return noStoreRedirect(new URL("/settings?error=policy", request.url), 303);
     }
     const policy = await policyResponse.json<UserPolicyRecord>();
     const { csrf } = await csrfResponse.json<{ csrf: string }>();
     const nonce = styleNonce();
-    return html(
+    return htmlResponse(
       renderSettingsPage({
         email: identity.email,
+        company: credential.companyName,
+        domain: credential.domain,
         policy,
         csrf,
         nonce,
         saved: new URL(request.url).searchParams.get("saved") === "1",
+        error: settingsError(new URL(request.url).searchParams.get("error")),
       }),
       200,
       nonce,
@@ -503,12 +529,13 @@ async function handleSettings(
   const form = await request.formData();
   const currentResponse = await stub.fetch("https://policy.internal/policy");
   if (!currentResponse.ok) {
-    return noStoreJson({ code: "policy_unavailable" }, { status: 503 });
+    return noStoreRedirect(new URL("/settings?error=policy", request.url), 303);
   }
   const current = await currentResponse.json<UserPolicyRecord>();
+  const requestedWrites = form.get("writes") === "yes";
   const next = {
-    writes: form.get("writes") === "yes",
-    deletes: form.get("deletes") === "yes",
+    writes: requestedWrites,
+    deletes: requestedWrites && form.get("deletes") === "yes",
     mailbox: form.get("mailbox") === "yes",
     expectedRevision: Number(form.get("revision")),
   };
@@ -518,11 +545,20 @@ async function handleSettings(
     (!current.mailbox && next.mailbox);
   if (increasesAuthority && form.get("confirm") !== "yes") {
     const csrfResponse = await stub.fetch("https://policy.internal/csrf", { method: "POST" });
-    const { csrf } = await csrfResponse.json<{ csrf: string }>();
+    if (!csrfResponse.ok) {
+      return noStoreRedirect(new URL("/settings?error=policy", request.url), 303);
+    }
+    const csrfResult: { csrf?: unknown } = await csrfResponse.json<{ csrf?: unknown }>()
+      .catch(() => ({} as { csrf?: unknown }));
+    if (typeof csrfResult.csrf !== "string" || csrfResult.csrf.length === 0) {
+      return noStoreRedirect(new URL("/settings?error=policy", request.url), 303);
+    }
     const nonce = styleNonce();
-    return html(
+    return htmlResponse(
       renderSettingsPage({
         email: identity.email,
+        company: credential.companyName,
+        domain: credential.domain,
         policy: {
           writes: next.writes,
           deletes: next.deletes,
@@ -530,7 +566,7 @@ async function handleSettings(
           revision: current.revision,
           updatedAt: current.updatedAt,
         },
-        csrf,
+        csrf: csrfResult.csrf,
         nonce,
         saved: false,
         error: "Confirmez les conséquences avant d’activer une nouvelle capacité.",
@@ -548,10 +584,7 @@ async function handleSettings(
     body: JSON.stringify(next),
   });
   if (!updatedResponse.ok) {
-    return noStoreJson(
-      { code: (await updatedResponse.json<{ code?: string }>()).code ?? "policy_update_failed" },
-      { status: updatedResponse.status },
-    );
+    return noStoreRedirect(new URL("/settings?error=conflict", request.url), 303);
   }
   const updated = await updatedResponse.json<UserPolicyRecord>();
   const changes = policyChanges(current, updated);
@@ -564,7 +597,7 @@ async function handleSettings(
       changes,
     ).catch(() => undefined),
   );
-  return Response.redirect(new URL("/settings?saved=1", request.url), 303);
+  return noStoreRedirect(new URL("/settings?saved=1", request.url), 303);
 }
 
 async function handleUserConnectionPage(
@@ -592,19 +625,18 @@ async function handleUserConnectionPage(
       statusResponse.ok ? actionResponse : statusResponse,
       "user_connection_unavailable",
     );
-    return noStoreJson({ code }, { status: 503 });
+    const nonce = styleNonce();
+    return htmlResponse(renderUserConnectionPage({ status: { connected: false, reconnectRequired: false, generation: 0 }, actionToken: "", nonce, notice: "storage" }), 503, nonce);
   }
   const status = await statusResponse.json<UserConnectionStatus>();
   const { actionToken } = await actionResponse.json<{ actionToken: string }>();
   const nonce = styleNonce();
   const url = new URL(request.url);
-  return html(renderUserConnectionPage({
+  return htmlResponse(renderUserConnectionPage({
     status,
     actionToken,
     nonce,
-    connected: url.searchParams.get("connected") === "1",
-    disconnected: url.searchParams.get("disconnected") === "1",
-    error: url.searchParams.get("error") ?? undefined,
+    notice: userConnectionNotice(url.searchParams.get("notice")),
   }), 200, nonce);
 }
 
@@ -637,8 +669,8 @@ async function handlePipedriveConnect(
       403,
       code,
     ).catch(() => undefined));
-    return Response.redirect(
-      new URL(`/pipedrive?error=${encodeURIComponent(publicConnectionError(code))}`, request.url),
+    return noStoreRedirect(
+      new URL(`/pipedrive?notice=${connectionNoticeForCode(code)}`, request.url),
       303,
     );
   }
@@ -672,8 +704,8 @@ async function handlePipedriveConnect(
         code as RemoteOAuthErrorCode,
       ).catch(() => undefined),
     );
-    return Response.redirect(
-      new URL(`/pipedrive?error=${encodeURIComponent(publicConnectionError(code))}`, request.url),
+    return noStoreRedirect(
+      new URL(`/pipedrive?notice=${connectionNoticeForCode(code)}`, request.url),
       303,
     );
   }
@@ -686,7 +718,7 @@ async function handlePipedriveConnect(
     writeOperationAudit(request, identity.sub, config.auditHmacKey, "/pipedrive/connect", "oauth.connect", "success", 302)
       .catch(() => undefined),
   );
-  return Response.redirect(authorizationUrl, 302);
+  return noStoreRedirect(authorizationUrl, 302);
 }
 
 async function handlePipedriveCallback(
@@ -729,7 +761,7 @@ async function handlePipedriveCallback(
         code,
       ).catch(() => undefined),
     );
-    return oauthFailurePage("Autorisation Pipedrive refusée", code, requestId(request), status);
+    return noStoreRedirect(new URL("/pipedrive?notice=oauth-cancelled", request.url), 303);
   }
   const redirectUri = new URL("/oauth/pipedrive/callback", request.url).toString();
   const response = await stub.fetch("https://connection.internal/exchange", {
@@ -758,8 +790,8 @@ async function handlePipedriveCallback(
       )
         .catch(() => undefined),
     );
-    return Response.redirect(
-      new URL(`/pipedrive?error=${encodeURIComponent(publicConnectionError(code))}`, request.url),
+    return noStoreRedirect(
+      new URL(`/pipedrive?notice=${connectionNoticeForCode(code)}`, request.url),
       303,
     );
   }
@@ -767,7 +799,7 @@ async function handlePipedriveCallback(
     writeOperationAudit(request, identity.sub, config.auditHmacKey, "/oauth/pipedrive/callback", "oauth.callback", "success", 303)
       .catch(() => undefined),
   );
-  return Response.redirect(new URL("/pipedrive?connected=1", request.url), 303);
+  return noStoreRedirect(new URL("/pipedrive?notice=connected", request.url), 303);
 }
 
 async function handleUserDisconnect(
@@ -809,8 +841,8 @@ async function handleUserDisconnect(
     code as RemoteOAuthErrorCode | undefined,
   ).catch(() => undefined));
   return response.ok
-    ? Response.redirect(new URL("/pipedrive?disconnected=1", request.url), 303)
-    : noStoreJson({ code }, { status: response.status });
+    ? noStoreRedirect(new URL("/pipedrive?notice=disconnected", request.url), 303)
+    : noStoreRedirect(new URL(`/pipedrive?notice=${code === "user_action_invalid" ? "csrf" : "storage"}`, request.url), 303);
 }
 
 async function getUserCredential(env: RemoteEnv, accessSub: string): Promise<UserCredential> {
@@ -834,7 +866,7 @@ async function issueRegistryAction(
   adminSub: string,
   action: TenantAdminAction,
   target: string,
-): Promise<string> {
+): Promise<AdminActionTicket> {
   const response = await registry.fetch("https://registry.internal/admin/action-ticket", {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -843,11 +875,11 @@ async function issueRegistryAction(
   if (!response.ok) {
     throw new Error(await responseErrorCode(response, "tenant_registry_unavailable"));
   }
-  const body = await response.json<{ actionToken?: unknown }>();
+  const body = await response.json<AdminActionTicket>();
   if (typeof body.actionToken !== "string") {
     throw new Error("tenant_registry_unavailable");
   }
-  return body.actionToken;
+  return body;
 }
 
 async function responseErrorCode(response: Response, fallback: string): Promise<string> {
@@ -859,21 +891,71 @@ async function responseErrorCode(response: Response, fallback: string): Promise<
   }
 }
 
-function publicConnectionError(code: string): string {
-  if (
-    code === "tenant_admission_denied" ||
-    code === "tenant_domain_invalid" ||
-    code === "tenant_domain_mismatch"
-  ) {
-    return "Ce domaine ne peut pas être connecté. Vérifiez-le avec l’administrateur.";
+function connectionNoticeForCode(code: string): string {
+  if (code === "tenant_admission_denied" || code === "tenant_domain_invalid" || code === "tenant_domain_mismatch") return "admission";
+  if (code === "tenant_company_mismatch") return "company-mismatch";
+  if (code === "oauth_state_invalid" || code === "oauth_state_stale" || code === "user_connection_conflict") return "conflict";
+  if (code === "user_action_invalid" || code === "connection_confirmation_required") return "csrf";
+  if (code === "tenant_storage_unavailable" || code === "user_connection_unavailable") return "storage";
+  return "oauth-error";
+}
+
+function userConnectionNotice(value: string | null): import("./userConnectionPage.js").UserConnectionNotice | undefined {
+  return value === "connected" || value === "disconnected" || value === "not-connected" || value === "reconnect" || value === "admission" || value === "company-mismatch" || value === "oauth-cancelled" || value === "oauth-error" || value === "conflict" || value === "csrf" || value === "storage" ? value : undefined;
+}
+
+function adminNotice(value: string | null): import("./pipedriveAdminPage.js").AdminNotice | undefined {
+  return value === "approve" || value === "suspend" || value === "resume" || value === "force-disconnected" ? value : undefined;
+}
+
+function adminError(value: string | null): "ticket" | "registry" | "conflict" | undefined {
+  return value === "ticket" || value === "registry" || value === "conflict" ? value : undefined;
+}
+
+function settingsError(value: string | null): string | undefined {
+  if (value === "policy") return "Les permissions ne sont pas disponibles pour le moment. Réessayez plus tard.";
+  if (value === "conflict") return "Vos permissions ont changé. Rechargez la page avant de recommencer.";
+  return undefined;
+}
+
+function browserUiRecovery(request: Request, url: URL): Response | undefined {
+  const sameOriginPost = request.method === "POST" && hasExactOrigin(request);
+  const isGet = request.method === "GET";
+  if (!isGet && !sameOriginPost) return undefined;
+  if (url.pathname === "/pipedrive") {
+    const nonce = styleNonce();
+    return htmlResponse(
+      renderUserConnectionPage({
+        status: { connected: false, reconnectRequired: false, generation: 0 },
+        actionToken: "",
+        nonce,
+        notice: "storage",
+      }),
+      503,
+      nonce,
+    );
   }
-  if (code === "tenant_company_mismatch") {
-    return "La société Pipedrive ne correspond pas au domaine approuvé.";
+  if (url.pathname === "/pipedrive/connect" || url.pathname === "/pipedrive/disconnect") {
+    return noStoreRedirect(new URL("/pipedrive?notice=storage", request.url), 303);
   }
-  if (code === "oauth_state_invalid" || code === "oauth_state_stale") {
-    return "La session de connexion a expiré. Recommencez depuis cette page.";
+  if (url.pathname === "/oauth/pipedrive/callback") {
+    return noStoreRedirect(new URL("/pipedrive?notice=oauth-error", request.url), 303);
   }
-  return "La connexion Pipedrive n’a pas pu être enregistrée. Réessayez.";
+  if (url.pathname === "/settings") {
+    return noStoreRedirect(new URL("/pipedrive?notice=storage", request.url), 303);
+  }
+  if (url.pathname === "/admin/pipedrive") {
+    const nonce = styleNonce();
+    return htmlResponse(
+      renderPipedriveAdminPage({ projection: { tenants: [], connections: [] }, nonce, error: "registry" }),
+      503,
+      nonce,
+    );
+  }
+  if (url.pathname === "/admin/pipedrive/approve/confirm" || url.pathname === "/admin/pipedrive/action/confirm" || url.pathname === "/admin/pipedrive/tenant" || url.pathname === "/admin/pipedrive/force-disconnect") {
+    return noStoreRedirect(new URL("/admin/pipedrive?error=ticket", request.url), 303);
+  }
+  return undefined;
 }
 
 function hasExactOrigin(request: Request): boolean {
@@ -1081,21 +1163,6 @@ function requestId(request: Request): string {
   return request.headers.get("cf-ray") ?? crypto.randomUUID();
 }
 
-function html(body: string, status = 200, nonce?: string): Response {
-  return new Response(body, {
-    status,
-    headers: {
-      "cache-control": "no-store",
-      "content-type": "text/html; charset=utf-8",
-      "content-security-policy":
-        `default-src 'none'; style-src ${nonce ? `'nonce-${nonce}'` : "'none'"}; form-action 'self'; frame-ancestors 'none'; base-uri 'none'`,
-      // Same-origin form POSTs must retain a concrete Origin for hasExactOrigin().
-      // `no-referrer` makes Chromium serialize that header as `Origin: null`.
-      "referrer-policy": "same-origin",
-      "x-content-type-options": "nosniff",
-    },
-  });
-}
 
 async function tenantFailureCode(
   response: Response,
@@ -1107,30 +1174,6 @@ async function tenantFailureCode(
   } catch {
     return fallback;
   }
-}
-
-function oauthFailurePage(
-  title: string,
-  code: RemoteOAuthErrorCode,
-  correlationId: string,
-  status: number,
-): Response {
-  return html(
-    `<h1>${escapeHtml(title)}</h1>` +
-      `<p>${escapeHtml(remoteOAuthErrorMessage(code))}</p>` +
-      `<p>Code : <code>${escapeHtml(code)}</code></p>` +
-      `<p>Identifiant de requête : <code>${escapeHtml(correlationId)}</code></p>`,
-    status,
-  );
-}
-
-function escapeHtml(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#39;");
 }
 
 function styleNonce(): string {

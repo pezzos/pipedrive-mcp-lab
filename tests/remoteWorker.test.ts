@@ -66,6 +66,7 @@ test("any Access user can view only their own connection and start exact-origin 
       executionContext().value,
     );
     assert.equal(page.status, 200);
+    assertPageEnvelope(page);
     assert.match(await page.text(), /Ma connexion Pipedrive/);
 
     const connect = await worker.fetch(
@@ -78,6 +79,7 @@ test("any Access user can view only their own connection and start exact-origin 
       executionContext().value,
     );
     assert.equal(connect.status, 302);
+    assert.equal(connect.headers.get("cache-control"), "no-store");
     assert.equal(new URL(connect.headers.get("location") as string).searchParams.get("state"), "oauth-state");
 
     const badOrigin = await worker.fetch(
@@ -161,6 +163,7 @@ test("admin allowlist is global and token-free while non-admins fail before regi
       executionContext().value,
     );
     assert.equal(response.status, 200);
+    assertPageEnvelope(response);
     const page = await response.text();
     assert.match(page, /acme\.pipedrive\.com/);
     assert.doesNotMatch(page, /tenant-opaque|access_token|refresh_token/);
@@ -178,6 +181,7 @@ test("admin allowlist is global and token-free while non-admins fail before regi
       executionContext().value,
     );
     assert.equal(response.status, 200);
+    assertPageEnvelope(response);
     assert.match(await response.text(), /admin-action-token/);
   });
   assert.equal(registryCalls, 2);
@@ -229,6 +233,7 @@ test("admin approval, tenant mutation, and force-disconnect enforce confirmation
       executionContext().value,
     );
     assert.equal(approval.status, 200);
+    assertPageEnvelope(approval);
     assert.match(await approval.text(), /ticket-approve/);
 
     const missingConfirmation = await worker.fetch(
@@ -274,6 +279,7 @@ test("admin approval, tenant mutation, and force-disconnect enforce confirmation
       return response;
     });
     assert.equal(tenantResult.value.status, 303);
+    assert.equal(tenantResult.value.headers.get("cache-control"), "no-store");
     assert.equal(JSON.parse(tenantResult.logs[0] as string).tenantId, "tenant-opaque");
 
     const forceContext = executionContext();
@@ -291,6 +297,7 @@ test("admin approval, tenant mutation, and force-disconnect enforce confirmation
       return response;
     });
     assert.equal(forceResult.value.status, 303);
+    assert.equal(forceResult.value.headers.get("cache-control"), "no-store");
     assert.equal(JSON.parse(forceResult.logs[0] as string).tenantId, "tenant-opaque");
   });
 
@@ -298,6 +305,32 @@ test("admin approval, tenant mutation, and force-disconnect enforce confirmation
   assert.ok(registryPaths.includes("/admin/suspend"));
   assert.ok(registryPaths.includes("/admin/force-disconnect/consume"));
   assert.deepEqual(connectionNames, [userConnectionObjectKey("selected-user")]);
+});
+
+test("force confirmation renders only the registry ticket target, never browser display fields", async () => {
+  const admin = await accessFixture("admin@example.com", "admin-sub");
+  const registry = namespaceFor(async (request) => {
+    assert.equal(new URL(request.url).pathname, "/admin/action-ticket");
+    const body = await request.json() as Record<string, unknown>;
+    assert.equal(body.action, "force-disconnect");
+    assert.equal(body.target, "opaque-selected-ref");
+    return Response.json({ actionToken: "ticket-fixture", forceDisconnectTarget: {
+      connectionRef: "opaque-selected-ref", accessEmail: "selected@example.invalid", domain: "selected", state: "connected", generation: 7, connectedAtMs: 0,
+    } });
+  });
+  await withJwks(admin.jwk, async () => {
+    const response = await worker.fetch(authorizedForm(
+      "https://mcp.example.test/admin/pipedrive/action/confirm", admin.assertion,
+      { action: "force-disconnect", connection_ref: "opaque-selected-ref", access_email: "hostile@example.invalid", domain: "hostile", tenantId: "hostile-tenant" },
+    ), remoteEnv(failingNamespace(), failingNamespace(), registry), executionContext().value);
+    assert.equal(response.status, 200);
+    assertPageEnvelope(response);
+    const html = await response.text();
+    assert.match(html, /selected@example\.invalid/);
+    assert.match(html, /selected\.pipedrive\.com/);
+    assert.match(html, /Connectée/);
+    assert.doesNotMatch(html, /hostile@example|hostile-tenant|accessSub|tenantId|access_token|refresh_token/i);
+  });
 });
 
 test("settings policy is physically keyed by Access subject and verified company id", async () => {
@@ -318,9 +351,69 @@ test("settings policy is physically keyed by Access subject and verified company
       executionContext().value,
     );
     assert.equal(response.status, 200);
+    assertPageEnvelope(response);
   });
   assert.deepEqual(connectionNames, [userConnectionObjectKey("user:one")]);
   assert.deepEqual(policyNames, [userCompanyPolicyObjectKey("user:one", "company:42")]);
+});
+
+test("same-origin browser UI failures recover through typed no-store routes while malformed settings CSRF never renders", async () => {
+  const user = await accessFixture("user@example.test", "user-one");
+  const admin = await accessFixture("admin@example.com", "admin-sub");
+  const rejected = namespaceFor(async () => { throw new Error("durable_object_rejected"); });
+  const credentialNamespace = namespaceFor(async (request) => {
+    assert.equal(new URL(request.url).pathname, "/credential");
+    return Response.json(credential());
+  });
+  const malformedCsrfPolicy = namespaceFor(async (request) => {
+    const path = new URL(request.url).pathname;
+    if (path === "/policy") return Response.json(readOnlyPolicy());
+    if (path === "/csrf") return new Response("{", { headers: { "content-type": "application/json" } });
+    throw new Error(`unexpected_policy_path:${path}`);
+  });
+  const expectRecovery = async (response: Response, pathname: string, query: string) => {
+    assert.equal(response.status, 303);
+    assert.equal(response.headers.get("cache-control"), "no-store");
+    const location = new URL(response.headers.get("location") as string);
+    assert.equal(location.pathname, pathname);
+    assert.equal(location.search, query);
+  };
+
+  await withJwks(user.jwk, async () => {
+    await expectRecovery(await worker.fetch(authorizedForm(
+      "https://mcp.example.test/pipedrive/connect", user.assertion,
+      { domain: "acme", confirm: "yes", csrf: "ticket" },
+    ), remoteEnv(rejected, rejected, rejected), executionContext().value), "/pipedrive", "?notice=storage");
+    await expectRecovery(await worker.fetch(authorizedRequest(
+      "https://mcp.example.test/oauth/pipedrive/callback?state=s&code=c", user.assertion,
+    ), remoteEnv(rejected, rejected, rejected), executionContext().value), "/pipedrive", "?notice=oauth-error");
+    await expectRecovery(await worker.fetch(authorizedForm(
+      "https://mcp.example.test/pipedrive/disconnect", user.assertion,
+      { confirm: "yes", csrf: "ticket" },
+    ), remoteEnv(rejected, rejected, rejected), executionContext().value), "/pipedrive", "?notice=storage");
+    await expectRecovery(await worker.fetch(authorizedRequest(
+      "https://mcp.example.test/settings", user.assertion,
+    ), remoteEnv(rejected, credentialNamespace, rejected), executionContext().value), "/pipedrive", "?notice=storage");
+    await expectRecovery(await worker.fetch(authorizedForm(
+      "https://mcp.example.test/settings", user.assertion,
+      { writes: "yes", revision: "0" },
+    ), remoteEnv(malformedCsrfPolicy, credentialNamespace, rejected), executionContext().value), "/settings", "?error=policy");
+  });
+
+  await withJwks(admin.jwk, async () => {
+    const adminRecovery = await worker.fetch(authorizedRequest(
+      "https://mcp.example.test/admin/pipedrive", admin.assertion,
+    ), remoteEnv(rejected, rejected, rejected), executionContext().value);
+    assert.equal(adminRecovery.status, 503);
+    assertPageEnvelope(adminRecovery);
+    assert.match(await adminRecovery.text(), /registre sécurisé est momentanément indisponible/i);
+    await expectRecovery(await worker.fetch(authorizedForm(
+      "https://mcp.example.test/admin/pipedrive/approve/confirm", admin.assertion, { domain: "acme" },
+    ), remoteEnv(rejected, rejected, rejected), executionContext().value), "/admin/pipedrive", "?error=ticket");
+    await expectRecovery(await worker.fetch(authorizedForm(
+      "https://mcp.example.test/admin/pipedrive/action/confirm", admin.assertion, { action: "suspend", domain: "acme" },
+    ), remoteEnv(rejected, rejected, rejected), executionContext().value), "/admin/pipedrive", "?error=ticket");
+  });
 });
 
 test("MCP completes discovery before Pipedrive OAuth while every tool call stays fail-closed", async () => {
@@ -730,4 +823,12 @@ async function accessFixture(email: string, sub: string) {
 
 function base64Url(value: Uint8Array): string {
   return Buffer.from(value).toString("base64url");
+}
+
+function assertPageEnvelope(response: Response): void {
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.equal(response.headers.get("content-type"), "text/html; charset=utf-8");
+  assert.equal(response.headers.get("referrer-policy"), "same-origin");
+  assert.equal(response.headers.get("x-content-type-options"), "nosniff");
+  assert.match(response.headers.get("content-security-policy") ?? "", /default-src 'none'; style-src 'nonce-/);
 }

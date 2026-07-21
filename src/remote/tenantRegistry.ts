@@ -51,6 +51,12 @@ export type ForceDisconnectTarget = AdminConnectionProjection & {
   tenantId: string;
 };
 
+/** Safe registry-derived display data used only by the admin confirmation. */
+export type AdminActionTicket = {
+  actionToken: string;
+  forceDisconnectTarget?: AdminConnectionProjection;
+};
+
 export type TenantAdminProjection = {
   tenants: Array<TenantRecord & { connectedUserCount: number }>;
   connections: AdminConnectionProjection[];
@@ -132,6 +138,14 @@ export class TenantRegistryCore {
     actionInput: unknown,
     targetInput: unknown,
   ): Promise<string> {
+    return (await this.issueAdminActionTicket(adminSubInput, actionInput, targetInput)).actionToken;
+  }
+
+  async issueAdminActionTicket(
+    adminSubInput: unknown,
+    actionInput: unknown,
+    targetInput: unknown,
+  ): Promise<AdminActionTicket> {
     const adminSub = boundedString(adminSubInput, 256, "tenant_admin_action_invalid");
     const action = normalizeAdminAction(actionInput);
     const target = action === "force-disconnect"
@@ -141,10 +155,16 @@ export class TenantRegistryCore {
     validateOpaque(actionToken, 32, 256, "tenant_registry_internal_error");
     const digest = await hash(actionToken);
 
+    let forceDisconnectTarget: AdminConnectionProjection | undefined;
     await this.withStorage(async (transaction) => {
       const expectedGeneration = action === "force-disconnect"
         ? await connectionGeneration(transaction, target)
         : (await transaction.get<TenantRecord>(tenantStorageKey(target)))?.generation ?? 0;
+      if (action === "force-disconnect") {
+        const row = await transaction.get<StoredAdminConnectionProjection>(connectionStorageKey(target));
+        if (!isConnectionProjection(row)) throw registryError("tenant_admin_action_invalid");
+        forceDisconnectTarget = publicConnectionProjection(row);
+      }
       await transaction.put<AdminActionRecord>(adminActionStorageKey(action), {
         digest,
         adminSub,
@@ -154,7 +174,7 @@ export class TenantRegistryCore {
         expiresAtMs: this.now() + ADMIN_ACTION_TTL_MS,
       });
     });
-    return actionToken;
+    return { actionToken, ...(forceDisconnectTarget ? { forceDisconnectTarget } : {}) };
   }
 
   async approve(
@@ -433,9 +453,9 @@ export class TenantRegistry {
       }
       if (request.method === "POST" && url.pathname === "/admin/action-ticket") {
         const body = await requestJson(request);
-        return Response.json({
-          actionToken: await this.core.issueAdminAction(body.adminSub, body.action, body.target),
-        });
+        return Response.json(await this.core.issueAdminActionTicket(
+          body.adminSub, body.action, body.target,
+        ));
       }
       if (request.method === "POST" && url.pathname === "/admin/approve") {
         const body = await requestJson(request);

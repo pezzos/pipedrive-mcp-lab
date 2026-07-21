@@ -31,6 +31,7 @@
     "release:claude-plugin": "node scripts/release-claude-plugin.mjs --publish",
     "prepack": "npm run build",
     "test": "WRANGLER_SEND_METRICS=false npm run build:worker --silent && node --import tsx --test tests/*.test.ts",
+    "test:ui": "playwright test -c playwright.config.ts",
     "check": "npm run build && npm run build:plugin && npm test"
   },
   "dependencies": {
@@ -39,9 +40,11 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.11.1",
     "@cloudflare/workers-types": "5.20260715.1",
     "@types/node": "^25.0.0",
     "esbuild": "^0.25.12",
+    "playwright": "1.61.1",
     "tsx": "^4.21.0",
     "typescript": "^5.9.3",
     "wrangler": "4.111.0"

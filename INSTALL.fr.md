@@ -169,3 +169,12 @@ consacrés aux [skills](https://support.claude.com/en/articles/12512180-use-skil
 aux [plugins](https://support.claude.com/en/articles/13837440-use-plugins-in-claude),
 aux [surfaces Cowork](https://support.claude.com/en/articles/15520349-use-claude-cowork-on-web-desktop-and-mobile) et
 aux [connecteurs MCP distants](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).
+
+## Récupération depuis la page de connexion
+
+La page de connexion affiche des notices sûres et typées après une annulation
+ou un échec OAuth. Lors d’un remplacement, la connexion actuelle reste active
+jusqu’à la vérification complète de la nouvelle société, qui commence en lecture
+seule. La déconnexion locale supprime seulement le matériel OAuth conservé par
+le Worker, sans modifier Access, l’application Pipedrive dans ChatGPT ni
+l’autorisation côté fournisseur.

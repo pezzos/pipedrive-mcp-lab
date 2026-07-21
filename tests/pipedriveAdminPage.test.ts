@@ -48,7 +48,7 @@ test("admin page uses valid empty table rows and a separate approval confirmatio
     projection: { tenants: [], connections: [] },
     nonce: "nonce",
   });
-  assert.match(empty, /<tbody><tr><td colspan="6">Aucun domaine/);
+  assert.match(empty, /<tbody><tr><td colspan="7">Aucun domaine/);
   assert.doesNotMatch(empty, /<tbody><p>/);
 
   const confirmation = renderApproveConfirmation({
@@ -65,6 +65,13 @@ test("admin page uses valid empty table rows and a separate approval confirmatio
     target: 'connection"><script>',
     actionToken: 'one-shot"><script>',
     nonce: "nonce",
+    forceTarget: {
+      connectionRef: "connection-opaque",
+      accessEmail: "user@example.invalid",
+      domain: "acme",
+      state: "connected",
+      connectedAtMs: Date.UTC(2026, 6, 16),
+    },
   });
   assert.match(actionConfirmation, /action="\/admin\/pipedrive\/force-disconnect"/);
   assert.match(actionConfirmation, /name="confirm" value="yes"/);
@@ -108,7 +115,7 @@ test("user page distinguishes connect, replace, reconnect and local disconnect s
     disconnected: false,
   });
   assert.match(purged, /Reconnexion requise/);
-  assert.match(purged, /Connecter Pipedrive/);
+  assert.match(purged, /Reconnecter Pipedrive/);
   assert.doesNotMatch(purged, /Déconnecter mon compte/);
-  assert.doesNotMatch(purged, /href="\/settings"/);
+  assert.match(purged, /href="\/settings"/, "shared navigation remains available");
 });

@@ -176,3 +176,11 @@ Platform statements were checked on 2026-07-16 against Anthropic's
 [plugins guide](https://support.claude.com/en/articles/13837440-use-plugins-in-claude),
 [Cowork surface guide](https://support.claude.com/en/articles/15520349-use-claude-cowork-on-web-desktop-and-mobile), and
 [remote connector guide](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp).
+
+## Connection page recovery
+
+The connection page uses safe, typed notices for a cancelled or failed OAuth
+attempt. A replacement leaves the existing connection active until the new
+company is fully verified, then starts the new company read-only. Local
+disconnect removes only Worker-held OAuth material, not Cloudflare Access, the
+ChatGPT Pipedrive app, or the provider-side grant.

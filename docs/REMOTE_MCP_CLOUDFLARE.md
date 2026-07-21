@@ -413,3 +413,14 @@ provider revocation distinction, see the [operator removal ladder](OPERATOR_RUNB
 - [Pipedrive Developer Sandbox](https://pipedrive.readme.io/docs/developer-sandbox-account)
 
 These platform references were checked on 2026-07-16.
+
+## B4 server-rendered UI recovery
+
+`/pipedrive`, `/settings`, and `/admin/pipedrive` are server-rendered French
+surfaces. Their HTML uses `Cache-Control: no-store`, a nonce-bound local style,
+`default-src 'none'`, same-origin forms, `frame-ancestors 'none'`, `base-uri
+'none'`, same-origin referrer policy, and `nosniff`. Browser status and error
+messages are allowlisted; arbitrary query text is never rendered. A failed or
+cancelled OAuth flow returns the user to the connection surface with a safe next
+step, while token, assertion, OAuth code/state, and provider identity remain
+absent from HTML. This local UI evidence is not deployed OAuth acceptance.
