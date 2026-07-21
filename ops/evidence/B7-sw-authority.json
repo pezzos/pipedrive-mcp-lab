@@ -1,0 +1,48 @@
+{
+  "schema": "b7-sw-authority-receipt",
+  "version": 1,
+  "authority": "SW",
+  "status": "authorized",
+  "issued_at": "2026-07-21T19:07:02.000Z",
+  "expires_at": "2026-07-22T21:59:00.000Z",
+  "decision_owner": "Alexandre",
+  "authorization_source": "explicit_operator_grant_current_session",
+  "environment": "sandbox",
+  "provider": "Cloudflare",
+  "hash_algorithm": "sha256",
+  "target": {
+    "bucket_id_hash": "13decf6feca3b39441f00236ce1407a0c7f6cb1876e1d5576a3e37bd764b4a4b",
+    "operator_identity_hash": "192e52a0ac7db369a7ee845346811c6d61995baa8c680c766810539cec98b615",
+    "alert_route_identity_hash": "192e52a0ac7db369a7ee845346811c6d61995baa8c680c766810539cec98b615"
+  },
+  "scope": [
+    "connect_cloudflare_via_google_identity",
+    "create_dedicated_sandbox_r2_bucket_if_available",
+    "configure_30_day_retention",
+    "configure_pipeline_only_logpush_for_sandbox_worker",
+    "configure_alexandre_only_email_alerts",
+    "observability_cost_cap_eur_10_ex_tax_per_month"
+  ],
+  "preconditions": [
+    "pilot_exception_receipt_recorded",
+    "safe_expected_sandbox_data_only",
+    "no_active_security_incident"
+  ],
+  "exclusions": [
+    "production_changes",
+    "customer_billing",
+    "additional_customer_access",
+    "real_production_data_or_traffic",
+    "public_availability",
+    "destructive_deletion",
+    "pipedrive_changes"
+  ],
+  "rollback": [
+    "disable_sandbox_logpush",
+    "disable_sandbox_alerts",
+    "retain_audit_objects_until_30_day_expiry",
+    "no_destructive_delete"
+  ],
+  "live_effects_performed": false,
+  "receipt_hash": "355a0cb047a7c686027a7f1383bfa98598fbb6d6debedf73c59f6cbe43880c46"
+}
