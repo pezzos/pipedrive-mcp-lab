@@ -1,0 +1,229 @@
+{
+  "declarative_only": true,
+  "no_24x7": true,
+  "panels": [
+    {
+      "id": "heartbeat-freshness",
+      "title": "Heartbeat freshness",
+      "source": "pipedrive.audit",
+      "query": {
+        "category": "export",
+        "operation": "audit.export.heartbeat"
+      },
+      "window": "15m",
+      "unit": "seconds",
+      "warning": 900,
+      "critical": 900,
+      "drilldown": "docs/INCIDENT_RESPONSE.md",
+      "live_status": "not_configured"
+    },
+    {
+      "id": "parse-failures",
+      "title": "Parse failures",
+      "source": "audit_export_validator",
+      "query": {
+        "metric": "invalid_marked_record_count",
+        "activation": "not_configured"
+      },
+      "window": "15m",
+      "unit": "count",
+      "warning": 1,
+      "critical": 1,
+      "drilldown": "docs/INCIDENT_RESPONSE.md",
+      "live_status": "not_configured"
+    },
+    {
+      "id": "deployment-version",
+      "title": "Deployment version",
+      "source": "pipedrive.audit",
+      "query": {
+        "category": "config"
+      },
+      "window": "15m",
+      "unit": "count",
+      "warning": 1,
+      "critical": 1,
+      "drilldown": "docs/INCIDENT_RESPONSE.md",
+      "live_status": "not_configured"
+    },
+    {
+      "id": "tenancy",
+      "title": "Tenancy",
+      "source": "pipedrive.audit",
+      "query": {
+        "category": "tenant"
+      },
+      "window": "15m",
+      "unit": "count",
+      "warning": 1,
+      "critical": 1,
+      "drilldown": "docs/INCIDENT_RESPONSE.md",
+      "live_status": "not_configured"
+    },
+    {
+      "id": "access-jwks",
+      "title": "Access JWKS",
+      "source": "pipedrive.audit",
+      "query": {
+        "category": "access",
+        "operation": "access.verify"
+      },
+      "window": "5m",
+      "unit": "count",
+      "warning": 1,
+      "critical": 3,
+      "drilldown": "docs/INCIDENT_RESPONSE.md",
+      "live_status": "not_configured"
+    },
+    {
+      "id": "oauth",
+      "title": "OAuth",
+      "source": "pipedrive.audit",
+      "query": {
+        "category": "oauth"
+      },
+      "window": "15m",
+      "unit": "count",
+      "warning": 1,
+      "critical": 3,
+      "drilldown": "docs/INCIDENT_RESPONSE.md",
+      "live_status": "not_configured"
+    },
+    {
+      "id": "authority-admin",
+      "title": "Authority admin",
+      "source": "pipedrive.audit",
+      "query": {
+        "category": "authority"
+      },
+      "window": "15m",
+      "unit": "count",
+      "warning": 1,
+      "critical": 3,
+      "drilldown": "docs/INCIDENT_RESPONSE.md",
+      "live_status": "not_configured"
+    },
+    {
+      "id": "route-latency",
+      "title": "Route outcome latency",
+      "source": "pipedrive.audit",
+      "query": {
+        "category": "route",
+        "measurement": "latencyMs"
+      },
+      "window": "15m",
+      "unit": "ms",
+      "warning": 1,
+      "critical": 3,
+      "drilldown": "docs/INCIDENT_RESPONSE.md",
+      "live_status": "not_configured"
+    },
+    {
+      "id": "provider",
+      "title": "Provider status latency",
+      "source": "pipedrive.audit",
+      "query": {
+        "category": "provider",
+        "measurement": "latencyMs"
+      },
+      "window": "15m",
+      "unit": "ms",
+      "warning": 1,
+      "critical": 3,
+      "drilldown": "docs/INCIDENT_RESPONSE.md",
+      "live_status": "not_configured"
+    },
+    {
+      "id": "do-purge",
+      "title": "DO purge",
+      "source": "pipedrive.audit",
+      "query": {
+        "category": "durable_object",
+        "measurement": "purge_delay_seconds"
+      },
+      "window": "24h",
+      "unit": "seconds",
+      "warning": 3600,
+      "critical": 86400,
+      "drilldown": "docs/INCIDENT_RESPONSE.md",
+      "live_status": "not_configured"
+    },
+    {
+      "id": "capacity",
+      "title": "Capacity",
+      "source": "pipedrive.audit",
+      "query": {
+        "category": "capacity",
+        "measurement": "capacity_percent"
+      },
+      "window": "15m",
+      "unit": "percent",
+      "warning": 80,
+      "critical": 100,
+      "drilldown": "docs/INCIDENT_RESPONSE.md",
+      "live_status": "not_configured"
+    },
+    {
+      "id": "retention",
+      "title": "Retention legal hold",
+      "source": "pipedrive.audit",
+      "query": {
+        "filter": "legal_hold"
+      },
+      "window": "24h",
+      "unit": "count",
+      "warning": 1,
+      "critical": 1,
+      "drilldown": "docs/INCIDENT_RESPONSE.md",
+      "live_status": "not_configured"
+    },
+    {
+      "id": "resource",
+      "title": "Request cpu storage",
+      "source": "cloudflare_platform_logpush",
+      "query": {
+        "measurement": "cpu_ms",
+        "request_source": "workers_logpush",
+        "cpu_source": "workers_platform",
+        "storage_source": "do_r2_usage_inventory",
+        "activation": "not_configured"
+      },
+      "window": "15m",
+      "unit": "count",
+      "warning": 1,
+      "critical": 3,
+      "drilldown": "docs/INCIDENT_RESPONSE.md",
+      "live_status": "not_configured"
+    },
+    {
+      "id": "observability-cost",
+      "title": "Observability cost",
+      "source": "approved_billing_cost_ledger",
+      "query": {
+        "metric": "approved_cost_ledger",
+        "activation": "not_configured"
+      },
+      "window": "24h",
+      "unit": "EUR",
+      "warning": 8,
+      "critical": 10,
+      "drilldown": "docs/INCIDENT_RESPONSE.md",
+      "live_status": "not_configured"
+    },
+    {
+      "id": "combined-cost",
+      "title": "Combined cost",
+      "source": "approved_billing_cost_ledger",
+      "query": {
+        "metric": "approved_cost_ledger",
+        "activation": "not_configured"
+      },
+      "window": "24h",
+      "unit": "EUR",
+      "warning": 20,
+      "critical": 25,
+      "drilldown": "docs/INCIDENT_RESPONSE.md",
+      "live_status": "not_configured"
+    }
+  ]
+}

@@ -407,3 +407,6 @@ keeps capability changes scoped to the verified connection; `/admin/pipedrive`
 uses one-shot, generation-bound confirmations. Reload an expired confirmation
 instead of replaying it. Local disconnect removes Worker-held OAuth material
 only; it changes neither Access, the ChatGPT app, nor the provider grant.
+# B7 audit preparation
+
+Audit source records are locally prepared only. Before activation, complete the B7 live-validation template; do not represent console output as durable R2 evidence.

@@ -38,6 +38,9 @@ export function validateTopology(target, config) {
   assert.equal(config.name, expected.worker, "worker name must match its target");
   assert.equal(config.main, "src/remote/worker.ts");
   assert.equal(config.keep_vars, false);
+  assert.equal(config.logpush, true);
+  assert.deepEqual(config.version_metadata, { binding: "VERSION_METADATA" });
+  assert.deepEqual(config.triggers, { crons: ["*/5 * * * *"] });
   assert.equal(config.workers_dev, false);
   assert.equal(config.preview_urls, false);
   assert.equal(config.vars?.DEPLOY_ENVIRONMENT, target);

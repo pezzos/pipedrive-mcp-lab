@@ -303,3 +303,6 @@ npm pack --dry-run
 The tarball should include runtime `dist` files, README, LICENSE, config
 example, package metadata, and docs. It should not include source files, tests,
 validation prompts, or historical validation notes.
+# Audit troubleshooting
+
+Use `node scripts/query-audit-export.mjs <local.ndjson|local.ndjson.gz>` for offline marked-record investigation. The parser never makes network requests and reports ignored platform lines and marked-invalid records.

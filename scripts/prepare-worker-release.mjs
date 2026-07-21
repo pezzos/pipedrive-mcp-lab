@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { configPath, loadTopology, requiredSecrets, requiredVariables, optionalSecrets, optionalVariables, targets } from "./validate-worker-topology.mjs";
 import { validateClientTarget } from "./validate-client-environment.mjs";
 import { requiredClientArtifactRecord } from "./worker-release-client.mjs";
+import { auditArtifactInventory } from "./lib/audit-artifact-inventory.mjs";
 
 const root = process.cwd();
 const target = argument("--target");
@@ -23,8 +24,9 @@ const recordPath = join(releaseRoot, "release-record.json");
 const wrangler = join(root, "node_modules", ".bin", "wrangler");
 const origin = config.vars.PUBLIC_ORIGIN;
 const clientArtifact = requiredClientArtifactRecord(target, root);
+const auditArtifacts = auditArtifactHashes();
 const inputManifest = {
-  schema: 1,
+  schema: 2,
   target,
   worker: config.name,
   public_origin: origin,
@@ -38,6 +40,7 @@ const inputManifest = {
   optional_variables: optionalVariables,
   optional_secrets: optionalSecrets,
   client_metadata_sha256: client.hash,
+  audit_artifacts_sha256: auditArtifacts,
 };
 const inputManifestText = `${canonicalJson(inputManifest)}\n`;
 
@@ -49,7 +52,7 @@ execFileSync(wrangler, ["deploy", "--config", configPath(target, root), "--dry-r
 });
 
 const record = {
-  schema: 2,
+  schema: 3,
   target,
   git_sha: git("rev-parse", "HEAD"),
   git_tree_sha: git("rev-parse", "HEAD^{tree}"),
@@ -74,6 +77,7 @@ const record = {
   required_secrets: requiredSecrets,
   optional_variables: optionalVariables,
   optional_secrets: optionalSecrets,
+  audit_artifacts_sha256: auditArtifacts,
 };
 writeFileSync(recordPath, `${canonicalJson(record)}\n`);
 console.log(`worker_release_record=${recordPath}`);
@@ -91,6 +95,7 @@ function canonicalJson(value) {
 }
 function hashFile(path) { return createHash("sha256").update(readFileSync(path)).digest("hex"); }
 function hashText(value) { return createHash("sha256").update(value).digest("hex"); }
+function auditArtifactHashes() { return Object.fromEntries(auditArtifactInventory.map((path) => [path, hashFile(join(root, path))])); }
 function git(...args) { return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim(); }
 function sourceTreeIsClean() { return git("status", "--porcelain", "--untracked-files=all") === ""; }
 function argument(name) { const index = process.argv.indexOf(name); return index === -1 ? undefined : process.argv[index + 1]; }

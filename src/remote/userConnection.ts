@@ -1,6 +1,7 @@
 import { normalizePipedriveApiDomain } from "./apiDomain.js";
+import { auditContext, emitAudit, ConsoleAuditSink, pseudonymizeAccessSub } from "./audit.js";
 import { boundedText } from "../boundedBody.js";
-import { loadRemoteStateConfig, type RemoteStateConfig, type RemoteEnv } from "./env.js";
+import { loadRemoteAuditConfig, loadRemoteStateConfig, type RemoteStateConfig, type RemoteEnv } from "./env.js";
 import { userConnectionObjectKey } from "./objectKey.js";
 import {
   tenantRegistryStub,
@@ -27,6 +28,7 @@ const ACTION_TTL_MS = 10 * 60_000;
 const REFRESH_SKEW_MS = 60_000;
 export const INACTIVE_TOKEN_RETENTION_MS = 90 * 24 * 60 * 60_000;
 const TOKEN_ENDPOINT = "https://oauth.pipedrive.com/oauth/token";
+export const INTERNAL_AUDIT_REQUEST_ID_HEADER = "x-pipedrive-audit-request-id";
 
 type OAuthStateRecord = {
   digest: string;
@@ -129,11 +131,27 @@ export interface TenantRegistryPort {
   removeProjection(connectionRef: string): Promise<void>;
 }
 
+export type UserConnectionAuditEvent = {
+  requestId: string;
+  category: "oauth";
+  operation: "oauth.connect" | "oauth.reconnect" | "oauth.refresh";
+  outcome: "success" | "denied" | "error";
+  accessSub: string;
+  tenantId?: string;
+  latencyMs: number;
+  errorCode?: string;
+};
+
+export interface UserConnectionAuditObserver {
+  observe(event: UserConnectionAuditEvent): Promise<void> | void;
+}
+
 export type UserConnectionCoreOptions = {
   fetcher?: typeof fetch;
   now?: () => number;
   randomId?: () => string;
   setAlarm?: (timestamp: number) => Promise<void>;
+  auditObserver?: UserConnectionAuditObserver;
 };
 
 export class UserConnectionCore {
@@ -141,6 +159,7 @@ export class UserConnectionCore {
   private readonly now: () => number;
   private readonly randomId: () => string;
   private readonly setAlarm: (timestamp: number) => Promise<void>;
+  private readonly auditObserver?: UserConnectionAuditObserver;
   private readonly refreshInFlight = new Map<number, Promise<OAuthMaterial>>();
 
   constructor(
@@ -154,6 +173,7 @@ export class UserConnectionCore {
     this.now = options.now ?? Date.now;
     this.randomId = options.randomId ?? (() => randomBase64Url(24));
     this.setAlarm = options.setAlarm ?? (async () => {});
+    this.auditObserver = options.auditObserver;
   }
 
   async createState(input: {
@@ -217,85 +237,99 @@ export class UserConnectionCore {
     state: string;
     code: string;
     redirectUri: string;
+    requestId?: string;
   }): Promise<UserConnectionStatus> {
+    const requestId = auditRequestId(input.requestId);
     validateBounded(input.code, 4_096, "oauth_code_invalid");
     const oauthState = await this.consumeState(input.accessSub, input.state, input.redirectUri);
-    await this.registry.checkAdmission(oauthState.expectedDomain);
-    const response = await this.requestOAuth({
-      grant_type: "authorization_code",
-      code: input.code,
-      redirect_uri: input.redirectUri,
-    });
-    const material = parseOAuthMaterial(response, this.now());
-    if (pipedriveSubdomainFromApiDomain(material.apiDomain) !== oauthState.expectedDomain) {
-      throw new Error("tenant_domain_mismatch");
-    }
-    const company = await this.currentCompany(material);
-    const tenant = await this.registry.pinOrMatchCompany(
-      oauthState.expectedDomain,
-      company.companyId,
-      company.companyName,
-    );
-    const admission = await this.registry.checkAdmission(oauthState.expectedDomain);
-    if (
-      admission.companyId !== company.companyId ||
-      admission.generation !== tenant.generation
-    ) {
-      throw new Error("tenant_admission_denied");
-    }
-    const encrypted = await encryptMaterial(material, this.config);
+    const startedAt = this.now();
     const prior = await this.readStoredSnapshot();
-    const connectionRef = prior.connection.connectionRef ?? this.randomId();
-    validateOpaque(connectionRef);
-    let promoted: UserConnectionRecord | undefined;
-    await this.withStorage(async (transaction) => {
-      const current = connectionRecord(
-        await transaction.get<UserConnectionRecord>(CONNECTION_KEY),
-      );
-      if (current.generation !== oauthState.expectedGeneration) {
-        throw new Error("oauth_state_stale");
+    const operation = prior.connection.generation === 0 ? "oauth.connect" : "oauth.reconnect";
+    let tenantId: string | undefined;
+    try {
+      await this.registry.checkAdmission(oauthState.expectedDomain);
+      const response = await this.requestOAuth({
+        grant_type: "authorization_code",
+        code: input.code,
+        redirect_uri: input.redirectUri,
+      });
+      const material = parseOAuthMaterial(response, this.now());
+      if (pipedriveSubdomainFromApiDomain(material.apiDomain) !== oauthState.expectedDomain) {
+        throw new Error("tenant_domain_mismatch");
       }
-      promoted = {
-        generation: current.generation + 1,
-        connectionRef,
-        accessSub: oauthState.accessSub,
-        accessEmail: oauthState.accessEmail,
-        domain: oauthState.expectedDomain,
-        companyId: company.companyId,
-        companyName: company.companyName,
-        tenantId: tenant.tenantId,
-        tenantGeneration: tenant.generation,
-        operationId: oauthState.operationId,
-        connectedAtMs: this.now(),
-        encryptionKeyState: "primary",
-        encryptionKid: this.config.encryptionKid,
-      };
-      await transaction.put(MATERIAL_KEY, encrypted);
-      await transaction.put(CONNECTION_KEY, promoted);
-    });
-    const active = await this.registry.checkAdmission(oauthState.expectedDomain)
-      .catch(async (error) => {
+      const company = await this.currentCompany(material);
+      const tenant = await this.registry.pinOrMatchCompany(
+        oauthState.expectedDomain,
+        company.companyId,
+        company.companyName,
+      );
+      tenantId = tenant.tenantId;
+      const admission = await this.registry.checkAdmission(oauthState.expectedDomain);
+      if (
+        admission.companyId !== company.companyId ||
+        admission.generation !== tenant.generation
+      ) {
+        throw new Error("tenant_admission_denied");
+      }
+      const encrypted = await encryptMaterial(material, this.config);
+      const connectionRef = prior.connection.connectionRef ?? this.randomId();
+      validateOpaque(connectionRef);
+      let promoted: UserConnectionRecord | undefined;
+      await this.withStorage(async (transaction) => {
+        const current = connectionRecord(
+          await transaction.get<UserConnectionRecord>(CONNECTION_KEY),
+        );
+        if (current.generation !== oauthState.expectedGeneration) {
+          throw new Error("oauth_state_stale");
+        }
+        promoted = {
+          generation: current.generation + 1,
+          connectionRef,
+          accessSub: oauthState.accessSub,
+          accessEmail: oauthState.accessEmail,
+          domain: oauthState.expectedDomain,
+          companyId: company.companyId,
+          companyName: company.companyName,
+          tenantId: tenant.tenantId,
+          tenantGeneration: tenant.generation,
+          operationId: oauthState.operationId,
+          connectedAtMs: this.now(),
+          encryptionKeyState: "primary",
+          encryptionKid: this.config.encryptionKid,
+        };
+        await transaction.put(MATERIAL_KEY, encrypted);
+        await transaction.put(CONNECTION_KEY, promoted);
+      });
+      const active = await this.registry.checkAdmission(oauthState.expectedDomain)
+        .catch(async (error) => {
+          await this.compensatePromotion(prior, promoted as UserConnectionRecord, encrypted);
+          throw error;
+        });
+      if (
+        active.companyId !== company.companyId ||
+        active.generation !== tenant.generation
+      ) {
+        await this.compensatePromotion(prior, promoted as UserConnectionRecord, encrypted);
+        throw new Error("tenant_admission_denied");
+      }
+      try {
+        await this.project(promoted as UserConnectionRecord, material.expiresAtMs);
+      } catch (error) {
         await this.compensatePromotion(prior, promoted as UserConnectionRecord, encrypted);
         throw error;
-      });
-    if (
-      active.companyId !== company.companyId ||
-      active.generation !== tenant.generation
-    ) {
-      await this.compensatePromotion(prior, promoted as UserConnectionRecord, encrypted);
-      throw new Error("tenant_admission_denied");
-    }
-    try {
-      await this.project(promoted as UserConnectionRecord, material.expiresAtMs);
+      }
+      await this.scheduleRetention(promoted as UserConnectionRecord);
+      const status = await this.getStatus();
+      await this.observeLifecycle({ requestId, category: "oauth", operation, outcome: "success", accessSub: oauthState.accessSub, ...(safeTenantId(tenantId) ? { tenantId } : {}), latencyMs: this.now() - startedAt });
+      return status;
     } catch (error) {
-      await this.compensatePromotion(prior, promoted as UserConnectionRecord, encrypted);
+      const code = safeCode(error, "pipedrive_oauth_failed");
+      await this.observeLifecycle({ requestId, category: "oauth", operation, outcome: lifecycleOutcome(code), accessSub: oauthState.accessSub, ...(safeTenantId(tenantId) ? { tenantId } : {}), latencyMs: this.now() - startedAt, errorCode: code });
       throw error;
     }
-    await this.scheduleRetention(promoted as UserConnectionRecord);
-    return this.getStatus();
   }
 
-  async getCredential(accessSub: string): Promise<UserCredential> {
+  async getCredential(accessSub: string, requestId?: string): Promise<UserCredential> {
     const snapshot = await this.readSnapshot();
     assertConnectionOwner(snapshot.connection, accessSub);
     if (!snapshot.material || !isConnectedRecord(snapshot.connection)) {
@@ -306,7 +340,7 @@ export class UserConnectionCore {
     await this.assertActive(snapshot.connection);
     const material = snapshot.material.expiresAtMs > this.now() + REFRESH_SKEW_MS
       ? snapshot.material
-      : await this.refresh(snapshot);
+      : await this.refresh(snapshot, auditRequestId(requestId));
     await this.assertActive(snapshot.connection);
     return credential(material, snapshot.connection);
   }
@@ -536,13 +570,13 @@ export class UserConnectionCore {
     return record;
   }
 
-  private async refresh(snapshot: MaterialSnapshot): Promise<OAuthMaterial> {
+  private async refresh(snapshot: MaterialSnapshot, requestId: string): Promise<OAuthMaterial> {
     const generation = snapshot.connection.generation;
     const existing = this.refreshInFlight.get(generation);
     if (existing) {
       return existing;
     }
-    const promise = this.refreshOnce(snapshot).finally(() => {
+    const promise = this.refreshOnce(snapshot, requestId).finally(() => {
       if (this.refreshInFlight.get(generation) === promise) {
         this.refreshInFlight.delete(generation);
       }
@@ -551,68 +585,76 @@ export class UserConnectionCore {
     return promise;
   }
 
-  private async refreshOnce(previous: MaterialSnapshot): Promise<OAuthMaterial> {
+  private async refreshOnce(previous: MaterialSnapshot, requestId: string): Promise<OAuthMaterial> {
     if (!previous.material || !previous.envelope || !isConnectedRecord(previous.connection)) {
       throw new Error("pipedrive_not_connected");
     }
-    const admissionBefore = await this.assertActive(previous.connection);
-    const parsed = await this.requestOAuth({
-      grant_type: "refresh_token",
-      refresh_token: previous.material.refreshCredential,
-    });
-    const updated = parseOAuthMaterial(
-      parsed,
-      this.now(),
-      previous.material.refreshCredential,
-    );
-    if (pipedriveSubdomainFromApiDomain(updated.apiDomain) !== previous.connection.domain) {
-      throw new Error("tenant_domain_mismatch");
-    }
-    const admissionAfterProvider = await this.assertActive(previous.connection);
-    if (admissionAfterProvider.generation !== admissionBefore.generation) {
-      throw new Error("tenant_admission_denied");
-    }
-    const encrypted = await encryptMaterial(updated, this.config);
-    const persisted = await this.withStorage(async (transaction) => {
-      const [storedConnection, envelope] = await Promise.all([
-        transaction.get<UserConnectionRecord>(CONNECTION_KEY),
-        transaction.get<EncryptedEnvelope>(MATERIAL_KEY),
-      ]);
-      const current = connectionRecord(storedConnection);
-      if (
-        current.generation !== previous.connection.generation ||
-        !sameEnvelope(envelope, previous.envelope)
-      ) {
-        return false;
-      }
-      await transaction.put(MATERIAL_KEY, encrypted);
-      return true;
-    });
-    if (!persisted) {
-      throw new Error("oauth_state_stale");
-    }
+    const startedAt = this.now();
     try {
-      const admissionAfterPersist = await this.assertActive(previous.connection);
-      if (admissionAfterPersist.generation !== admissionBefore.generation) {
+      const admissionBefore = await this.assertActive(previous.connection);
+      const parsed = await this.requestOAuth({
+        grant_type: "refresh_token",
+        refresh_token: previous.material.refreshCredential,
+      });
+      const updated = parseOAuthMaterial(
+        parsed,
+        this.now(),
+        previous.material.refreshCredential,
+      );
+      if (pipedriveSubdomainFromApiDomain(updated.apiDomain) !== previous.connection.domain) {
+        throw new Error("tenant_domain_mismatch");
+      }
+      const admissionAfterProvider = await this.assertActive(previous.connection);
+      if (admissionAfterProvider.generation !== admissionBefore.generation) {
         throw new Error("tenant_admission_denied");
       }
-    } catch (error) {
-      await this.withStorage(async (transaction) => {
-        const current = connectionRecord(
-          await transaction.get<UserConnectionRecord>(CONNECTION_KEY),
-        );
-        const envelope = await transaction.get<EncryptedEnvelope>(MATERIAL_KEY);
+      const encrypted = await encryptMaterial(updated, this.config);
+      const persisted = await this.withStorage(async (transaction) => {
+        const [storedConnection, envelope] = await Promise.all([
+          transaction.get<UserConnectionRecord>(CONNECTION_KEY),
+          transaction.get<EncryptedEnvelope>(MATERIAL_KEY),
+        ]);
+        const current = connectionRecord(storedConnection);
         if (
-          current.generation === previous.connection.generation &&
-          sameEnvelope(envelope, encrypted)
+          current.generation !== previous.connection.generation ||
+          !sameEnvelope(envelope, previous.envelope)
         ) {
-          await transaction.put(MATERIAL_KEY, previous.envelope as EncryptedEnvelope);
+          return false;
         }
+        await transaction.put(MATERIAL_KEY, encrypted);
+        return true;
       });
+      if (!persisted) {
+        throw new Error("oauth_state_stale");
+      }
+      try {
+        const admissionAfterPersist = await this.assertActive(previous.connection);
+        if (admissionAfterPersist.generation !== admissionBefore.generation) {
+          throw new Error("tenant_admission_denied");
+        }
+      } catch (error) {
+        await this.withStorage(async (transaction) => {
+          const current = connectionRecord(
+            await transaction.get<UserConnectionRecord>(CONNECTION_KEY),
+          );
+          const envelope = await transaction.get<EncryptedEnvelope>(MATERIAL_KEY);
+          if (
+            current.generation === previous.connection.generation &&
+            sameEnvelope(envelope, encrypted)
+          ) {
+            await transaction.put(MATERIAL_KEY, previous.envelope as EncryptedEnvelope);
+          }
+        });
+        throw error;
+      }
+      await this.projectBestEffort(previous.connection, updated.expiresAtMs);
+      await this.observeLifecycle({ requestId, category: "oauth", operation: "oauth.refresh", outcome: "success", accessSub: previous.connection.accessSub, tenantId: previous.connection.tenantId, latencyMs: this.now() - startedAt });
+      return updated;
+    } catch (error) {
+      const code = safeCode(error, "pipedrive_oauth_failed");
+      await this.observeLifecycle({ requestId, category: "oauth", operation: "oauth.refresh", outcome: lifecycleOutcome(code), accessSub: previous.connection.accessSub, tenantId: previous.connection.tenantId, latencyMs: this.now() - startedAt, errorCode: code });
       throw error;
     }
-    await this.projectBestEffort(previous.connection, updated.expiresAtMs);
-    return updated;
   }
 
   private async compensatePromotion(
@@ -834,26 +876,62 @@ export class UserConnectionCore {
       throw new Error("user_connection_storage_unavailable");
     }
   }
+
+  private async observeLifecycle(event: UserConnectionAuditEvent): Promise<void> {
+    try {
+      await this.auditObserver?.observe(event);
+    } catch {
+      // Lifecycle observation must never alter OAuth or storage behavior.
+    }
+  }
 }
 
 export class UserConnection {
   private readonly core: UserConnectionCore;
+  private readonly env: RemoteEnv;
 
   constructor(state: DurableObjectState, env: RemoteEnv) {
+    this.env = env;
+    const config = loadRemoteStateConfig(env);
+    const audit = bestEffortAuditConfig(env);
     const registry = registryPort(env);
     this.core = new UserConnectionCore(
       state.storage as unknown as KeyValueStorage,
-      loadRemoteStateConfig(env),
+      config,
       registry,
-      { setAlarm: (timestamp) => state.storage.setAlarm(timestamp) },
+      {
+        setAlarm: (timestamp) => state.storage.setAlarm(timestamp),
+        ...(audit ? { auditObserver: {
+          observe: async (event) => {
+            await emitAudit(new ConsoleAuditSink(), audit.auditContext, {
+              ts: new Date().toISOString(),
+              category: event.category,
+              requestId: event.requestId,
+              actorId: await pseudonymizeAccessSub(event.accessSub, audit.auditHmacKey),
+              route: "durable-object",
+              operation: event.operation,
+              effect: "oauth",
+              outcome: event.outcome,
+              httpStatus: event.outcome === "success" ? 200 : event.outcome === "denied" ? 403 : 503,
+              latencyMs: event.latencyMs,
+              ...(event.errorCode === undefined ? {} : { errorCode: event.errorCode }),
+              ...(event.tenantId === undefined ? {} : { tenantId: event.tenantId }),
+            });
+          },
+        } } : {}),
+      },
     );
   }
 
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
+    const auditRequestId = readInternalAuditRequestId(request.headers.get(INTERNAL_AUDIT_REQUEST_ID_HEADER));
+    const startedAt = Date.now();
+    let accessSub: string | undefined;
     try {
       if (request.method === "POST" && url.pathname === "/state") {
         const body = await requestJson(request);
+        accessSub = String(body.accessSub ?? "");
         return Response.json({ state: await this.core.createState({
           accessSub: String(body.accessSub ?? ""),
           accessEmail: String(body.accessEmail ?? ""),
@@ -864,15 +942,18 @@ export class UserConnection {
       }
       if (request.method === "POST" && url.pathname === "/exchange") {
         const body = await requestJson(request);
+        accessSub = String(body.accessSub ?? "");
         return Response.json(await this.core.exchange({
           accessSub: String(body.accessSub ?? ""),
           state: String(body.state ?? ""),
           code: String(body.code ?? ""),
           redirectUri: String(body.redirectUri ?? ""),
+          requestId: auditRequestId,
         }));
       }
       if (request.method === "POST" && url.pathname === "/state/discard") {
         const body = await requestJson(request);
+        accessSub = String(body.accessSub ?? "");
         await this.core.discardState(
           String(body.accessSub ?? ""),
           String(body.state ?? ""),
@@ -882,19 +963,22 @@ export class UserConnection {
       }
       if (request.method === "POST" && url.pathname === "/credential") {
         const body = await requestJson(request);
-        return Response.json(await this.core.getCredential(String(body.accessSub ?? "")));
+        accessSub = String(body.accessSub ?? "");
+        return Response.json(await this.core.getCredential(String(body.accessSub ?? ""), auditRequestId));
       }
       if (request.method === "GET" && url.pathname === "/status") {
         return Response.json(await this.core.getStatus());
       }
       if (request.method === "POST" && url.pathname === "/self-action") {
         const body = await requestJson(request);
+        accessSub = String(body.accessSub ?? "");
         return Response.json({
           actionToken: await this.core.issueSelfAction(String(body.accessSub ?? "")),
         });
       }
       if (request.method === "POST" && url.pathname === "/disconnect") {
         const body = await requestJson(request);
+        accessSub = String(body.accessSub ?? "");
         return Response.json({
           disconnected: await this.core.selfDisconnect(
             String(body.accessSub ?? ""),
@@ -904,6 +988,7 @@ export class UserConnection {
       }
       if (request.method === "POST" && url.pathname === "/admin-disconnect") {
         const body = await requestJson(request);
+        accessSub = String(body.accessSub ?? "");
         return Response.json({
           disconnected: await this.core.adminDisconnect(
             String(body.accessSub ?? ""),
@@ -913,19 +998,73 @@ export class UserConnection {
       }
       if (request.method === "POST" && url.pathname === "/used") {
         const body = await requestJson(request);
+        accessSub = String(body.accessSub ?? "");
         await this.core.markUsed(String(body.accessSub ?? ""), Number(body.expectedGeneration));
         return new Response(null, { status: 204 });
       }
       return Response.json({ code: "user_connection_not_found" }, { status: 404 });
     } catch (error) {
       const code = safeCode(error, "user_connection_internal_error");
+      await this.observeBoundaryError(url.pathname, accessSub, code, Date.now() - startedAt, auditRequestId);
       return Response.json({ code }, { status: connectionErrorStatus(code) });
     }
   }
 
-  async alarm(): Promise<void> {
-    await this.core.purgeInactive();
+  private async observeBoundaryError(
+    path: string,
+    accessSub: string | undefined,
+    errorCode: string,
+    latencyMs: number, auditRequestId: string,
+  ): Promise<void> {
+    if (!new Set(["/credential", "/exchange", "/used", "/disconnect"]).has(path)) return;
+    try {
+      const config = bestEffortAuditConfig(this.env);
+      if (!config) return;
+      const actorId = accessSub && /^[^\s]{1,256}$/.test(accessSub)
+        ? await pseudonymizeAccessSub(accessSub, config.auditHmacKey)
+        : "anonymous";
+      await emitAudit(new ConsoleAuditSink(), config.auditContext, {
+        ts: new Date().toISOString(),
+        category: "durable_object",
+        requestId: auditRequestId,
+        actorId,
+        route: "durable-object",
+        operation: "connection.boundary.error",
+        effect: "system",
+        outcome: "error",
+        httpStatus: connectionErrorStatus(errorCode),
+        latencyMs,
+        errorCode,
+      });
+    } catch {
+      // Boundary observation must never alter the durable-object response.
+    }
   }
+
+  async alarm(): Promise<void> {
+    const startedAt = Date.now(); const context = auditContext(this.env, this.env.DEPLOY_ENVIRONMENT === "production" ? "pipedrive-mcp-production" : "pipedrive-mcp-sandbox");
+    let purgeDelaySeconds: number | undefined;
+    try {
+      const status = await this.core.getStatus();
+      purgeDelaySeconds = purgeDelaySecondsForStatus(status, Date.now());
+      const purged = await this.core.purgeInactive();
+      await emitAudit(new ConsoleAuditSink(), context, { ts: new Date().toISOString(), category: "durable_object", requestId: "do-alarm", actorId: "system", route: "durable-object", operation: purged ? "connection.purge.alarm.success" : "connection.purge.alarm.noop", effect: "system", outcome: "success", httpStatus: 200, latencyMs: Date.now()-startedAt, measurements: { request_count: purged ? 1 : 0, ...(purgeDelaySeconds === undefined ? {} : { purge_delay_seconds: purgeDelaySeconds }) } });
+    } catch (error) { await emitAudit(new ConsoleAuditSink(), context, { ts: new Date().toISOString(), category: "durable_object", requestId: "do-alarm", actorId: "system", route: "durable-object", operation: "connection.purge.alarm.error", effect: "system", outcome: "error", httpStatus: 503, latencyMs: Date.now()-startedAt, errorCode: "user_connection_storage_unavailable", ...(purgeDelaySeconds === undefined ? {} : { measurements: { purge_delay_seconds: purgeDelaySeconds } }) }); throw error; }
+  }
+}
+
+function bestEffortAuditConfig(env: RemoteEnv) {
+  try {
+    return loadRemoteAuditConfig(env);
+  } catch {
+    return undefined;
+  }
+}
+
+export function purgeDelaySecondsForStatus(status: UserConnectionStatus, now: number): number | undefined {
+  if (!("connectedAtMs" in status) || typeof status.connectedAtMs !== "number") return undefined;
+  const dueAt = (status.lastUsedAtMs ?? status.connectedAtMs) + INACTIVE_TOKEN_RETENTION_MS;
+  return Math.floor(Math.max(0, now - dueAt) / 1_000);
 }
 
 export function userConnectionStub(env: RemoteEnv, accessSub: string): DurableObjectStub {
@@ -1180,6 +1319,28 @@ function safeCode(error: unknown, fallback: string): string {
   return error instanceof Error && /^[a-z0-9_:.-]{1,100}$/.test(error.message)
     ? error.message
     : fallback;
+}
+
+function safeTenantId(value: string | undefined): value is string {
+  return value !== undefined && /^[A-Za-z0-9._:-]{1,128}$/.test(value);
+}
+
+function auditRequestId(value: string | undefined): string {
+  if (value === undefined) return "core-direct";
+  if (!/^[A-Za-z0-9._:-]{1,128}$/.test(value)) throw new Error("audit_request_id_invalid");
+  return value;
+}
+
+export function readInternalAuditRequestId(value: string | null): string {
+  return value !== null && /^[A-Za-z0-9._:-]{1,128}$/.test(value) ? value : "do-direct";
+}
+
+function lifecycleOutcome(code: string): "denied" | "error" {
+  return code === "tenant_admission_denied" ||
+      code === "pipedrive_reconnect_required" ||
+      code === "oauth_state_stale"
+    ? "denied"
+    : "error";
 }
 
 function reportProjectionFailure(

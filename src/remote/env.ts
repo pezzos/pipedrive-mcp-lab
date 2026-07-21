@@ -23,7 +23,10 @@ export interface RemoteEnv {
   USER_POLICY: DurableObjectNamespace;
   USER_CONNECTION: DurableObjectNamespace;
   TENANT_REGISTRY: DurableObjectNamespace;
+  VERSION_METADATA?: { id?: string; tag?: string; timestamp?: string };
 }
+
+import { auditContext, type AuditContext } from "./audit.js";
 
 export type RemoteConfig = {
   deployEnvironment: "sandbox" | "production";
@@ -40,6 +43,7 @@ export type RemoteConfig = {
   oauthClientEpoch: string;
   auditHmacKey: string;
   auditHmacEpoch: string;
+  auditContext: AuditContext;
   oldEncryption?: { kid: string; key: string };
   previousAudit?: { epoch: string; key: string; validUntilMs: number };
   previousAccess?: { issuer: string; audience: string; validUntilMs: number };
@@ -57,6 +61,9 @@ export type RemoteStateConfig = Pick<
   | "oauthClientEpoch"
   | "oldEncryption"
 >;
+
+/** Audit observation is optional for Durable Object state operations. */
+export type RemoteAuditConfig = Pick<RemoteConfig, "auditHmacKey" | "auditContext">;
 
 export function loadRemoteConfig(env: RemoteEnv): RemoteConfig {
   const deployEnvironment = deploymentEnvironment(env.DEPLOY_ENVIRONMENT);
@@ -105,6 +112,7 @@ export function loadRemoteConfig(env: RemoteEnv): RemoteConfig {
     oauthClientEpoch,
     auditHmacKey,
     auditHmacEpoch,
+    auditContext: auditContext(env, deployEnvironment === "sandbox" ? "pipedrive-mcp-sandbox" : "pipedrive-mcp-production"),
     ...(oldEncryption ? { oldEncryption: { kid: safeIdentifier(oldEncryption[0], "PIPEDRIVE_OAUTH_OLD_ENCRYPTION_KID"), key: encryptionKeyValue(oldEncryption[1], "PIPEDRIVE_OAUTH_OLD_ENCRYPTION_KEY") } } : {}),
     ...(previousAudit ? { previousAudit: { epoch: quarterEpoch(previousAudit[0], "AUDIT_HMAC_PREVIOUS_EPOCH"), key: encryptionKeyValue(previousAudit[1], "AUDIT_HMAC_PREVIOUS_KEY"), validUntilMs: cutoff(previousAudit[2], "AUDIT_HMAC_PREVIOUS_VALID_UNTIL") } } : {}),
     ...(previousAccess ? { previousAccess } : {}),
@@ -128,6 +136,17 @@ export function loadRemoteStateConfig(env: RemoteEnv): RemoteStateConfig {
     encryptionKid: safeIdentifier(env.PIPEDRIVE_OAUTH_ENCRYPTION_KID, "PIPEDRIVE_OAUTH_ENCRYPTION_KID"),
     oauthClientEpoch: quarterEpoch(env.PIPEDRIVE_OAUTH_CLIENT_EPOCH, "PIPEDRIVE_OAUTH_CLIENT_EPOCH"),
     ...(oldPair ? { oldEncryption: { kid: safeIdentifier(oldPair[0], "PIPEDRIVE_OAUTH_OLD_ENCRYPTION_KID"), key: encryptionKeyValue(oldPair[1], "PIPEDRIVE_OAUTH_OLD_ENCRYPTION_KEY") } } : {}),
+  };
+}
+
+/** Validates only the audit key needed to pseudonymize best-effort DO observations. */
+export function loadRemoteAuditConfig(env: RemoteEnv): RemoteAuditConfig {
+  const worker = env.DEPLOY_ENVIRONMENT === "production"
+    ? "pipedrive-mcp-production"
+    : "pipedrive-mcp-sandbox";
+  return {
+    auditHmacKey: encryptionKeyValue(env.AUDIT_HMAC_KEY, "AUDIT_HMAC_KEY"),
+    auditContext: auditContext(env, worker),
   };
 }
 

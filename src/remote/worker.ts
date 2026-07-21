@@ -3,10 +3,13 @@ import { boundedBody } from "../boundedBody.js";
 import { buildServer } from "../tools.js";
 import { verifyAccessRequest, type AccessIdentity } from "./access.js";
 import {
+  auditContext,
+  auditV3,
   ConsoleAuditSink,
+  emitAudit,
   extractTargetIds,
   pseudonymizeAccessSub,
-  type AuditEvent,
+  type AuditEventV3,
 } from "./audit.js";
 import { loadRemoteConfig, requestUsesConfiguredOrigin, type RemoteConfig, type RemoteEnv } from "./env.js";
 import {
@@ -43,6 +46,7 @@ import {
 } from "./tenantRegistry.js";
 import {
   UserConnection,
+  INTERNAL_AUDIT_REQUEST_ID_HEADER,
   userConnectionStub,
   type UserConnectionStatus,
   type UserCredential,
@@ -61,6 +65,9 @@ export { TenantRegistry, TenantSecrets, UserConnection, UserPolicy };
 
 const auditSink = new ConsoleAuditSink();
 const TOOL_OPERATION_DEADLINE_MS = 12_000;
+const capacitySnapshotContexts = new WeakSet<object>();
+function workerTarget(env: RemoteEnv): string { return env.DEPLOY_ENVIRONMENT === "production" ? "pipedrive-mcp-production" : env.DEPLOY_ENVIRONMENT === "sandbox" ? "pipedrive-mcp-sandbox" : "pipedrive-mcp-unknown"; }
+function auditContextForConfig(config: Pick<RemoteConfig, "auditContext">) { return config.auditContext; }
 
 function isAdmin(identity: AccessIdentity, config: Pick<RemoteConfig, "adminEmail" | "adminSub">): boolean {
   return identity.email === config.adminEmail && identity.sub === config.adminSub;
@@ -68,6 +75,7 @@ function isAdmin(identity: AccessIdentity, config: Pick<RemoteConfig, "adminEmai
 
 export default {
   async fetch(request: Request, env: RemoteEnv, context: ExecutionContext): Promise<Response> {
+    const protectedStartedAt = Date.now();
     if (request.url.length > 8 * 1024) return noStoreJson({ code: "remote_request_too_large" }, { status: 413 });
     const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
     const declaredLength = Number(request.headers.get("content-length") ?? "0");
@@ -89,10 +97,7 @@ export default {
       config = loadRemoteConfig(env);
     } catch (error) {
       const code = safeErrorCode(error, "access_denied");
-      context.waitUntil(auditSink.write({
-        v: 1, ts: new Date().toISOString(), requestId: requestId(request), actorId: "anonymous", route: url.pathname,
-        operation: "config.load", effect: "read", outcome: "denied", httpStatus: 401, latencyMs: 0, errorCode: code,
-      }).catch(() => undefined));
+      context.waitUntil(emitAudit(auditSink, { ...auditContext(env, workerTarget(env)), configDiagnostic: true }, { ts: new Date().toISOString(), category: "config", requestId: requestId(request), actorId: "anonymous", route: url.pathname, operation: "config.load", effect: "read", outcome: "denied", httpStatus: 401, latencyMs: 0, errorCode: code }));
       return noStoreJson({ code }, { status: 401 });
     }
     let identity: AccessIdentity;
@@ -104,21 +109,21 @@ export default {
       });
     } catch (error) {
       const code = safeErrorCode(error, "access_denied");
+      const jwksFailure = code === "access_jwks_unavailable" || code === "access_jwks_invalid";
       context.waitUntil(
-        auditSink.write({
-          v: 2,
-          auditEpoch: config.auditHmacEpoch,
+        emitAudit(auditSink, auditContext(env, workerTarget(env)), {
           ts: new Date().toISOString(),
           requestId: requestId(request),
           actorId: "anonymous",
+          category: "access",
           route: url.pathname,
           operation: "access.verify",
           effect: "read",
-          outcome: "denied",
-          httpStatus: 401,
-          latencyMs: 0,
+          outcome: jwksFailure ? "error" : "denied",
+          httpStatus: jwksFailure ? 503 : 401,
+          latencyMs: Date.now() - protectedStartedAt,
           errorCode: code,
-        }).catch(() => undefined),
+        }),
       );
       return noStoreJson(
         { code },
@@ -126,8 +131,23 @@ export default {
       );
     }
 
+    context.waitUntil(new Promise<void>((resolve) => setTimeout(resolve, 0)).then(async () => {
+      await emitAudit(auditSink, config.auditContext, {
+        ts: new Date().toISOString(),
+        requestId: requestId(request),
+        actorId: await pseudonymizeAccessSub(identity.sub, config.auditHmacKey),
+        category: "access",
+        route: url.pathname,
+        operation: "access.verify",
+        effect: "read",
+        outcome: "success",
+        httpStatus: 200,
+        latencyMs: Date.now() - protectedStartedAt,
+      });
+    }));
+
     if (config.previousAudit && !await previousAuditAllowed(env, config)) {
-      context.waitUntil(auditSink.write({ v: 2, auditEpoch: config.auditHmacEpoch, actorId: await pseudonymizeAccessSub(identity.sub, config.auditHmacKey), ts: new Date().toISOString(), requestId: requestId(request), route: url.pathname, operation: "audit.rotation.guard", effect: "read", outcome: "error", httpStatus: 503, latencyMs: 0, errorCode: "audit_rotation_guard_failed" }).catch(() => undefined));
+      context.waitUntil(emitAudit(auditSink, auditContext(env, workerTarget(env)), { actorId: await pseudonymizeAccessSub(identity.sub, config.auditHmacKey), ts: new Date().toISOString(), requestId: requestId(request), route: url.pathname, category: "export", operation: "audit.rotation.guard", effect: "read", outcome: "error", httpStatus: 503, latencyMs: 0, errorCode: "audit_rotation_guard_failed" }));
       return url.pathname === "/mcp" ? mcpFailure("audit_rotation_guard_failed") : noStoreJson({ code: "remote_dependency_unavailable" }, { status: 503 });
     }
 
@@ -135,16 +155,21 @@ export default {
       return noStoreJson({ code: "remote_origin_invalid" }, { status: 400 });
     }
     const capacity = await acquireCapacity(env, { kind: "protected", ip: await pseudonymizeAccessSub(request.headers.get("cf-connecting-ip") ?? "missing-ip", config.auditHmacKey), user: await pseudonymizeAccessSub(identity.sub, config.auditHmacKey) });
-    if (!capacity.admitted) return url.pathname === "/mcp" ? mcpCapacityFailure(capacity.code, capacity.retryAfter) : noStoreJson({ code: capacity.code ?? "remote_service_busy" }, { status: capacity.code === "remote_service_busy" ? 503 : 429, headers: { "retry-after": String(capacity.retryAfter ?? 1) } });
+    emitCapacitySnapshot(request, identity, config, context, capacity.warning === true, protectedStartedAt);
+    if (!capacity.admitted) { context.waitUntil(emitAudit(auditSink, auditContext(env, workerTarget(env)), { ts: new Date().toISOString(), category: "capacity", requestId: requestId(request), actorId: await pseudonymizeAccessSub(identity.sub, config.auditHmacKey), route: url.pathname, operation: "capacity.protected.denied", effect: "system", outcome: "denied", httpStatus: capacity.code === "remote_service_busy" ? 503 : 429, latencyMs: 0, errorCode: capacity.code ?? "remote_service_busy", measurements: { capacity_percent: 100 } })); return url.pathname === "/mcp" ? mcpCapacityFailure(capacity.code, capacity.retryAfter) : noStoreJson({ code: capacity.code ?? "remote_service_busy" }, { status: capacity.code === "remote_service_busy" ? 503 : 429, headers: { "retry-after": String(capacity.retryAfter ?? 1) } }); }
     try {
       if (url.pathname === "/mcp") {
         return await handleRemoteMcp(request, env, identity, config, context);
       }
       if (url.pathname === "/settings") {
-        return await handleSettings(request, env, identity, config, context);
+        const response = await handleSettings(request, env, identity, config, context);
+        if (request.method === "GET") writeGeneralRouteAudit(request, identity, config, context, response, protectedStartedAt);
+        return response;
       }
       if (url.pathname === "/pipedrive") {
-        return await handleUserConnectionPage(request, env, identity);
+        const response = await handleUserConnectionPage(request, env, identity);
+        writeGeneralRouteAudit(request, identity, config, context, response, protectedStartedAt);
+        return response;
       }
       if (url.pathname === "/pipedrive/connect") {
         return await handlePipedriveConnect(request, env, identity, config, context);
@@ -159,7 +184,9 @@ export default {
         if (!isAdmin(identity, config)) {
           return adminRequiredResponse(request, identity, config, context);
         }
-        return await handlePipedriveAdmin(request, env, identity);
+        const response = await handlePipedriveAdmin(request, env, identity);
+        writeGeneralRouteAudit(request, identity, config, context, response, protectedStartedAt);
+        return response;
       }
       if (url.pathname === "/admin/pipedrive/approve/confirm") {
         if (!isAdmin(identity, config)) {
@@ -188,12 +215,22 @@ export default {
     } catch (error) {
       const code = safeErrorCode(error, "remote_dependency_unavailable");
       const recovery = browserUiRecovery(request, url);
-      return recovery ?? (url.pathname === "/mcp"
+      const response = recovery ?? (url.pathname === "/mcp"
         ? mcpFailure(code)
         : noStoreJson({ code }, { status: dependencyStatus(code) }));
+      if (url.pathname === "/pipedrive" || (url.pathname === "/settings" && request.method === "GET") || url.pathname === "/admin/pipedrive") {
+        writeGeneralRouteAudit(request, identity, config, context, response, protectedStartedAt, code);
+      }
+      return response;
     }
 
-    return new Response("Not found", { status: 404 });
+    const response = new Response("Not found", { status: 404 });
+    writeGeneralRouteAudit(request, identity, config, context, response, protectedStartedAt, "remote_route_not_found");
+    return response;
+  },
+  async scheduled(_event: ScheduledController, env: RemoteEnv, context: ExecutionContext): Promise<void> {
+    // This is source emission only. Logpush/R2 durability is deliberately not implied here.
+    context.waitUntil(emitAudit(auditSink, auditContext(env, workerTarget(env)), { ts: new Date().toISOString(), category: "export", requestId: "scheduled-heartbeat", actorId: "system", route: "scheduled", operation: "audit.export.heartbeat", effect: "system", outcome: "success", httpStatus: 200, latencyMs: 0, measurements: { freshness_seconds: 0 } }));
   },
 } satisfies ExportedHandler<RemoteEnv>;
 
@@ -205,26 +242,29 @@ async function handleRemoteMcp(
   context: ExecutionContext,
 ): Promise<Response> {
   const startedAt = Date.now();
+  const inheritedRequestId = requestId(request);
   const preflight = await preflightMcpRequest(request);
   if ("response" in preflight) return preflight.response;
   request = preflight.request;
+  requestIds.set(request, inheritedRequestId);
   const inspection = await inspectMcpRequest(request);
   const call = inspection.call;
   const mcpCapacity = await acquireCapacity(env, { kind: "mcp", ip: await pseudonymizeAccessSub(request.headers.get("cf-connecting-ip") ?? "missing-ip", remoteConfig.auditHmacKey), user: await pseudonymizeAccessSub(identity.sub, remoteConfig.auditHmacKey) });
-  if (!mcpCapacity.admitted) return mcpCapacityFailure(mcpCapacity.code, mcpCapacity.retryAfter);
+  emitCapacitySnapshot(request, identity, remoteConfig, context, mcpCapacity.warning === true, startedAt);
+  if (!mcpCapacity.admitted) { context.waitUntil(emitAudit(auditSink, auditContext(env, workerTarget(env)), { ts: new Date().toISOString(), category: "capacity", requestId: requestId(request), actorId: await pseudonymizeAccessSub(identity.sub, remoteConfig.auditHmacKey), route: "/mcp", operation: "capacity.mcp.denied", effect: "system", outcome: "denied", httpStatus: 429, latencyMs: Date.now()-startedAt, errorCode: mcpCapacity.code ?? "remote_service_busy", measurements: { capacity_percent: 100 } })); return mcpCapacityFailure(mcpCapacity.code, mcpCapacity.retryAfter); }
   let credential: UserCredential;
   let policy: UserPolicyRecord;
   try {
-    credential = await getUserCredential(env, identity.sub);
+    credential = await getUserCredential(env, identity.sub, request);
     policy = await getUserPolicy(env, identity.sub, credential.companyId);
   } catch (error) {
     const code = safeErrorCode(error, "remote_dependency_unavailable");
     const denied = code === "tenant_admission_denied" ||
       code === "pipedrive_not_connected" ||
       code === "pipedrive_reconnect_required";
-    context.waitUntil(auditSink.write({
-      v: 2,
+    context.waitUntil(emitAudit(auditSink, auditContext(env, workerTarget(env)), {
       ...(await auditIdentity(identity.sub, remoteConfig)),
+      category: "tenant",
       ts: new Date().toISOString(),
       requestId: requestId(request),
       route: "/mcp",
@@ -236,12 +276,13 @@ async function handleRemoteMcp(
       latencyMs: Date.now() - startedAt,
       targetIds: call ? extractTargetIds(call.arguments) : undefined,
       errorCode: code,
-    }).catch(() => undefined));
+    }));
     if (canUseDisconnectedMcpServer(inspection.method, code)) {
       return handleMcpRequest(request, () => buildServer(disconnectedPipedriveConfig()));
     }
     throw error;
   }
+  const providerIdentity = await auditIdentity(identity.sub, remoteConfig);
   const pipedriveConfig: PipedriveConfig = {
     accessToken: credential.accessCredential,
     baseUrl: credential.apiDomain,
@@ -251,6 +292,7 @@ async function handleRemoteMcp(
     enableDeleteTools: policy.deletes,
     enableMailboxTools: policy.mailbox,
     requestTimeoutMs: 10_000,
+    providerObserver: (provider) => context.waitUntil(emitAudit(auditSink, auditContext(env, workerTarget(env)), { ...providerIdentity, ts: new Date().toISOString(), category: "provider", requestId: requestId(request), route: "/mcp", operation: "provider.observe", effect: "system", outcome: "error", httpStatus: provider.status ?? 504, latencyMs: provider.latencyMs, providerStatus: provider.status, providerClass: provider.class, attempt: provider.attempt })),
   };
   let toolLease: string | undefined;
   let toolDeadline: ReturnType<typeof setTimeout> | undefined;
@@ -258,8 +300,9 @@ async function handleRemoteMcp(
   let execution: Promise<Response> | undefined;
   if (call) {
     const toolCapacity = await acquireCapacity(env, { kind: "tool", ip: await pseudonymizeAccessSub(request.headers.get("cf-connecting-ip") ?? "missing-ip", remoteConfig.auditHmacKey), user: await pseudonymizeAccessSub(identity.sub, remoteConfig.auditHmacKey), tenant: credential.tenantId });
-    if (!toolCapacity.admitted) return mcpCapacityFailure(toolCapacity.code, toolCapacity.retryAfter);
-    if (!toolCapacity.lease) return mcpCapacityFailure("remote_service_busy", 1);
+    emitCapacitySnapshot(request, identity, remoteConfig, context, toolCapacity.warning === true, startedAt);
+    if (!toolCapacity.admitted) { context.waitUntil(emitAudit(auditSink, auditContext(env, workerTarget(env)), { ...providerIdentity, ts: new Date().toISOString(), category: "capacity", requestId: requestId(request), route: "/mcp", operation: "capacity.tool.denied", effect: "system", outcome: "denied", httpStatus: 429, latencyMs: Date.now()-startedAt, errorCode: toolCapacity.code ?? "remote_service_busy", measurements: { capacity_percent: 100 } })); return mcpCapacityFailure(toolCapacity.code, toolCapacity.retryAfter); }
+    if (!toolCapacity.lease) { context.waitUntil(emitAudit(auditSink, auditContext(env, workerTarget(env)), { ...providerIdentity, ts: new Date().toISOString(), category: "capacity", requestId: requestId(request), route: "/mcp", operation: "capacity.tool.lease_missing", effect: "system", outcome: "error", httpStatus: 503, latencyMs: Date.now()-startedAt, errorCode: "remote_service_busy" })); return mcpCapacityFailure("remote_service_busy", 1); }
     toolLease = toolCapacity.lease;
     toolAbort = new AbortController();
     toolDeadline = setTimeout(() => toolAbort?.abort(), TOOL_OPERATION_DEADLINE_MS);
@@ -278,7 +321,7 @@ async function handleRemoteMcp(
       "https://connection.internal/used",
       {
         method: "POST",
-        headers: { "content-type": "application/json" },
+        headers: internalConnectionHeaders(request, { "content-type": "application/json" }),
         signal: toolAbort?.signal,
         body: JSON.stringify({
           accessSub: identity.sub,
@@ -288,9 +331,9 @@ async function handleRemoteMcp(
     );
     if (!usedResponse.ok) {
       const code = await responseErrorCode(usedResponse, "tenant_admission_denied");
-      context.waitUntil(auditSink.write({
-        v: 2,
+      context.waitUntil(emitAudit(auditSink, auditContext(env, workerTarget(env)), {
         ...(await auditIdentity(identity.sub, remoteConfig)),
+        category: "tenant",
         ts: new Date().toISOString(),
         requestId: requestId(request),
         route: "/mcp",
@@ -306,7 +349,7 @@ async function handleRemoteMcp(
         tenantId: credential.tenantId,
         policyRevision: policy.revision,
         errorCode: code,
-      }).catch(() => undefined));
+      }));
       return mcpFailure(code);
     }
   }
@@ -315,9 +358,9 @@ async function handleRemoteMcp(
     const effect = toolEffect(call.name);
     const requestedDryRun = effect === "read" ? undefined : (call.dryRun ?? true);
     const denied = requestedDryRun === false && !policyAllowsCall(call.name, effect, policy);
-    const event: AuditEvent = {
-      v: 2,
+    const event: AuditEventV3 = auditV3(auditContext(env, workerTarget(env)), {
       ...(await auditIdentity(identity.sub, remoteConfig)),
+      category: "route",
       ts: new Date().toISOString(),
       requestId: requestId(request),
       route: "/mcp",
@@ -331,7 +374,7 @@ async function handleRemoteMcp(
       tenantId: credential.tenantId,
       policyRevision: policy.revision,
       errorCode: denied ? policyDenialCode(call.name, effect, policy) : undefined,
-    };
+    });
     context.waitUntil(auditSink.write(event).catch(() => undefined));
   }
   return response;
@@ -466,7 +509,7 @@ async function handleTenantAdminAction(
     `https://registry.internal/admin/${action}`,
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: internalConnectionHeaders(request, { "content-type": "application/json" }),
       body: JSON.stringify({
         adminSub: identity.sub,
         domain,
@@ -515,7 +558,7 @@ async function handleAdminForceDisconnect(
     "https://registry.internal/admin/force-disconnect/consume",
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: internalConnectionHeaders(request, { "content-type": "application/json" }),
       body: JSON.stringify({
         adminSub: identity.sub,
         connectionRef,
@@ -535,7 +578,7 @@ async function handleAdminForceDisconnect(
     "https://connection.internal/admin-disconnect",
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: internalConnectionHeaders(request, { "content-type": "application/json" }),
       body: JSON.stringify({
         accessSub: target.accessSub,
         expectedGeneration: target.generation,
@@ -568,15 +611,17 @@ async function handleSettings(
   config: RemoteConfig,
   context: ExecutionContext,
 ): Promise<Response> {
+  const startedAt = Date.now();
   if (request.method === "GET" && new URL(request.url).searchParams.get("error") === "policy") {
     return noStoreRedirect(new URL("/pipedrive?notice=storage", request.url), 303);
   }
   let credential: UserCredential;
   try {
-    credential = await getUserCredential(env, identity.sub);
+    credential = await getUserCredential(env, identity.sub, request);
   } catch (error) {
     if (request.method === "GET" || (request.method === "POST" && hasExactOrigin(request))) {
       const code = safeErrorCode(error, "pipedrive_credential_unavailable");
+      if (request.method === "POST") context.waitUntil(writePolicyAudit(request, identity.sub, config, 0, {}, "error", 503, code, Date.now()-startedAt).catch(() => undefined));
       const notice = code === "pipedrive_not_connected" ? "not-connected" : code === "pipedrive_reconnect_required" ? "reconnect" : "storage";
       return noStoreRedirect(new URL(`/pipedrive?notice=${notice}`, request.url), 303);
     }
@@ -611,11 +656,13 @@ async function handleSettings(
   }
 
   if (request.method !== "POST" || !hasExactOrigin(request)) {
+    context.waitUntil(writePolicyAudit(request, identity.sub, config, 0, {}, "denied", 403, "settings_request_invalid", Date.now()-startedAt).catch(() => undefined));
     return noStoreJson({ code: "settings_request_invalid" }, { status: 403 });
   }
   const form = await request.formData();
   const currentResponse = await stub.fetch("https://policy.internal/policy");
   if (!currentResponse.ok) {
+    context.waitUntil(writePolicyAudit(request, identity.sub, config, 0, {}, "error", 503, "user_policy_unavailable", Date.now()-startedAt).catch(() => undefined));
     return noStoreRedirect(new URL("/settings?error=policy", request.url), 303);
   }
   const current = await currentResponse.json<UserPolicyRecord>();
@@ -633,14 +680,17 @@ async function handleSettings(
   if (increasesAuthority && form.get("confirm") !== "yes") {
     const csrfResponse = await stub.fetch("https://policy.internal/csrf", { method: "POST" });
     if (!csrfResponse.ok) {
+      context.waitUntil(writePolicyAudit(request, identity.sub, config, current.revision, {}, "error", 503, "user_policy_unavailable", Date.now()-startedAt).catch(() => undefined));
       return noStoreRedirect(new URL("/settings?error=policy", request.url), 303);
     }
     const csrfResult: { csrf?: unknown } = await csrfResponse.json<{ csrf?: unknown }>()
       .catch(() => ({} as { csrf?: unknown }));
     if (typeof csrfResult.csrf !== "string" || csrfResult.csrf.length === 0) {
+      context.waitUntil(writePolicyAudit(request, identity.sub, config, current.revision, {}, "error", 503, "user_policy_unavailable", Date.now()-startedAt).catch(() => undefined));
       return noStoreRedirect(new URL("/settings?error=policy", request.url), 303);
     }
     const nonce = styleNonce();
+    context.waitUntil(writePolicyAudit(request, identity.sub, config, current.revision, {}, "denied", 400, "policy_confirmation_required", Date.now()-startedAt).catch(() => undefined));
     return htmlResponse(
       renderSettingsPage({
         email: identity.email,
@@ -671,6 +721,9 @@ async function handleSettings(
     body: JSON.stringify(next),
   });
   if (!updatedResponse.ok) {
+    const code = await responseErrorCode(updatedResponse, "user_policy_unavailable");
+    const denied = code === "user_policy_conflict" || code === "user_action_invalid";
+    context.waitUntil(writePolicyAudit(request, identity.sub, config, current.revision, {}, denied ? "denied" : "error", updatedResponse.status, code, Date.now()-startedAt).catch(() => undefined));
     return noStoreRedirect(new URL("/settings?error=conflict", request.url), 303);
   }
   const updated = await updatedResponse.json<UserPolicyRecord>();
@@ -682,6 +735,7 @@ async function handleSettings(
       config,
       updated.revision,
       changes,
+      "success", 303, undefined, Date.now()-startedAt,
     ).catch(() => undefined),
   );
   return noStoreRedirect(new URL("/settings?saved=1", request.url), 303);
@@ -700,10 +754,10 @@ async function handleUserConnectionPage(
   }
   const stub = userConnectionStub(env, identity.sub);
   const [statusResponse, actionResponse] = await Promise.all([
-    stub.fetch("https://connection.internal/status"),
+    stub.fetch("https://connection.internal/status", { headers: internalConnectionHeaders(request) }),
     stub.fetch("https://connection.internal/self-action", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: internalConnectionHeaders(request, { "content-type": "application/json" }),
       body: JSON.stringify({ accessSub: identity.sub }),
     }),
   ]);
@@ -766,7 +820,7 @@ async function handlePipedriveConnect(
     "https://connection.internal/state",
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: internalConnectionHeaders(request, { "content-type": "application/json" }),
       body: JSON.stringify({
         accessSub: identity.sub,
         accessEmail: identity.email,
@@ -827,7 +881,7 @@ async function handlePipedriveCallback(
     const redirectUri = config.oauthCallbackUrl;
     await stub.fetch("https://connection.internal/state/discard", {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: internalConnectionHeaders(request, { "content-type": "application/json" }),
       body: JSON.stringify({
         accessSub: identity.sub,
         state: url.searchParams.get("state") ?? "",
@@ -853,7 +907,7 @@ async function handlePipedriveCallback(
   const redirectUri = config.oauthCallbackUrl;
   const response = await stub.fetch("https://connection.internal/exchange", {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: internalConnectionHeaders(request, { "content-type": "application/json" }),
     body: JSON.stringify({
       accessSub: identity.sub,
       state: url.searchParams.get("state") ?? "",
@@ -907,7 +961,7 @@ async function handleUserDisconnect(
     "https://connection.internal/disconnect",
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: internalConnectionHeaders(request, { "content-type": "application/json" }),
       body: JSON.stringify({
         accessSub: identity.sub,
         actionToken: String(form.get("csrf") ?? ""),
@@ -932,12 +986,12 @@ async function handleUserDisconnect(
     : noStoreRedirect(new URL(`/pipedrive?notice=${code === "user_action_invalid" ? "csrf" : "storage"}`, request.url), 303);
 }
 
-async function getUserCredential(env: RemoteEnv, accessSub: string): Promise<UserCredential> {
+async function getUserCredential(env: RemoteEnv, accessSub: string, request: Request): Promise<UserCredential> {
   const response = await userConnectionStub(env, accessSub).fetch(
     "https://connection.internal/credential",
     {
       method: "POST",
-      headers: { "content-type": "application/json" },
+      headers: internalConnectionHeaders(request, { "content-type": "application/json" }),
       body: JSON.stringify({ accessSub }),
     },
   );
@@ -1105,7 +1159,7 @@ function canUseDisconnectedMcpServer(method: string | undefined, code: string): 
   );
 }
 
-function toolEffect(name: string): AuditEvent["effect"] {
+function toolEffect(name: string): AuditEventV3["effect"] {
   if (name.includes("_delete_")) {
     return "delete";
   }
@@ -1117,7 +1171,7 @@ function toolEffect(name: string): AuditEvent["effect"] {
 
 function policyAllowsCall(
   name: string,
-  effect: AuditEvent["effect"],
+  effect: AuditEventV3["effect"],
   policy: UserPolicyRecord,
 ): boolean {
   if (effect === "read") {
@@ -1134,7 +1188,7 @@ function policyAllowsCall(
 
 function policyDenialCode(
   name: string,
-  effect: AuditEvent["effect"],
+  effect: AuditEventV3["effect"],
   policy: UserPolicyRecord,
 ): string {
   if (!policy.writes) {
@@ -1152,8 +1206,8 @@ function policyDenialCode(
 function policyChanges(
   before: UserPolicyRecord,
   after: UserPolicyRecord,
-): NonNullable<AuditEvent["policyChanges"]> {
-  const changes: NonNullable<AuditEvent["policyChanges"]> = {};
+): NonNullable<AuditEventV3["policyChanges"]> {
+  const changes: NonNullable<AuditEventV3["policyChanges"]> = {};
   for (const key of ["writes", "deletes", "mailbox"] as const) {
     if (before[key] !== after[key]) {
       changes[key] = { from: before[key], to: after[key] };
@@ -1165,21 +1219,20 @@ function policyChanges(
 async function writePolicyAudit(
   request: Request,
   sub: string,
-  audit: Pick<RemoteConfig, "auditHmacKey" | "auditHmacEpoch" | "previousAudit">,
+  audit: Pick<RemoteConfig, "auditHmacKey" | "auditHmacEpoch" | "previousAudit" | "auditContext">,
   revision: number,
-  changes: NonNullable<AuditEvent["policyChanges"]>,
+  changes: NonNullable<AuditEventV3["policyChanges"]>,
+  outcome: AuditEventV3["outcome"] = "success", httpStatus = 303, errorCode?: string, latencyMs = 0,
 ): Promise<void> {
-  await auditSink.write({
-    v: 2,
+  await emitAudit(auditSink, auditContextForConfig(audit), {
     ...(await auditIdentity(sub, audit)),
+    category: "authority",
     ts: new Date().toISOString(),
     requestId: requestId(request),
     route: "/settings",
     operation: "policy.update",
     effect: "policy",
-    outcome: "success",
-    httpStatus: 303,
-    latencyMs: 0,
+    outcome, httpStatus, latencyMs, errorCode,
     policyRevision: revision,
     policyChanges: changes,
   });
@@ -1188,17 +1241,17 @@ async function writePolicyAudit(
 async function writeOperationAudit(
   request: Request,
   sub: string,
-  audit: Pick<RemoteConfig, "auditHmacKey" | "auditHmacEpoch" | "previousAudit">,
+  audit: Pick<RemoteConfig, "auditHmacKey" | "auditHmacEpoch" | "previousAudit" | "auditContext">,
   route: string,
   operation: string,
-  outcome: AuditEvent["outcome"],
+  outcome: AuditEventV3["outcome"],
   httpStatus: number,
   errorCode?: string,
   tenantId?: string,
 ): Promise<void> {
-  await auditSink.write({
-    v: 2,
+  await emitAudit(auditSink, auditContextForConfig(audit), {
     ...(await auditIdentity(sub, audit)),
+    category: "oauth",
     ts: new Date().toISOString(),
     requestId: requestId(request),
     route,
@@ -1210,6 +1263,74 @@ async function writeOperationAudit(
     errorCode,
     tenantId,
   });
+}
+
+function writeGeneralRouteAudit(
+  request: Request,
+  identity: AccessIdentity,
+  config: RemoteConfig,
+  context: ExecutionContext,
+  response: Response,
+  startedAt: number,
+  errorCode?: string,
+): void {
+  const outcome = errorCode === undefined
+    ? (response.ok || response.status < 400
+    ? "success"
+    : response.status < 500 ? "denied" : "error")
+    : routeErrorOutcome(errorCode);
+  context.waitUntil((async () => {
+    await emitAudit(auditSink, config.auditContext, {
+      ts: new Date().toISOString(),
+      requestId: requestId(request),
+      actorId: await pseudonymizeAccessSub(identity.sub, config.auditHmacKey),
+      category: "route",
+      route: new URL(request.url).pathname,
+      operation: "route.outcome",
+      effect: "read",
+      outcome,
+      httpStatus: response.status,
+      latencyMs: Date.now() - startedAt,
+      ...(errorCode === undefined ? {} : { errorCode }), measurements: { request_count: 1 },
+    });
+  })().catch(() => undefined));
+}
+
+function routeErrorOutcome(errorCode: string): AuditEventV3["outcome"] {
+  return new Set([
+    "admin_confirmation_required", "admin_method_not_allowed", "admin_origin_invalid", "admin_required",
+    "connection_request_invalid", "oauth_authorization_denied", "oauth_state_invalid", "oauth_state_stale",
+    "policy_confirmation_required", "remote_content_type_invalid", "remote_origin_invalid", "remote_request_too_large",
+    "remote_route_not_found", "settings_request_invalid", "tenant_admission_denied", "tenant_company_mismatch",
+    "tenant_domain_invalid", "tenant_domain_mismatch", "user_action_invalid", "user_connection_conflict", "user_policy_conflict",
+  ]).has(errorCode) ? "denied" : "error";
+}
+
+function emitCapacitySnapshot(
+  request: Request,
+  identity: AccessIdentity,
+  config: RemoteConfig,
+  context: ExecutionContext,
+  warning: boolean,
+  startedAt: number,
+): void {
+  if (!warning || capacitySnapshotContexts.has(context as object)) return;
+  capacitySnapshotContexts.add(context as object);
+  context.waitUntil((async () => {
+    await emitAudit(auditSink, config.auditContext, {
+      ts: new Date().toISOString(),
+      requestId: requestId(request),
+      actorId: await pseudonymizeAccessSub(identity.sub, config.auditHmacKey),
+      category: "capacity",
+      route: new URL(request.url).pathname,
+      operation: "capacity.snapshot",
+      effect: "system",
+      outcome: "success",
+      httpStatus: 200,
+      latencyMs: Date.now() - startedAt,
+      measurements: { capacity_percent: 80 },
+    });
+  })().catch(() => undefined));
 }
 
 async function auditIdentity(
@@ -1260,8 +1381,22 @@ async function mcpOutcome(response: Response): Promise<"success" | "error"> {
   }
 }
 
+const requestIds = new WeakMap<Request, string>();
+const safeRequestId = /^[A-Za-z0-9._:-]{1,128}$/;
+
 function requestId(request: Request): string {
-  return request.headers.get("cf-ray") ?? crypto.randomUUID();
+  const existing = requestIds.get(request);
+  if (existing) return existing;
+  const ray = request.headers.get("cf-ray");
+  const value = ray !== null && safeRequestId.test(ray) ? ray : crypto.randomUUID();
+  requestIds.set(request, value);
+  return value;
+}
+
+function internalConnectionHeaders(request: Request, headers: HeadersInit = {}): Headers {
+  const merged = new Headers(headers);
+  merged.set(INTERNAL_AUDIT_REQUEST_ID_HEADER, requestId(request));
+  return merged;
 }
 
 

@@ -11,6 +11,8 @@ import type {
 import {
   INACTIVE_TOKEN_RETENTION_MS,
   UserConnectionCore,
+  purgeDelaySecondsForStatus,
+  type UserConnectionAuditEvent,
   type TenantRegistryPort,
 } from "../src/remote/userConnection.js";
 
@@ -100,7 +102,7 @@ test("CAS-lost rewrap projects unknown rather than claiming the primary key", as
   const material = { accessCredential: "access-old", refreshCredential: "refresh-old", expiresAtMs: 9_999_999, apiDomain: "https://acme.pipedrive.com" };
   await storage.put("user-oauth-material:v1", await encryptMaterial(material, { encryptionKey: oldKey, encryptionKid: "old-test" }));
   storage.loseNextMaterialCas(await encryptMaterial(material, config()));
-  await core.getCredential("user-a");
+  await core.getCredential("user-a", "request-refresh-success");
   assert.equal(tenant.projections.at(-1)?.encryptionKeyState, "unknown");
   assert.equal(tenant.projections.at(-1)?.encryptionKid, undefined);
 });
@@ -268,6 +270,64 @@ test("coalesces concurrent refreshes for the same connection generation", { time
   assert.equal(secondCredential.generation, initialGeneration);
 });
 
+test("observes bounded refresh success and provider failure without OAuth material", async () => {
+  let now = 1_000;
+  let failRefresh = false;
+  const events: UserConnectionAuditEvent[] = [];
+  const tenant = registry("acme", "company-a", "Tenant A");
+  const core = connection(new MemoryStorage(), tenant, async (input, init) => {
+    const url = new URL(input instanceof Request ? input.url : String(input));
+    if (url.pathname === "/oauth/token") {
+      const fields = new URLSearchParams(String(init?.body));
+      if (fields.get("grant_type") === "refresh_token" && failRefresh) {
+        return Response.json({ error: "provider-token-must-not-appear" }, { status: 503 });
+      }
+      return oauthResponse(fields.get("code") ?? "refreshed", fields.get("grant_type") === "refresh_token" ? 3_600 : 1);
+    }
+    return currentUser("company-a", "Tenant A");
+  }, () => now, [], config(), { observe: async (event) => { events.push(event); } });
+  await connect(core, "user-a", "a@example.test", "acme", "initial-token-must-not-appear");
+  events.length = 0;
+  now += 120_000;
+  await core.getCredential("user-a", "request-refresh-success");
+  failRefresh = true;
+  now += 3_600_000;
+  await assert.rejects(core.getCredential("user-a", "request-refresh-error"), /pipedrive_oauth_failed/);
+  assert.deepEqual(events.map((event) => [event.operation, event.outcome, event.errorCode, event.requestId]), [
+    ["oauth.refresh", "success", undefined, "request-refresh-success"],
+    ["oauth.refresh", "error", "pipedrive_oauth_failed", "request-refresh-error"],
+  ]);
+  for (const event of events) {
+    assert.equal(event.accessSub, "user-a");
+    assert.equal(event.tenantId, "tenant-acme");
+    assert.ok(event.latencyMs >= 0);
+    assert.doesNotMatch(JSON.stringify(event), /example\.test|token-must-not-appear|acme\.pipedrive|provider-token/);
+  }
+});
+
+test("observes reconnect promotion and admission rollback as bounded OAuth terminals", async () => {
+  const events: UserConnectionAuditEvent[] = [];
+  const tenant = registry("acme", "company-a", "Tenant A");
+  const core = connection(new MemoryStorage(), tenant, oauthFetcher("acme", "company-a", "Tenant A"), undefined, [], config(), { observe: async (event) => { events.push(event); } });
+  await connect(core, "user-a", "a@example.test", "acme", "initial-code");
+  events.length = 0;
+  await core.selfDisconnect("user-a", await core.issueSelfAction("user-a"));
+  await connect(core, "user-a", "a@example.test", "acme", "reconnect-code", "request-reconnect-success");
+  tenant.suspendAfterNextPin();
+  const actionToken = await core.issueSelfAction("user-a");
+  const state = await core.createState({ accessSub: "user-a", accessEmail: "a@example.test", expectedDomain: "acme", redirectUri, actionToken });
+  await assert.rejects(core.exchange({ accessSub: "user-a", state, code: "rollback-code", redirectUri, requestId: "request-reconnect-denied" }), /tenant_admission_denied/);
+  assert.deepEqual(events.map((event) => [event.operation, event.outcome, event.errorCode, event.requestId]), [
+    ["oauth.reconnect", "success", undefined, "request-reconnect-success"],
+    ["oauth.reconnect", "denied", "tenant_admission_denied", "request-reconnect-denied"],
+  ]);
+  for (const event of events) {
+    assert.equal(event.accessSub, "user-a");
+    assert.ok(event.latencyMs >= 0);
+    assert.doesNotMatch(JSON.stringify(event), /example\.test|reconnect-code|rollback-code|acme\.pipedrive/);
+  }
+});
+
 test("a stale in-flight refresh cannot overwrite a reconnect", { timeout: 1_000 }, async () => {
   let now = 1_000;
   const refreshStarted = deferred<void>();
@@ -393,6 +453,15 @@ test("purges at 90 inactive days, retains safe metadata, and reconnects the same
   const reconnected = await core.getCredential("user-a");
   assert.equal(reconnected.companyId, "company-a");
   assert.equal(reconnected.accessCredential, "access-second");
+});
+
+test("purge delay measurement is bounded for overdue, early, and unavailable pre-status", () => {
+  const connectedAtMs = 1_000;
+  const dueAt = connectedAtMs + INACTIVE_TOKEN_RETENTION_MS;
+  const status = { connected: true, reconnectRequired: false, generation: 1, domain: "acme", companyId: "company-a", companyName: "Tenant A", expiresAtMs: dueAt, connectedAtMs } as const;
+  assert.equal(purgeDelaySecondsForStatus(status, dueAt + 3_500), 3);
+  assert.equal(purgeDelaySecondsForStatus(status, dueAt - 1), 0);
+  assert.equal(purgeDelaySecondsForStatus({ connected: false, reconnectRequired: false, generation: 0 }, dueAt + 1), undefined);
 });
 
 test("self and admin disconnect are generation-bound and affect only their selected user", async () => {
@@ -562,6 +631,7 @@ function connection(
   now: () => number = () => 1_000,
   alarms: number[] = [],
   remoteConfig: RemoteConfig = config(),
+  auditObserver?: { observe(event: UserConnectionAuditEvent): Promise<void> | void },
 ): UserConnectionCore {
   let id = 0;
   return new UserConnectionCore(storage, remoteConfig, tenant, {
@@ -569,6 +639,7 @@ function connection(
     now,
     randomId: () => `opaque-operation-${++id}`,
     setAlarm: async (timestamp) => { alarms.push(timestamp); },
+    auditObserver,
   });
 }
 
@@ -577,7 +648,7 @@ async function connect(
   accessSub: string,
   accessEmail: string,
   domain: string,
-  code: string,
+  code: string, requestId?: string,
 ): Promise<void> {
   const actionToken = await core.issueSelfAction(accessSub);
   const state = await core.createState({
@@ -587,7 +658,7 @@ async function connect(
     redirectUri,
     actionToken,
   });
-  await core.exchange({ accessSub, state, code, redirectUri });
+  await core.exchange({ accessSub, state, code, redirectUri, ...(requestId === undefined ? {} : { requestId }) });
 }
 
 function oauthFetcher(domain: string, companyId: string, companyName: string): typeof fetch {

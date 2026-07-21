@@ -6,6 +6,9 @@
   "workers_dev": false,
   "preview_urls": false,
   "keep_vars": false,
+  "logpush": true,
+  "version_metadata": { "binding": "VERSION_METADATA" },
+  "triggers": { "crons": ["*/5 * * * *"] },
   "vars": {
     "DEPLOY_ENVIRONMENT": "production",
     "PUBLIC_ORIGIN": "https://pipedrive-mcp.pezzoslabs.com"

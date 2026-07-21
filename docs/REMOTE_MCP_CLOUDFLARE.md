@@ -519,3 +519,6 @@ messages are allowlisted; arbitrary query text is never rendered. A failed or
 cancelled OAuth flow returns the user to the connection surface with a safe next
 step, while token, assertion, OAuth code/state, and provider identity remain
 absent from HTML. This local UI evidence is not deployed OAuth acceptance.
+# Audit export posture
+
+`logpush: true` and version metadata are configuration preparation. No R2 binding is configured by this repository; Logpush/R2 provisioning remains a live accepted-production operation.

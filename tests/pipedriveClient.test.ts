@@ -236,6 +236,23 @@ test("applies the request timeout while reading the response body", async () => 
   await assert.rejects(() => client.get("/api/v2/deals"), /timed out/);
 });
 
+test("observes bounded timing for timeout and 5xx provider terminals", async () => {
+  const timeoutEvents: Array<{ status?: number; class: string; attempt: number; latencyMs: number }> = [];
+  const timeoutClient = new PipedriveClient({ ...config({ requestTimeoutMs: 10 }), providerObserver: (event) => timeoutEvents.push(event) }, (async (_url, init) => {
+    return new Response(new ReadableStream({ start(controller) {
+      init?.signal?.addEventListener("abort", () => controller.error(new DOMException("Aborted", "AbortError")));
+    } }));
+  }) as typeof fetch);
+  await assert.rejects(timeoutClient.get("/api/v2/deals?token-must-not-appear"), /timed out/);
+
+  const serverEvents: typeof timeoutEvents = [];
+  const serverClient = new PipedriveClient({ ...config(), providerObserver: (event) => serverEvents.push(event) }, (async () => new Response('{"error":"payload-must-not-appear"}', { status: 503 })) as typeof fetch);
+  await assert.rejects(serverClient.post("/api/v2/deals", { marker: "body-must-not-appear" }), /503/);
+  assert.deepEqual(timeoutEvents.map(({ class: providerClass, attempt, latencyMs }) => [providerClass, attempt, latencyMs >= 0]), [["timeout", 1, true]]);
+  assert.deepEqual(serverEvents.map(({ status, class: providerClass, attempt, latencyMs }) => [status, providerClass, attempt, latencyMs >= 0]), [[503, "5xx", 1, true]]);
+  assert.doesNotMatch(JSON.stringify([...timeoutEvents, ...serverEvents]), /token-must-not-appear|body-must-not-appear|payload-must-not-appear|api\/v2/);
+});
+
 test("retries transient GET responses and transport failures", async () => {
   let transientAttempts = 0;
   const transientFetch = (async () => {

@@ -6,6 +6,7 @@ import { join } from "node:path";
 import { configPath, loadTopology, requiredSecrets, requiredVariables, optionalSecrets, optionalVariables, targets } from "./validate-worker-topology.mjs";
 import { validateClientTarget } from "./validate-client-environment.mjs";
 import { requiredClientArtifactRecord } from "./worker-release-client.mjs";
+import { auditArtifactInventory } from "./lib/audit-artifact-inventory.mjs";
 
 const root = process.cwd();
 const target = argument("--target");
@@ -16,9 +17,10 @@ const record = JSON.parse(readFileSync(join(releaseRoot, "release-record.json"),
 const inputManifestPath = join(releaseRoot, "input-manifest.json");
 const config = loadTopology(target, root);
 const client = validateClientTarget(target, root);
+const auditArtifacts = auditArtifactHashes();
 const origin = config.vars.PUBLIC_ORIGIN;
 const expectedManifest = {
-  schema: 1,
+  schema: 2,
   target,
   worker: config.name,
   public_origin: origin,
@@ -32,9 +34,10 @@ const expectedManifest = {
   optional_variables: optionalVariables,
   optional_secrets: optionalSecrets,
   client_metadata_sha256: client.hash,
+  audit_artifacts_sha256: auditArtifacts,
 };
 
-assert.equal(record.schema, 2);
+assert.equal(record.schema, 3);
 assert.equal(record.target, target);
 if ((!record.deployable || record.test_fixture) && process.env.WORKER_RELEASE_TEST_ALLOW_DIRTY !== "true") {
   throw new Error("worker_release_record_not_deployable");
@@ -55,6 +58,8 @@ assert.deepEqual(record.required_variables, requiredVariables);
 assert.deepEqual(record.required_secrets, requiredSecrets);
 assert.deepEqual(record.optional_variables, optionalVariables);
 assert.deepEqual(record.optional_secrets, optionalSecrets);
+assert.deepEqual(record.audit_artifacts_sha256, auditArtifacts);
+assert.deepEqual(Object.keys(record.audit_artifacts_sha256).sort(), [...auditArtifactInventory].sort());
 assert.equal(record.public_origin, origin);
 assert.equal(record.oauth_callback_url, `${origin}/oauth/pipedrive/callback`);
 assert.equal(record.mcp_url, `${origin}/mcp`);
@@ -76,5 +81,6 @@ function canonicalJson(value) {
 }
 function hashFile(path) { return createHash("sha256").update(readFileSync(path)).digest("hex"); }
 function hashText(value) { return createHash("sha256").update(value).digest("hex"); }
+function auditArtifactHashes() { return Object.fromEntries(auditArtifactInventory.map((path) => [path, hashFile(join(root, path))])); }
 function git(...args) { return execFileSync("git", args, { cwd: root, encoding: "utf8" }).trim(); }
 function argument(name) { const index = process.argv.indexOf(name); return index === -1 ? undefined : process.argv[index + 1]; }

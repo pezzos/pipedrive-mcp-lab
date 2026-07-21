@@ -10,6 +10,8 @@ export type PipedriveConfig = {
   enableMailboxTools: boolean;
   requestTimeoutMs: number;
   operationSignal?: AbortSignal;
+  /** Private, redaction-safe observer; it receives no URL, headers, body, or provider payload. */
+  providerObserver?: (event: { status?: number; class: "401" | "403" | "429" | "5xx" | "timeout" | "transport"; attempt: number; latencyMs: number }) => void;
 };
 
 type Environment = Record<string, string | undefined>;

@@ -1,102 +1,49 @@
+/** Strict source-emission contract. Durable export is intentionally outside this Worker. */
 export type AuditOutcome = "success" | "denied" | "error";
+export type AuditCategory = "access" | "oauth" | "tenant" | "authority" | "connection" | "durable_object" | "provider" | "route" | "export" | "capacity" | "config";
+export type AuditEffect = "read" | "write" | "delete" | "policy" | "oauth" | "system";
+export type AuditContext = { environment: "sandbox" | "production" | "unknown"; worker: string; versionId: string; versionTag: string; uploadedOn: string; auditEpoch: string; configDiagnostic?: boolean };
+export type AuditEventV3 = { recordType: "pipedrive.audit"; v: 3; eventId: string; ts: string; environment: "sandbox" | "production" | "unknown"; service: "pipedrive-mcp"; worker: string; versionId: string; versionTag: string; uploadedOn: string; exportState: "source_emitted"; category: AuditCategory; requestId: string; actorId: string; auditEpoch: string; route: string; operation: string; effect: AuditEffect; outcome: AuditOutcome; httpStatus: number; latencyMs: number; dryRun?: boolean; targetIds?: Record<string, string | number>; tenantId?: string; errorCode?: string; policyRevision?: number; policyChanges?: Partial<Record<"writes" | "deletes" | "mailbox", { from: boolean; to: boolean }>>; providerStatus?: number; providerClass?: "401" | "403" | "429" | "5xx" | "timeout" | "transport"; attempt?: number; measurements?: Partial<Record<"request_count" | "cpu_ms" | "storage_bytes" | "provider_cost_eur_micros" | "queue_depth" | "freshness_seconds" | "parse_failures" | "capacity_percent" | "purge_delay_seconds", number>>; previousActorId?: string; previousAuditEpoch?: string };
+export type AuditInput = Omit<AuditEventV3, "recordType" | "v" | "eventId" | "service" | "exportState" | "environment" | "worker" | "versionId" | "versionTag" | "uploadedOn" | "auditEpoch"> & { eventId?: string; auditEpoch?: string };
+export interface AuditSink { write(event: AuditEventV3): Promise<void>; }
 
-type AuditCommon = {
-  ts: string;
-  requestId: string;
-  actorId: string;
-  route: string;
-  operation: string;
-  effect: "read" | "write" | "delete" | "policy" | "oauth";
-  dryRun?: boolean;
-  outcome: AuditOutcome;
-  httpStatus: number;
-  latencyMs: number;
-  targetIds?: Record<string, string | number>;
-  tenantId?: string;
-  errorCode?: string;
-  policyRevision?: number;
-  policyChanges?: Partial<
-    Record<"writes" | "deletes" | "mailbox", { from: boolean; to: boolean }>
-  >;
-};
+const CATEGORIES = new Set<AuditCategory>(["access", "oauth", "tenant", "authority", "connection", "durable_object", "provider", "route", "export", "capacity", "config"]);
+const EFFECTS = new Set<AuditEffect>(["read", "write", "delete", "policy", "oauth", "system"]);
+const OUTCOMES = new Set<AuditOutcome>(["success", "denied", "error"]);
+const EVENT_KEYS = new Set(["recordType", "v", "eventId", "ts", "environment", "service", "worker", "versionId", "versionTag", "uploadedOn", "exportState", "category", "requestId", "actorId", "auditEpoch", "route", "operation", "effect", "outcome", "httpStatus", "latencyMs", "dryRun", "targetIds", "tenantId", "errorCode", "policyRevision", "policyChanges", "providerStatus", "providerClass", "attempt", "measurements", "previousActorId", "previousAuditEpoch"]);
+const MEASUREMENTS = new Set(["request_count", "cpu_ms", "storage_bytes", "provider_cost_eur_micros", "queue_depth", "freshness_seconds", "parse_failures", "capacity_percent", "purge_delay_seconds"]);
+const POLICY = new Set(["writes", "deletes", "mailbox"]);
+const SAFE = /^[A-Za-z0-9._:-]{1,128}$/;
+const ACTOR = /^(?:anonymous|system|[a-f0-9]{32})$/;
+const ISO = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/;
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
-export type AuditEventV1 = AuditCommon & {
-  v: 1;
-  auditEpoch?: never;
-  previousActorId?: never;
-  previousAuditEpoch?: never;
-};
-
-export type AuditEventV2 = AuditCommon & {
-  v: 2;
-  /** v2: the active HMAC epoch that produced actorId. */
-  auditEpoch: string;
-} & (
-  | { previousActorId?: never; previousAuditEpoch?: never }
-  | { previousActorId: string; previousAuditEpoch: string }
-);
-
-export type AuditEvent = AuditEventV1 | AuditEventV2;
-
-export interface AuditSink {
-  write(event: AuditEvent): Promise<void>;
+export function auditContext(env: { DEPLOY_ENVIRONMENT?: string; AUDIT_HMAC_EPOCH?: string; VERSION_METADATA?: { id?: string; tag?: string; timestamp?: string } }, worker: string): AuditContext {
+  const environment = env.DEPLOY_ENVIRONMENT === "sandbox" || env.DEPLOY_ENVIRONMENT === "production" ? env.DEPLOY_ENVIRONMENT : "unknown";
+  const metadata = env.VERSION_METADATA;
+  const metadataValid = Boolean(metadata && safe(metadata.id) && safe(metadata.tag) && iso(metadata.timestamp));
+  return { environment, worker: safe(worker) ? worker : "unknown", versionId: metadataValid ? metadata!.id! : "unknown", versionTag: metadataValid ? metadata!.tag! : "unknown", uploadedOn: metadataValid ? metadata!.timestamp! : "unknown", auditEpoch: safe(env.AUDIT_HMAC_EPOCH) ? env.AUDIT_HMAC_EPOCH! : "unknown", configDiagnostic: environment === "unknown" || !metadataValid || !safe(env.AUDIT_HMAC_EPOCH) };
 }
-
-export class ConsoleAuditSink implements AuditSink {
-  async write(event: AuditEvent): Promise<void> {
-    console.log(JSON.stringify(event));
-  }
+export function auditV3(context: AuditContext, input: AuditInput): AuditEventV3 {
+  const event: AuditEventV3 = { recordType: "pipedrive.audit", v: 3, eventId: input.eventId ?? crypto.randomUUID(), ts: input.ts, environment: context.environment, service: "pipedrive-mcp", worker: context.worker, versionId: context.versionId, versionTag: context.versionTag, uploadedOn: context.uploadedOn, exportState: "source_emitted", category: input.category, requestId: input.requestId, actorId: input.actorId, auditEpoch: input.auditEpoch ?? context.auditEpoch, route: input.route, operation: input.operation, effect: input.effect, outcome: input.outcome, httpStatus: input.httpStatus, latencyMs: input.latencyMs, ...(input.dryRun === undefined ? {} : { dryRun: input.dryRun }), ...(input.targetIds ? { targetIds: input.targetIds } : {}), ...(input.tenantId ? { tenantId: input.tenantId } : {}), ...(input.errorCode ? { errorCode: input.errorCode } : {}), ...(input.policyRevision === undefined ? {} : { policyRevision: input.policyRevision }), ...(input.policyChanges ? { policyChanges: input.policyChanges } : {}), ...(input.providerStatus === undefined ? {} : { providerStatus: input.providerStatus }), ...(input.providerClass ? { providerClass: input.providerClass } : {}), ...(input.attempt === undefined ? {} : { attempt: input.attempt }), ...(input.measurements ? { measurements: input.measurements } : {}), ...(input.previousActorId ? { previousActorId: input.previousActorId } : {}), ...(input.previousAuditEpoch ? { previousAuditEpoch: input.previousAuditEpoch } : {}) };
+  validateAuditEventV3(event, context.configDiagnostic === true); return event;
 }
-
-export async function pseudonymizeAccessSub(
-  sub: string,
-  encodedKey: string,
-): Promise<string> {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    base64UrlToBytes(encodedKey),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signature = await crypto.subtle.sign(
-    "HMAC",
-    key,
-    new TextEncoder().encode(sub),
-  );
-  return Array.from(new Uint8Array(signature), (byte) => byte.toString(16).padStart(2, "0"))
-    .join("")
-    .slice(0, 32);
+export function validateAuditEventV3(event: unknown, allowConfigUnknown = false): asserts event is AuditEventV3 {
+  if (!record(event) || Object.keys(event).some((key) => !EVENT_KEYS.has(key))) fail("audit_unknown_field");
+  const e = event as Record<string, unknown>;
+  if (e.recordType !== "pipedrive.audit" || e.v !== 3 || !string(e.eventId, UUID) || !string(e.ts, ISO) || !["sandbox", "production", "unknown"].includes(e.environment as string) || e.service !== "pipedrive-mcp" || !string(e.requestId, SAFE) || !string(e.actorId, ACTOR) || !string(e.route, /^(?:\/[A-Za-z0-9._:/-]{0,255}|scheduled|durable-object|audit)$/) || !string(e.operation, SAFE) || !CATEGORIES.has(e.category as AuditCategory) || !EFFECTS.has(e.effect as AuditEffect) || !OUTCOMES.has(e.outcome as AuditOutcome) || !integer(e.httpStatus, 100, 599) || !integer(e.latencyMs, 0)) fail("audit_schema_invalid");
+  const configUnknown = e.environment === "unknown" || e.worker === "unknown" || e.versionId === "unknown" || e.versionTag === "unknown" || e.uploadedOn === "unknown" || e.auditEpoch === "unknown";
+  if (configUnknown && (!allowConfigUnknown || e.category !== "config")) fail("audit_context_unknown");
+  if (configUnknown && (!["sandbox", "production", "unknown"].includes(e.environment as string) || !(e.worker === "unknown" || string(e.worker, SAFE)) || !(e.versionId === "unknown" || string(e.versionId, SAFE)) || !(e.versionTag === "unknown" || string(e.versionTag, SAFE)) || !(e.uploadedOn === "unknown" || string(e.uploadedOn, ISO)) || !(e.auditEpoch === "unknown" || string(e.auditEpoch, SAFE)))) fail("audit_context_invalid");
+  if (!configUnknown && (!["sandbox", "production"].includes(e.environment as string) || !string(e.worker, SAFE) || !string(e.versionId, SAFE) || !string(e.versionTag, SAFE) || !string(e.uploadedOn, ISO) || !string(e.auditEpoch, SAFE))) fail("audit_context_invalid");
+  if ((e.previousActorId === undefined) !== (e.previousAuditEpoch === undefined) || (e.previousActorId !== undefined && (!string(e.previousActorId, ACTOR) || !string(e.previousAuditEpoch, SAFE)))) fail("audit_correlation_incomplete");
+  if (e.dryRun !== undefined && typeof e.dryRun !== "boolean") fail("audit_schema_invalid"); if (e.tenantId !== undefined && !string(e.tenantId, SAFE)) fail("audit_schema_invalid"); if (e.errorCode !== undefined && !string(e.errorCode, SAFE)) fail("audit_schema_invalid"); if (e.policyRevision !== undefined && !integer(e.policyRevision, 0)) fail("audit_schema_invalid");
+  validateNested(e); if (new TextEncoder().encode(JSON.stringify(e)).byteLength > 4096) fail("audit_event_too_large");
 }
-
-export function extractTargetIds(value: unknown): Record<string, string | number> | undefined {
-  if (!isRecord(value)) {
-    return undefined;
-  }
-  const result: Record<string, string | number> = {};
-  for (const [key, candidate] of Object.entries(value)) {
-    if (
-      /^[a-z][a-z0-9_]{0,63}_id$/.test(key) &&
-      ((typeof candidate === "number" && Number.isSafeInteger(candidate)) ||
-        (typeof candidate === "string" && candidate.length <= 128))
-    ) {
-      result[key] = candidate;
-    }
-  }
-  return Object.keys(result).length > 0 ? result : undefined;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function base64UrlToBytes(value: string): Uint8Array<ArrayBuffer> {
-  const normalized = value.replaceAll("-", "+").replaceAll("_", "/");
-  const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "=");
-  const binary = atob(padded);
-  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
-  if (bytes.byteLength < 32) {
-    throw new Error("audit_hmac_key_invalid");
-  }
-  return bytes;
-}
+function validateNested(e: Record<string, unknown>) { if (e.targetIds !== undefined) { if (!record(e.targetIds) || Object.keys(e.targetIds).length > 12) fail("audit_schema_invalid"); for (const [key, value] of Object.entries(e.targetIds)) if (!/^[a-z][a-z0-9_]{0,63}_id$/.test(key) || !(integer(value, 0) || string(value, SAFE))) fail("audit_schema_invalid"); } if (e.measurements !== undefined) { if (!record(e.measurements)) fail("audit_schema_invalid"); for (const [key, value] of Object.entries(e.measurements)) if (!MEASUREMENTS.has(key) || !integer(value, 0)) fail("audit_schema_invalid"); } if (e.policyChanges !== undefined) { if (!record(e.policyChanges)) fail("audit_schema_invalid"); for (const [key, value] of Object.entries(e.policyChanges)) if (!POLICY.has(key) || !record(value) || Object.keys(value).some((item) => item !== "from" && item !== "to") || typeof value.from !== "boolean" || typeof value.to !== "boolean") fail("audit_schema_invalid"); } if (e.providerClass !== undefined && !["401", "403", "429", "5xx", "timeout", "transport"].includes(e.providerClass as string)) fail("audit_schema_invalid"); if (e.providerStatus !== undefined && !integer(e.providerStatus, 100, 599)) fail("audit_schema_invalid"); if (e.attempt !== undefined && !integer(e.attempt, 1, 10)) fail("audit_schema_invalid"); if ((e.providerClass === undefined) !== (e.providerStatus === undefined) && !["timeout", "transport"].includes(e.providerClass as string)) fail("audit_provider_inconsistent"); }
+export class ConsoleAuditSink implements AuditSink { async write(event: AuditEventV3): Promise<void> { validateAuditEventV3(event, event.category === "config"); console.log(JSON.stringify(event)); } }
+/** Failures are observable, bounded, and non-recursive; no original invalid data is logged. */
+export async function emitAudit(sink: AuditSink, context: AuditContext, input: AuditInput): Promise<void> { try { await sink.write(auditV3(context, input)); } catch { if (input.operation === "audit.export.validation_failure") return; try { await sink.write(auditV3({ ...context, configDiagnostic: true }, { ts: new Date().toISOString(), category: "config", requestId: safe(input.requestId) ? input.requestId : "audit-validation", actorId: "system", route: "audit", operation: "audit.export.validation_failure", effect: "system", outcome: "error", httpStatus: 500, latencyMs: 0, errorCode: "audit_validation_failed" })); } catch { /* bounded non-recursive sink failure */ } } }
+export async function pseudonymizeAccessSub(sub: string, encodedKey: string): Promise<string> { const key = await crypto.subtle.importKey("raw", base64UrlToBytes(encodedKey), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]); const signature = await crypto.subtle.sign("HMAC", key, new TextEncoder().encode(sub)); return Array.from(new Uint8Array(signature), (byte) => byte.toString(16).padStart(2, "0")).join("").slice(0, 32); }
+export function extractTargetIds(value: unknown): Record<string, string | number> | undefined { if (!record(value)) return undefined; const result: Record<string, string | number> = {}; for (const [key, candidate] of Object.entries(value)) if (/^[a-z][a-z0-9_]{0,63}_id$/.test(key) && (integer(candidate, 0) || string(candidate, SAFE))) result[key] = candidate as string | number; return Object.keys(result).length ? result : undefined; }
+function safe(value: unknown): value is string { return string(value, SAFE); } function iso(value: unknown): value is string { return string(value, ISO); } function string(value: unknown, pattern: RegExp): value is string { return typeof value === "string" && pattern.test(value) && (pattern !== ISO || (Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value)); } function integer(value: unknown, minimum: number, maximum = 2_147_483_647): value is number { return typeof value === "number" && Number.isSafeInteger(value) && value >= minimum && value <= maximum; } function record(value: unknown): value is Record<string, unknown> { return typeof value === "object" && value !== null && !Array.isArray(value); } function fail(code: string): never { throw new Error(code); } function base64UrlToBytes(value: string): Uint8Array<ArrayBuffer> { const normalized = value.replaceAll("-", "+").replaceAll("_", "/"); const padded = normalized.padEnd(Math.ceil(normalized.length / 4) * 4, "="); const binary = atob(padded); const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0)); if (bytes.byteLength < 32) throw new Error("audit_hmac_key_invalid"); return bytes; }

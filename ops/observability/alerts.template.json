@@ -1,0 +1,475 @@
+{
+  "declarative_only": true,
+  "no_24x7": true,
+  "alerts": [
+    {
+      "id": "audit-heartbeat-stale",
+      "title": "Audit heartbeat stale",
+      "signal": {
+        "source": "pipedrive.audit",
+        "category": "export",
+        "operation": "audit.export.heartbeat",
+        "measurement": "freshness_seconds"
+      },
+      "window": "15m",
+      "comparator": ">",
+      "threshold": 900,
+      "severity": "critical",
+      "owner": "Alexandre",
+      "backup": "D08_pending",
+      "route": "email_placeholder",
+      "freeze_action": "freeze_destructive_changes",
+      "ack_target": "best_effort_no_24x7",
+      "runbook": "docs/INCIDENT_RESPONSE.md",
+      "evidence_fields": [
+        "eventId",
+        "ts",
+        "environment",
+        "worker",
+        "versionId",
+        "operation",
+        "outcome"
+      ],
+      "live_status": "not_configured"
+    },
+    {
+      "id": "marked-parse-failure",
+      "title": "Marked parse failure",
+      "signal": {
+        "source": "audit_export_validator",
+        "measurement": "parse_failures",
+        "filter": "marked",
+        "activation": {
+          "live_status": "not_configured",
+          "query": "invalid_marked_record_count"
+        }
+      },
+      "window": "any",
+      "comparator": ">",
+      "threshold": 0,
+      "severity": "critical",
+      "owner": "Alexandre",
+      "backup": "D08_pending",
+      "route": "email_placeholder",
+      "freeze_action": "freeze_destructive_changes",
+      "ack_target": "best_effort_no_24x7",
+      "runbook": "docs/INCIDENT_RESPONSE.md",
+      "evidence_fields": [
+        "eventId",
+        "ts",
+        "environment",
+        "worker",
+        "versionId",
+        "operation",
+        "outcome"
+      ],
+      "live_status": "not_configured"
+    },
+    {
+      "id": "unknown-deployment-version",
+      "title": "Unknown deployment version",
+      "signal": {
+        "source": "pipedrive.audit",
+        "category": "config",
+        "filter": "unknown_context"
+      },
+      "window": "any",
+      "comparator": ">",
+      "threshold": 0,
+      "severity": "critical",
+      "owner": "Alexandre",
+      "backup": "D08_pending",
+      "route": "email_placeholder",
+      "freeze_action": "freeze_rollout_until_acknowledged",
+      "ack_target": "best_effort_no_24x7",
+      "runbook": "docs/INCIDENT_RESPONSE.md",
+      "evidence_fields": [
+        "eventId",
+        "ts",
+        "environment",
+        "worker",
+        "versionId",
+        "operation",
+        "outcome"
+      ],
+      "live_status": "not_configured"
+    },
+    {
+      "id": "tenancy-integrity",
+      "title": "Tenancy integrity",
+      "signal": {
+        "source": "pipedrive.audit",
+        "category": "tenant",
+        "outcome": "error"
+      },
+      "window": "any",
+      "comparator": ">",
+      "threshold": 0,
+      "severity": "critical",
+      "owner": "Alexandre",
+      "backup": "D08_pending",
+      "route": "email_placeholder",
+      "freeze_action": "freeze_rollout_until_acknowledged",
+      "ack_target": "best_effort_no_24x7",
+      "runbook": "docs/INCIDENT_RESPONSE.md",
+      "evidence_fields": [
+        "eventId",
+        "ts",
+        "environment",
+        "worker",
+        "versionId",
+        "operation",
+        "outcome"
+      ],
+      "live_status": "not_configured"
+    },
+    {
+      "id": "access-jwks",
+      "title": "Access JWKS",
+      "signal": {
+        "source": "pipedrive.audit",
+        "category": "access",
+        "operation": "access.verify",
+        "filter": "access_jwks"
+      },
+      "window": "5m",
+      "comparator": ">=",
+      "threshold": 3,
+      "severity": "critical",
+      "owner": "Alexandre",
+      "backup": "D08_pending",
+      "route": "email_placeholder",
+      "freeze_action": "freeze_rollout_until_acknowledged",
+      "ack_target": "best_effort_no_24x7",
+      "runbook": "docs/INCIDENT_RESPONSE.md",
+      "evidence_fields": [
+        "eventId",
+        "ts",
+        "environment",
+        "worker",
+        "versionId",
+        "operation",
+        "outcome"
+      ],
+      "live_status": "not_configured"
+    },
+    {
+      "id": "oauth-lifecycle",
+      "title": "OAuth lifecycle",
+      "signal": {
+        "source": "pipedrive.audit",
+        "category": "oauth"
+      },
+      "window": "15m",
+      "comparator": ">",
+      "threshold": 0,
+      "severity": "warning",
+      "owner": "Alexandre",
+      "backup": "D08_pending",
+      "route": "email_placeholder",
+      "freeze_action": "assess_then_freeze",
+      "ack_target": "best_effort_no_24x7",
+      "runbook": "docs/INCIDENT_RESPONSE.md",
+      "evidence_fields": [
+        "eventId",
+        "ts",
+        "environment",
+        "worker",
+        "versionId",
+        "operation",
+        "outcome"
+      ],
+      "live_status": "not_configured"
+    },
+    {
+      "id": "authority-admin",
+      "title": "Authority admin",
+      "signal": {
+        "source": "pipedrive.audit",
+        "category": "authority"
+      },
+      "window": "15m",
+      "comparator": ">",
+      "threshold": 0,
+      "severity": "warning",
+      "owner": "Alexandre",
+      "backup": "D08_pending",
+      "route": "email_placeholder",
+      "freeze_action": "freeze_rollout_until_acknowledged",
+      "ack_target": "best_effort_no_24x7",
+      "runbook": "docs/INCIDENT_RESPONSE.md",
+      "evidence_fields": [
+        "eventId",
+        "ts",
+        "environment",
+        "worker",
+        "versionId",
+        "operation",
+        "outcome"
+      ],
+      "live_status": "not_configured"
+    },
+    {
+      "id": "route-error-latency",
+      "title": "Route error latency",
+      "signal": {
+        "source": "pipedrive.audit",
+        "category": "route",
+        "measurement": "latencyMs"
+      },
+      "window": "15m",
+      "comparator": ">",
+      "threshold": 0,
+      "severity": "warning",
+      "owner": "Alexandre",
+      "backup": "D08_pending",
+      "route": "email_placeholder",
+      "freeze_action": "assess_then_freeze",
+      "ack_target": "best_effort_no_24x7",
+      "runbook": "docs/INCIDENT_RESPONSE.md",
+      "evidence_fields": [
+        "eventId",
+        "ts",
+        "environment",
+        "worker",
+        "versionId",
+        "operation",
+        "outcome"
+      ],
+      "live_status": "not_configured"
+    },
+    {
+      "id": "provider-warning-critical",
+      "title": "Provider warning critical",
+      "signal": {
+        "source": "pipedrive.audit",
+        "category": "provider",
+        "filter": "providerClass"
+      },
+      "window": "15m",
+      "comparator": ">=",
+      "threshold": 3,
+      "severity": "critical",
+      "warning_threshold": 1,
+      "critical_threshold": {
+        "consecutive": 3,
+        "per_window": 5,
+        "window": "15m"
+      },
+      "owner": "Alexandre",
+      "backup": "D08_pending",
+      "route": "email_placeholder",
+      "freeze_action": "freeze_destructive_changes",
+      "ack_target": "best_effort_no_24x7",
+      "runbook": "docs/INCIDENT_RESPONSE.md",
+      "evidence_fields": [
+        "eventId",
+        "ts",
+        "environment",
+        "worker",
+        "versionId",
+        "operation",
+        "outcome"
+      ],
+      "live_status": "not_configured"
+    },
+    {
+      "id": "do-purge-delay",
+      "title": "DO purge delay",
+      "signal": {
+        "source": "pipedrive.audit",
+        "category": "durable_object",
+        "measurement": "purge_delay_seconds"
+      },
+      "window": "24h",
+      "comparator": ">=",
+      "threshold": 86400,
+      "severity": "critical",
+      "warning_threshold": 3600,
+      "critical_threshold": 86400,
+      "threshold_unit": "seconds",
+      "owner": "Alexandre",
+      "backup": "D08_pending",
+      "route": "email_placeholder",
+      "freeze_action": "freeze_destructive_changes",
+      "ack_target": "best_effort_no_24x7",
+      "runbook": "docs/INCIDENT_RESPONSE.md",
+      "evidence_fields": [
+        "eventId",
+        "ts",
+        "environment",
+        "worker",
+        "versionId",
+        "operation",
+        "outcome"
+      ],
+      "live_status": "not_configured"
+    },
+    {
+      "id": "capacity-warning-critical",
+      "title": "Capacity warning critical",
+      "signal": {
+        "source": "pipedrive.audit",
+        "category": "capacity",
+        "measurement": "capacity_percent"
+      },
+      "window": "15m",
+      "comparator": ">=",
+      "threshold": 100,
+      "severity": "critical",
+      "warning_threshold": 80,
+      "critical_threshold": 100,
+      "threshold_unit": "percent",
+      "owner": "Alexandre",
+      "backup": "D08_pending",
+      "route": "email_placeholder",
+      "freeze_action": "freeze_destructive_changes",
+      "ack_target": "best_effort_no_24x7",
+      "runbook": "docs/INCIDENT_RESPONSE.md",
+      "evidence_fields": [
+        "eventId",
+        "ts",
+        "environment",
+        "worker",
+        "versionId",
+        "operation",
+        "outcome"
+      ],
+      "live_status": "not_configured"
+    },
+    {
+      "id": "retention-legal-hold",
+      "title": "Retention legal hold",
+      "signal": {
+        "source": "pipedrive.audit",
+        "category": "durable_object",
+        "filter": "legal_hold"
+      },
+      "window": "any",
+      "comparator": ">",
+      "threshold": 0,
+      "severity": "critical",
+      "owner": "Alexandre",
+      "backup": "D08_pending",
+      "route": "email_placeholder",
+      "freeze_action": "freeze_rollout_until_acknowledged",
+      "ack_target": "best_effort_no_24x7",
+      "runbook": "docs/INCIDENT_RESPONSE.md",
+      "evidence_fields": [
+        "eventId",
+        "ts",
+        "environment",
+        "worker",
+        "versionId",
+        "operation",
+        "outcome"
+      ],
+      "live_status": "not_configured"
+    },
+    {
+      "id": "resource-request-cpu-storage",
+      "title": "Resource request cpu storage",
+      "signal": {
+        "source": "cloudflare_platform_logpush",
+        "measurement": "cpu_ms",
+        "activation": {
+          "live_status": "not_configured",
+          "query": "configured_external_metric"
+        }
+      },
+      "window": "15m",
+      "comparator": ">",
+      "threshold": 0,
+      "severity": "warning",
+      "owner": "Alexandre",
+      "backup": "D08_pending",
+      "route": "email_placeholder",
+      "freeze_action": "assess_then_freeze",
+      "ack_target": "best_effort_no_24x7",
+      "runbook": "docs/INCIDENT_RESPONSE.md",
+      "evidence_fields": [
+        "eventId",
+        "ts",
+        "environment",
+        "worker",
+        "versionId",
+        "operation",
+        "outcome"
+      ],
+      "live_status": "not_configured"
+    },
+    {
+      "id": "observability-cost",
+      "title": "Observability cost",
+      "signal": {
+        "source": "approved_billing_cost_ledger",
+        "measurement": "provider_cost_eur_micros",
+        "conversion": "eur_from_micros",
+        "activation": {
+          "live_status": "not_configured",
+          "query": "configured_external_metric"
+        }
+      },
+      "window": "24h",
+      "comparator": ">=",
+      "threshold": 10,
+      "severity": "critical",
+      "warning_threshold": 8,
+      "critical_threshold": 10,
+      "threshold_unit": "EUR",
+      "owner": "Alexandre",
+      "backup": "D08_pending",
+      "route": "email_placeholder",
+      "freeze_action": "freeze_destructive_changes",
+      "ack_target": "best_effort_no_24x7",
+      "runbook": "docs/INCIDENT_RESPONSE.md",
+      "evidence_fields": [
+        "eventId",
+        "ts",
+        "environment",
+        "worker",
+        "versionId",
+        "operation",
+        "outcome"
+      ],
+      "live_status": "not_configured"
+    },
+    {
+      "id": "combined-cost",
+      "title": "Combined cost",
+      "signal": {
+        "source": "approved_billing_cost_ledger",
+        "measurement": "provider_cost_eur_micros",
+        "filter": "combined",
+        "conversion": "eur_from_micros",
+        "activation": {
+          "live_status": "not_configured",
+          "query": "configured_external_metric"
+        }
+      },
+      "window": "24h",
+      "comparator": ">=",
+      "threshold": 25,
+      "severity": "critical",
+      "warning_threshold": 20,
+      "critical_threshold": 25,
+      "threshold_unit": "EUR",
+      "owner": "Alexandre",
+      "backup": "D08_pending",
+      "route": "email_placeholder",
+      "freeze_action": "freeze_destructive_changes",
+      "ack_target": "best_effort_no_24x7",
+      "runbook": "docs/INCIDENT_RESPONSE.md",
+      "evidence_fields": [
+        "eventId",
+        "ts",
+        "environment",
+        "worker",
+        "versionId",
+        "operation",
+        "outcome"
+      ],
+      "live_status": "not_configured"
+    }
+  ]
+}

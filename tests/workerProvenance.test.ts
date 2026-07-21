@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFileSync, unlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, readFileSync, statSync, unlinkSync, writeFileSync } from "node:fs";
 import test from "node:test";
 
 const inputs = {
@@ -37,7 +37,7 @@ test("sandbox release provenance refuses dirty source by default and records a r
   assert.equal(second, first);
   execFileSync(process.execPath, ["scripts/verify-worker-release.mjs", "--target", "sandbox"], { env: inputs, stdio: "pipe" });
   const record = JSON.parse(second);
-  assert.equal(record.schema, 2);
+  assert.equal(record.schema, 3);
   assert.equal(record.deployable, false);
   assert.equal(record.test_fixture, true);
   assert.equal(record.target, "sandbox");
@@ -52,6 +52,31 @@ test("sandbox release provenance refuses dirty source by default and records a r
   assert.equal(second.includes("aud-synthetic"), false);
   assert.equal(second.includes("admin@pezzos.test"), false);
   const recordPath = "dist/releases/sandbox/release-record.json";
+  const artifactPath = "ops/audit/logpush-r2.template.json";
+  const artifactBytes = readFileSync(artifactPath);
+  const artifactMode = statSync(artifactPath).mode;
+  try {
+    writeFileSync(artifactPath, Buffer.concat([artifactBytes, Buffer.from("\n")]))
+    assert.throws(
+      () => execFileSync(process.execPath, ["scripts/verify-worker-release.mjs", "--target", "sandbox"], { env: inputs, stdio: "pipe" }),
+      /Expected values to be strictly/,
+    );
+  } finally {
+    writeFileSync(artifactPath, artifactBytes);
+    chmodSync(artifactPath, artifactMode);
+  }
+  const missingAuditHash = { ...record, audit_artifacts_sha256: {} };
+  writeFileSync(recordPath, `${JSON.stringify(missingAuditHash)}\n`);
+  assert.throws(
+    () => execFileSync(process.execPath, ["scripts/verify-worker-release.mjs", "--target", "sandbox"], { env: inputs, stdio: "pipe" }),
+    /Expected values to be strictly deep-equal/,
+  );
+  const extraAuditHash = { ...record, audit_artifacts_sha256: { ...record.audit_artifacts_sha256, "extra.json": "0".repeat(64) } };
+  writeFileSync(recordPath, `${JSON.stringify(extraAuditHash)}\n`);
+  assert.throws(
+    () => execFileSync(process.execPath, ["scripts/verify-worker-release.mjs", "--target", "sandbox"], { env: inputs, stdio: "pipe" }),
+    /Expected values to be strictly deep-equal/,
+  );
   const toolchainDrift = { ...record, node_version: "v0.0.0" };
   writeFileSync(recordPath, `${JSON.stringify(toolchainDrift)}\n`);
   assert.throws(

@@ -80,6 +80,7 @@ export class PipedriveClient {
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
       if (this.config.operationSignal?.aborted) throw new Error("pipedrive_operation_deadline_exceeded");
+      const startedAt = Date.now();
       const controller = new AbortController();
       const abortOperation = () => controller.abort();
       this.config.operationSignal?.addEventListener("abort", abortOperation, { once: true });
@@ -99,6 +100,7 @@ export class PipedriveClient {
         text = await boundedProviderText(response);
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
+          this.config.providerObserver?.({ class: "timeout", attempt, latencyMs: Date.now() - startedAt });
           throw new Error(this.config.operationSignal?.aborted ? "pipedrive_operation_deadline_exceeded" : `Pipedrive API ${method} ${path} timed out`);
         }
         if (method === "GET" && attempt < maxAttempts) {
@@ -107,6 +109,7 @@ export class PipedriveClient {
           await sleep(retryDelay, this.config.operationSignal);
           continue;
         }
+        this.config.providerObserver?.({ class: "transport", attempt, latencyMs: Date.now() - startedAt });
         throw error;
       } finally {
         clearTimeout(timeout);
@@ -115,6 +118,8 @@ export class PipedriveClient {
 
       const data = text ? safeJsonParse(text) : null;
       if (!response.ok) {
+        const providerClass = response.status === 401 ? "401" : response.status === 403 ? "403" : response.status === 429 ? "429" : response.status >= 500 ? "5xx" : undefined;
+        if (providerClass) this.config.providerObserver?.({ status: response.status, class: providerClass, attempt, latencyMs: Date.now() - startedAt });
         if (method === "GET" && attempt < maxAttempts && isTransientStatus(response.status)) {
           const retryDelay = retryDelayMs(response.headers.get("retry-after"), attempt);
           if (retryDelay !== undefined && retryDelay <= remainingRetryDelayMs) {
