@@ -181,6 +181,26 @@ is immediate and does not require confirmation.
 
 ## Required Cloudflare Configuration
 
+## B6 limits and rotation contract
+
+Required names include `REMOTE_ADMIN_SUB`, `PIPEDRIVE_OAUTH_CLIENT_EPOCH`,
+`PIPEDRIVE_OAUTH_ENCRYPTION_KID`, and `AUDIT_HMAC_EPOCH`. Optional groups are
+all-or-none: old encryption kid/key, previous audit epoch/key, and previous
+Access issuer/audience/UTC cutoff. Pilot capacity is two tenants, four
+connections, 1,000 attempted tool admissions per UTC day (warning at 800),
+with IP 120/min, MCP user 60/min, tool user 20/min, tenant 60/min and global
+120/min. Tool leases are user 2, tenant 4, global 8 and expire after 15s.
+Forms are 8KiB, MCP JSON 64KiB, OAuth/current-user 64KiB, provider responses
+1MiB. Rate capacity returns redacted 429/503 with bounded Retry-After.
+
+OAuth envelopes use v1 plus primary `kid`; an optional old key is decrypt-only,
+legacy records try primary then old and are opportunistically rewrapped. An
+unknown kid is `oauth_key_id_unknown`; invalid material is
+`oauth_material_invalid`. OAuth pending state is bound to client epoch. Audit
+v2 emits current quarterly epoch and optional prior correlation; Access accepts
+only a complete current or pre-cutoff previous issuer/audience pair. Rollback
+must remain v2-topology compatible and never rolls back secrets or DO state.
+
 The checked-in `wrangler.sandbox.jsonc` and `wrangler.production.jsonc` declare
 the same `USER_POLICY`, `USER_CONNECTION`, and `TENANT_REGISTRY` bindings, with
 the original v1 migration retained and an additive v2 migration for the two new
@@ -199,14 +219,43 @@ contents:
 | `PIPEDRIVE_OAUTH_ENCRYPTION_KEY` | Secret | Random 32-byte base64url key used for AES-256-GCM token encryption. |
 | `AUDIT_HMAC_KEY` | Secret | Independent random base64url key of at least 32 bytes for actor pseudonyms. |
 
+B6 requires the non-secret names `REMOTE_ADMIN_SUB`,
+`PIPEDRIVE_OAUTH_CLIENT_EPOCH`, `PIPEDRIVE_OAUTH_ENCRYPTION_KID`, and
+`AUDIT_HMAC_EPOCH` in addition to the existing configuration. The encryption
+and audit keys must be canonical 32-byte base64url values. Optional rotation
+groups are all-or-none: encryption is `PIPEDRIVE_OAUTH_OLD_ENCRYPTION_KID` +
+`PIPEDRIVE_OAUTH_OLD_ENCRYPTION_KEY`; prior audit is the exact triple
+`AUDIT_HMAC_PREVIOUS_EPOCH` + `AUDIT_HMAC_PREVIOUS_KEY` +
+`AUDIT_HMAC_PREVIOUS_VALID_UNTIL`; and prior Access is the triple
+`ACCESS_PREVIOUS_ISSUER` + `ACCESS_PREVIOUS_AUD` +
+`ACCESS_PREVIOUS_VALID_UNTIL`. No secret value belongs
+in release records, workflow output, logs, or evidence.
+
 Keep the encryption and audit keys independent. B6 must implement versioned
 AES-256-GCM envelopes with a `kid`, a primary key and an old decrypt-only key:
 planned annual rotation, immediate compromise rotation, bounded re-encryption,
 and old-key retirement only after zero-use evidence plus 30 days. A compromise
-can require reconnection. Audit HMAC uses quarterly explicit epochs: the
+can require reconnection. Audit HMAC uses scheduled quarterly explicit epochs,
+with immediate same-quarter emergency identifiers allowed for compromise: the
+previous audit configuration is the all-or-none triple
+`AUDIT_HMAC_PREVIOUS_EPOCH`, `AUDIT_HMAC_PREVIOUS_KEY`, and
+`AUDIT_HMAC_PREVIOUS_VALID_UNTIL` UTC cutoff; the
 current emit key and prior correlation key remain available for at most 90
 days, historical logs are not rewritten, and compromise starts a new epoch
 immediately with bounded administrator-only cross-epoch correlation.
+The registry keeps a durable, fingerprint-only first-seen ledger for at most
+64 prior audit keys; removing the optional key does not erase that history, so
+re-adding a key cannot extend its original 90-day retention window.
+
+Each leased MCP tool operation has a fixed 12-second global deadline, including
+provider calls and post-provider accounting, below the 15-second recovery lease.
+
+For planned encryption retirement, the protected admin receipt must show zero
+active `old`, `legacy`, and `unknown` envelopes; any unknown row blocks a
+zero-use claim. Retire only after 30 days since the latest observed
+non-primary decrypt/rewrap timestamp. For a compromise, replace the
+compromised primary immediately and force reconnect where recovery cannot
+safely proceed; there is no 30-day wait before ending use of that key.
 
 ## Local target validation and release record
 

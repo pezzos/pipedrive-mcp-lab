@@ -12,7 +12,7 @@ test("sandbox and production Wrangler configurations are distinct, complete, and
   assert.equal(readFileSync("wrangler.production.jsonc", "utf8").includes(targets.sandbox.origin), false);
   assert.notEqual(targets.sandbox.accessApplicationLabel, targets.production.accessApplicationLabel);
   assert.notEqual(targets.sandbox.pipedriveApplicationLabel, targets.production.pipedriveApplicationLabel);
-  assert.deepEqual(requiredVariables, ["ACCESS_ISSUER", "ACCESS_AUD", "REMOTE_ADMIN_EMAIL"]);
+  assert.deepEqual(requiredVariables, ["ACCESS_ISSUER", "ACCESS_AUD", "REMOTE_ADMIN_EMAIL", "REMOTE_ADMIN_SUB", "PIPEDRIVE_OAUTH_CLIENT_EPOCH", "PIPEDRIVE_OAUTH_ENCRYPTION_KID", "AUDIT_HMAC_EPOCH"]);
   assert.deepEqual(requiredSecrets, ["PIPEDRIVE_OAUTH_CLIENT_ID", "PIPEDRIVE_OAUTH_CLIENT_SECRET", "PIPEDRIVE_OAUTH_ENCRYPTION_KEY", "AUDIT_HMAC_KEY"]);
 });
 

@@ -16,8 +16,10 @@ export const targets = {
     pipedriveApplicationLabel: "Pipedrive MCP Production OAuth",
   },
 };
-export const requiredVariables = ["ACCESS_ISSUER", "ACCESS_AUD", "REMOTE_ADMIN_EMAIL"];
+export const requiredVariables = ["ACCESS_ISSUER", "ACCESS_AUD", "REMOTE_ADMIN_EMAIL", "REMOTE_ADMIN_SUB", "PIPEDRIVE_OAUTH_CLIENT_EPOCH", "PIPEDRIVE_OAUTH_ENCRYPTION_KID", "AUDIT_HMAC_EPOCH"];
 export const requiredSecrets = ["PIPEDRIVE_OAUTH_CLIENT_ID", "PIPEDRIVE_OAUTH_CLIENT_SECRET", "PIPEDRIVE_OAUTH_ENCRYPTION_KEY", "AUDIT_HMAC_KEY"];
+export const optionalSecrets = ["PIPEDRIVE_OAUTH_OLD_ENCRYPTION_KEY", "AUDIT_HMAC_PREVIOUS_KEY"];
+export const optionalVariables = ["PIPEDRIVE_OAUTH_OLD_ENCRYPTION_KID", "AUDIT_HMAC_PREVIOUS_EPOCH", "AUDIT_HMAC_PREVIOUS_VALID_UNTIL", "ACCESS_PREVIOUS_ISSUER", "ACCESS_PREVIOUS_AUD", "ACCESS_PREVIOUS_VALID_UNTIL"];
 
 export function configPath(target, root = process.cwd()) {
   assertTarget(target);

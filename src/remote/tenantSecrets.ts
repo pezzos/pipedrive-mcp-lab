@@ -1,4 +1,5 @@
 import { normalizePipedriveApiDomain } from "./apiDomain.js";
+import { boundedText } from "../boundedBody.js";
 import { loadRemoteStateConfig, type RemoteStateConfig, type RemoteEnv } from "./env.js";
 import {
   normalizeRemoteOAuthErrorCode,
@@ -24,9 +25,14 @@ export type OAuthMaterial = {
 
 export type EncryptedEnvelope = {
   v: 1;
+  /** Missing on legacy v1 records; new writes always carry the primary key id. */
+  kid?: string;
   iv: string;
   ciphertext: string;
 };
+
+/** Safe provenance only; it never contains a key, token, or plaintext. */
+export type EncryptionSourceClass = "primary" | "old" | "legacy-primary" | "legacy-old";
 
 type StateRecord = {
   digest: string;
@@ -34,6 +40,7 @@ type StateRecord = {
   redirectUriHash: string;
   expiresAtMs: number;
   expectedGeneration?: number;
+  oauthClientEpoch: string;
 };
 
 type ConnectionRecord = {
@@ -120,6 +127,7 @@ export class TenantSecretsCore {
           redirectUriHash,
           expiresAtMs: this.now() + STATE_TTL_MS,
           expectedGeneration: connection.generation,
+          oauthClientEpoch: this.config.oauthClientEpoch,
         });
       });
     } catch {
@@ -147,7 +155,7 @@ export class TenantSecretsCore {
       redirect_uri: redirectUri,
     });
     const material = parseOAuthMaterial(parsed, this.now());
-    const encrypted = await encryptMaterial(material, this.config.encryptionKey);
+    const encrypted = await encryptMaterial(material, this.config);
     let persisted = false;
     try {
       persisted = await this.storage.transaction(async (transaction) => {
@@ -202,6 +210,7 @@ export class TenantSecretsCore {
       record.digest !== stateHash ||
       record.expiresAtMs <= this.now() ||
       record.adminSub !== adminSub ||
+      record.oauthClientEpoch !== this.config.oauthClientEpoch ||
       record.redirectUriHash !== redirectUriHash
     ) {
       throw new Error("oauth_state_invalid");
@@ -249,7 +258,7 @@ export class TenantSecretsCore {
       throw new Error("tenant_storage_unavailable");
     }
     return {
-      status: await publicStatusFromStored(snapshot, this.config.encryptionKey),
+      status: await publicStatusFromStored(snapshot, this.config),
       actionToken,
     };
   }
@@ -329,7 +338,7 @@ export class TenantSecretsCore {
       refresh_token: latest.material.refreshCredential,
     });
     const updated = parseOAuthMaterial(parsed, this.now(), latest.material.refreshCredential);
-    const encrypted = await encryptMaterial(updated, this.config.encryptionKey);
+    const encrypted = await encryptMaterial(updated, this.config);
     let persisted = false;
     try {
       persisted = await this.storage.transaction(async (transaction) => {
@@ -389,7 +398,7 @@ export class TenantSecretsCore {
     }
     let parsed: PipedriveOAuthResponse;
     try {
-      parsed = await response.json() as PipedriveOAuthResponse;
+      parsed = await boundedJson(response) as PipedriveOAuthResponse;
     } catch {
       throw new Error(response.ok ? "pipedrive_oauth_invalid_response" : "pipedrive_oauth_failed");
     }
@@ -415,12 +424,20 @@ export class TenantSecretsCore {
     } catch {
       throw new Error("tenant_storage_unavailable");
     }
-    return {
-      ...stored,
-      material: stored.envelope
-        ? await decryptMaterial(stored.envelope, this.config.encryptionKey)
-        : undefined,
-    };
+    const material = stored.envelope ? await decryptMaterial(stored.envelope, this.config) : undefined;
+    if (stored.envelope && material && stored.envelope.kid !== this.config.encryptionKid) {
+      const replacement = await encryptMaterial(material, this.config);
+      try {
+        const persisted = await this.storage.transaction(async (transaction) => {
+          const current = await transaction.get<EncryptedEnvelope>(MATERIAL_KEY);
+          if (!sameEnvelope(current, stored.envelope)) return false;
+          await transaction.put(MATERIAL_KEY, replacement);
+          return true;
+        });
+        if (persisted) stored = { ...stored, envelope: replacement };
+      } catch { /* read remains valid if best-effort rewrap races or storage degrades */ }
+    }
+    return { ...stored, material };
   }
 }
 
@@ -487,9 +504,10 @@ export class TenantSecrets {
 
 export async function encryptMaterial(
   material: OAuthMaterial,
-  encodedKey: string,
+  config: Pick<RemoteStateConfig, "encryptionKey" | "encryptionKid"> | string,
 ): Promise<EncryptedEnvelope> {
-  const key = await importEncryptionKey(encodedKey);
+  const keyring = typeof config === "string" ? { encryptionKey: config, encryptionKid: undefined } : config;
+  const key = await importEncryptionKey(keyring.encryptionKey);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const plaintext = new TextEncoder().encode(JSON.stringify(material));
   let ciphertext: ArrayBuffer;
@@ -504,6 +522,7 @@ export async function encryptMaterial(
   }
   return {
     v: 1,
+    ...(keyring.encryptionKid ? { kid: keyring.encryptionKid } : {}),
     iv: bytesToBase64Url(iv),
     ciphertext: bytesToBase64Url(new Uint8Array(ciphertext)),
   };
@@ -511,13 +530,26 @@ export async function encryptMaterial(
 
 export async function decryptMaterial(
   envelope: EncryptedEnvelope,
-  encodedKey: string,
+  config: Pick<RemoteStateConfig, "encryptionKey" | "encryptionKid" | "oldEncryption"> | string,
 ): Promise<OAuthMaterial> {
+  return (await decryptMaterialWithSource(envelope, config)).material;
+}
+
+export async function decryptMaterialWithSource(
+  envelope: EncryptedEnvelope,
+  config: Pick<RemoteStateConfig, "encryptionKey" | "encryptionKid" | "oldEncryption"> | string,
+): Promise<{ material: OAuthMaterial; source: EncryptionSourceClass }> {
   if (envelope.v !== 1) {
     throw new Error("oauth_material_invalid");
   }
-  const key = await importEncryptionKey(encodedKey);
-  try {
+  const keyring = typeof config === "string" ? { encryptionKey: config, encryptionKid: undefined, oldEncryption: undefined } : config;
+  const candidates: Array<{ key: string; source: EncryptionSourceClass }> | undefined = envelope.kid === undefined
+    ? [{ key: keyring.encryptionKey, source: "legacy-primary" }, ...(keyring.oldEncryption ? [{ key: keyring.oldEncryption.key, source: "legacy-old" as const }] : [])]
+    : envelope.kid === keyring.encryptionKid ? [{ key: keyring.encryptionKey, source: "primary" }]
+    : envelope.kid === keyring.oldEncryption?.kid ? [{ key: keyring.oldEncryption.key, source: "old" }] : undefined;
+  if (!candidates) throw new Error("oauth_key_id_unknown");
+  for (const candidate of candidates) try {
+    const key = await importEncryptionKey(candidate.key);
     const plaintext = await crypto.subtle.decrypt(
       {
         name: "AES-GCM",
@@ -527,12 +559,9 @@ export async function decryptMaterial(
       key,
       base64UrlToBytes(envelope.ciphertext),
     );
-    return parseStoredMaterial(
-      JSON.parse(new TextDecoder().decode(plaintext)) as Record<string, unknown>,
-    );
-  } catch {
-    throw new Error("oauth_material_invalid");
-  }
+    return { material: parseStoredMaterial(JSON.parse(new TextDecoder().decode(plaintext)) as Record<string, unknown>), source: candidate.source };
+  } catch { /* legacy candidates are intentionally tried in keyring order */ }
+  throw new Error("oauth_material_invalid");
 }
 
 function parseOAuthMaterial(
@@ -603,7 +632,7 @@ async function publicStatus(snapshot: MaterialSnapshot): Promise<TenantConnectio
 
 async function publicStatusFromStored(
   snapshot: Omit<MaterialSnapshot, "material">,
-  encryptionKey: string,
+  config: Pick<RemoteStateConfig, "encryptionKey" | "encryptionKid" | "oldEncryption">,
 ): Promise<TenantConnectionStatus> {
   if (!snapshot.envelope) {
     return { connected: false };
@@ -611,12 +640,17 @@ async function publicStatusFromStored(
   try {
     return publicStatus({
       ...snapshot,
-      material: await decryptMaterial(snapshot.envelope, encryptionKey),
+      material: await decryptMaterial(snapshot.envelope, config),
     });
   } catch {
     // The admin kill switch must remain usable even if stored material cannot be decrypted.
     return { connected: true, materialReadable: false };
   }
+}
+
+async function boundedJson(response: Response): Promise<unknown> {
+  const limit = 64 * 1024;
+  try { return JSON.parse(await boundedText(response, limit)) as unknown; } catch { throw new Error("pipedrive_oauth_response_too_large"); }
 }
 
 function connectionRecord(value: ConnectionRecord | undefined): ConnectionRecord {
@@ -644,6 +678,7 @@ function sameEnvelope(
     left &&
     right &&
     left.v === right.v &&
+    left.kid === right.kid &&
     left.iv === right.iv &&
     left.ciphertext === right.ciphertext,
   );

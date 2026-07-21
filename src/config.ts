@@ -9,6 +9,7 @@ export type PipedriveConfig = {
   enableDeleteTools: boolean;
   enableMailboxTools: boolean;
   requestTimeoutMs: number;
+  operationSignal?: AbortSignal;
 };
 
 type Environment = Record<string, string | undefined>;

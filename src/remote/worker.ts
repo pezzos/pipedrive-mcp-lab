@@ -1,4 +1,5 @@
 import type { PipedriveConfig } from "../config.js";
+import { boundedBody } from "../boundedBody.js";
 import { buildServer } from "../tools.js";
 import { verifyAccessRequest, type AccessIdentity } from "./access.js";
 import {
@@ -32,6 +33,9 @@ import {
 import {
   TenantRegistry,
   tenantRegistryStub,
+  acquireCapacity,
+  observePreviousAudit,
+  releaseCapacity,
   normalizePipedriveSubdomain,
   type TenantAdminAction,
   type TenantAdminProjection,
@@ -45,34 +49,65 @@ import {
 } from "./userConnection.js";
 import { renderUserConnectionPage } from "./userConnectionPage.js";
 import { htmlResponse, noStoreRedirect } from "./pageResponse.js";
-import { handleMcpRequest } from "./transport.js";
+
+type AuditIdentity =
+  | { actorId: string; auditEpoch: string; previousActorId?: never; previousAuditEpoch?: never }
+  | { actorId: string; auditEpoch: string; previousActorId: string; previousAuditEpoch: string };
+import { handleMcpRequest, preflightMcpRequest } from "./transport.js";
 
 // TenantSecrets must stay exported so the already-declared v1 Durable Object
 // class remains migration-compatible. The v2 Worker has no binding or route to it.
 export { TenantRegistry, TenantSecrets, UserConnection, UserPolicy };
 
 const auditSink = new ConsoleAuditSink();
+const TOOL_OPERATION_DEADLINE_MS = 12_000;
+
+function isAdmin(identity: AccessIdentity, config: Pick<RemoteConfig, "adminEmail" | "adminSub">): boolean {
+  return identity.email === config.adminEmail && identity.sub === config.adminSub;
+}
 
 export default {
   async fetch(request: Request, env: RemoteEnv, context: ExecutionContext): Promise<Response> {
+    if (request.url.length > 8 * 1024) return noStoreJson({ code: "remote_request_too_large" }, { status: 413 });
+    const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
+    const declaredLength = Number(request.headers.get("content-length") ?? "0");
+    if (contentType.startsWith("multipart/form-data")) return noStoreJson({ code: "remote_content_type_invalid" }, { status: 415 });
+    if (contentType.startsWith("application/x-www-form-urlencoded") && Number.isFinite(declaredLength) && declaredLength > 8 * 1024) {
+      return noStoreJson({ code: "remote_request_too_large" }, { status: 413 });
+    }
+    if (contentType.startsWith("application/x-www-form-urlencoded")) {
+      let body: Uint8Array; try { body = await boundedBody(request, 8 * 1024); } catch { return noStoreJson({ code: "remote_request_too_large" }, { status: 413 }); }
+      request = new Request(request, { body: body.buffer as ArrayBuffer });
+    }
     const url = new URL(request.url);
     if (url.pathname === "/healthz" && request.method === "GET") {
       return noStoreJson({ status: "ok", transport: "streamable-http" });
     }
 
     let config: RemoteConfig;
-    let identity: AccessIdentity;
     try {
       config = loadRemoteConfig(env);
+    } catch (error) {
+      const code = safeErrorCode(error, "access_denied");
+      context.waitUntil(auditSink.write({
+        v: 1, ts: new Date().toISOString(), requestId: requestId(request), actorId: "anonymous", route: url.pathname,
+        operation: "config.load", effect: "read", outcome: "denied", httpStatus: 401, latencyMs: 0, errorCode: code,
+      }).catch(() => undefined));
+      return noStoreJson({ code }, { status: 401 });
+    }
+    let identity: AccessIdentity;
+    try {
       identity = await verifyAccessRequest(request, {
         issuer: config.accessIssuer,
         audience: config.accessAudience,
+        ...(config.previousAccess ? { previous: config.previousAccess } : {}),
       });
     } catch (error) {
       const code = safeErrorCode(error, "access_denied");
       context.waitUntil(
         auditSink.write({
-          v: 1,
+          v: 2,
+          auditEpoch: config.auditHmacEpoch,
           ts: new Date().toISOString(),
           requestId: requestId(request),
           actorId: "anonymous",
@@ -91,10 +126,16 @@ export default {
       );
     }
 
+    if (config.previousAudit && !await previousAuditAllowed(env, config)) {
+      context.waitUntil(auditSink.write({ v: 2, auditEpoch: config.auditHmacEpoch, actorId: await pseudonymizeAccessSub(identity.sub, config.auditHmacKey), ts: new Date().toISOString(), requestId: requestId(request), route: url.pathname, operation: "audit.rotation.guard", effect: "read", outcome: "error", httpStatus: 503, latencyMs: 0, errorCode: "audit_rotation_guard_failed" }).catch(() => undefined));
+      return url.pathname === "/mcp" ? mcpFailure("audit_rotation_guard_failed") : noStoreJson({ code: "remote_dependency_unavailable" }, { status: 503 });
+    }
+
     if (!requestUsesConfiguredOrigin(request, config)) {
       return noStoreJson({ code: "remote_origin_invalid" }, { status: 400 });
     }
-
+    const capacity = await acquireCapacity(env, { kind: "protected", ip: await pseudonymizeAccessSub(request.headers.get("cf-connecting-ip") ?? "missing-ip", config.auditHmacKey), user: await pseudonymizeAccessSub(identity.sub, config.auditHmacKey) });
+    if (!capacity.admitted) return url.pathname === "/mcp" ? mcpCapacityFailure(capacity.code, capacity.retryAfter) : noStoreJson({ code: capacity.code ?? "remote_service_busy" }, { status: capacity.code === "remote_service_busy" ? 503 : 429, headers: { "retry-after": String(capacity.retryAfter ?? 1) } });
     try {
       if (url.pathname === "/mcp") {
         return await handleRemoteMcp(request, env, identity, config, context);
@@ -115,31 +156,31 @@ export default {
         return await handlePipedriveCallback(request, env, identity, config, context);
       }
       if (url.pathname === "/admin/pipedrive") {
-        if (identity.email !== config.adminEmail) {
+        if (!isAdmin(identity, config)) {
           return adminRequiredResponse(request, identity, config, context);
         }
         return await handlePipedriveAdmin(request, env, identity);
       }
       if (url.pathname === "/admin/pipedrive/approve/confirm") {
-        if (identity.email !== config.adminEmail) {
+        if (!isAdmin(identity, config)) {
           return adminRequiredResponse(request, identity, config, context);
         }
         return await handleApproveConfirmation(request, env, identity);
       }
       if (url.pathname === "/admin/pipedrive/action/confirm") {
-        if (identity.email !== config.adminEmail) {
+        if (!isAdmin(identity, config)) {
           return adminRequiredResponse(request, identity, config, context);
         }
         return await handleAdminActionConfirmation(request, env, identity);
       }
       if (url.pathname === "/admin/pipedrive/tenant") {
-        if (identity.email !== config.adminEmail) {
+        if (!isAdmin(identity, config)) {
           return adminRequiredResponse(request, identity, config, context);
         }
         return await handleTenantAdminAction(request, env, identity, config, context);
       }
       if (url.pathname === "/admin/pipedrive/force-disconnect") {
-        if (identity.email !== config.adminEmail) {
+        if (!isAdmin(identity, config)) {
           return adminRequiredResponse(request, identity, config, context);
         }
         return await handleAdminForceDisconnect(request, env, identity, config, context);
@@ -164,8 +205,13 @@ async function handleRemoteMcp(
   context: ExecutionContext,
 ): Promise<Response> {
   const startedAt = Date.now();
+  const preflight = await preflightMcpRequest(request);
+  if ("response" in preflight) return preflight.response;
+  request = preflight.request;
   const inspection = await inspectMcpRequest(request);
   const call = inspection.call;
+  const mcpCapacity = await acquireCapacity(env, { kind: "mcp", ip: await pseudonymizeAccessSub(request.headers.get("cf-connecting-ip") ?? "missing-ip", remoteConfig.auditHmacKey), user: await pseudonymizeAccessSub(identity.sub, remoteConfig.auditHmacKey) });
+  if (!mcpCapacity.admitted) return mcpCapacityFailure(mcpCapacity.code, mcpCapacity.retryAfter);
   let credential: UserCredential;
   let policy: UserPolicyRecord;
   try {
@@ -177,10 +223,10 @@ async function handleRemoteMcp(
       code === "pipedrive_not_connected" ||
       code === "pipedrive_reconnect_required";
     context.waitUntil(auditSink.write({
-      v: 1,
+      v: 2,
+      ...(await auditIdentity(identity.sub, remoteConfig)),
       ts: new Date().toISOString(),
       requestId: requestId(request),
-      actorId: await pseudonymizeAccessSub(identity.sub, remoteConfig.auditHmacKey),
       route: "/mcp",
       operation: call?.name ?? "mcp.admission",
       effect: call ? toolEffect(call.name) : "read",
@@ -206,7 +252,25 @@ async function handleRemoteMcp(
     enableMailboxTools: policy.mailbox,
     requestTimeoutMs: 10_000,
   };
-  const response = await handleMcpRequest(request, () => buildServer(pipedriveConfig));
+  let toolLease: string | undefined;
+  let toolDeadline: ReturnType<typeof setTimeout> | undefined;
+  let toolAbort: AbortController | undefined;
+  let execution: Promise<Response> | undefined;
+  if (call) {
+    const toolCapacity = await acquireCapacity(env, { kind: "tool", ip: await pseudonymizeAccessSub(request.headers.get("cf-connecting-ip") ?? "missing-ip", remoteConfig.auditHmacKey), user: await pseudonymizeAccessSub(identity.sub, remoteConfig.auditHmacKey), tenant: credential.tenantId });
+    if (!toolCapacity.admitted) return mcpCapacityFailure(toolCapacity.code, toolCapacity.retryAfter);
+    if (!toolCapacity.lease) return mcpCapacityFailure("remote_service_busy", 1);
+    toolLease = toolCapacity.lease;
+    toolAbort = new AbortController();
+    toolDeadline = setTimeout(() => toolAbort?.abort(), TOOL_OPERATION_DEADLINE_MS);
+    pipedriveConfig.operationSignal = toolAbort.signal;
+  }
+  try {
+  execution = handleMcpRequest(request, () => buildServer(pipedriveConfig));
+  const response = await (toolAbort ? Promise.race([
+    execution,
+    new Promise<Response>((resolve) => toolAbort?.signal.addEventListener("abort", () => resolve(mcpFailure("pipedrive_operation_deadline_exceeded")), { once: true })),
+  ]) : execution);
 
   const outcome = await mcpOutcome(response);
   if (outcome === "success" && call) {
@@ -215,6 +279,7 @@ async function handleRemoteMcp(
       {
         method: "POST",
         headers: { "content-type": "application/json" },
+        signal: toolAbort?.signal,
         body: JSON.stringify({
           accessSub: identity.sub,
           expectedGeneration: credential.generation,
@@ -224,10 +289,10 @@ async function handleRemoteMcp(
     if (!usedResponse.ok) {
       const code = await responseErrorCode(usedResponse, "tenant_admission_denied");
       context.waitUntil(auditSink.write({
-        v: 1,
+        v: 2,
+        ...(await auditIdentity(identity.sub, remoteConfig)),
         ts: new Date().toISOString(),
         requestId: requestId(request),
-        actorId: await pseudonymizeAccessSub(identity.sub, remoteConfig.auditHmacKey),
         route: "/mcp",
         operation: call?.name ?? "mcp.admission",
         effect: call ? toolEffect(call.name) : "read",
@@ -251,10 +316,10 @@ async function handleRemoteMcp(
     const requestedDryRun = effect === "read" ? undefined : (call.dryRun ?? true);
     const denied = requestedDryRun === false && !policyAllowsCall(call.name, effect, policy);
     const event: AuditEvent = {
-      v: 1,
+      v: 2,
+      ...(await auditIdentity(identity.sub, remoteConfig)),
       ts: new Date().toISOString(),
       requestId: requestId(request),
-      actorId: await pseudonymizeAccessSub(identity.sub, remoteConfig.auditHmacKey),
       route: "/mcp",
       operation: call.name,
       effect,
@@ -270,6 +335,24 @@ async function handleRemoteMcp(
     context.waitUntil(auditSink.write(event).catch(() => undefined));
   }
   return response;
+  } finally {
+    if (toolDeadline) clearTimeout(toolDeadline);
+    if (toolAbort?.signal.aborted && execution) await execution.catch(() => undefined);
+    if (toolLease) await releaseCapacity(env, toolLease);
+  }
+}
+
+async function previousAuditAllowed(env: RemoteEnv, config: RemoteConfig): Promise<boolean> {
+  if (!config.previousAudit) return true;
+  const bytes = Uint8Array.from(atob(config.previousAudit.key.replaceAll("-", "+").replaceAll("_", "/") + "="), (c) => c.charCodeAt(0));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  const fingerprint = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+  return observePreviousAudit(env, { epoch: config.previousAudit.epoch, fingerprint, validUntilMs: config.previousAudit.validUntilMs });
+}
+
+function mcpCapacityFailure(code: string | undefined, retryAfter: number | undefined): Response {
+  const safeCode = code === "remote_rate_limited" || code === "pilot_daily_capacity_exceeded" ? code : "remote_service_busy";
+  return Response.json({ jsonrpc: "2.0", error: { code: -32600, message: safeCode }, id: null }, { status: safeCode === "remote_service_busy" ? 503 : 429, headers: { "cache-control": "no-store", "content-type": "application/json", "retry-after": String(Math.max(1, Math.min(86_400, retryAfter ?? 1))) } });
 }
 
 async function handlePipedriveAdmin(
@@ -289,7 +372,7 @@ async function handlePipedriveAdmin(
   if (!response.ok) {
     if (adminError(url.searchParams.get("error")) === "registry") {
       const nonce = styleNonce();
-      return htmlResponse(renderPipedriveAdminPage({ projection: { tenants: [], connections: [] }, nonce, error: "registry" }), 503, nonce);
+      return htmlResponse(renderPipedriveAdminPage({ projection: emptyAdminProjection(), nonce, error: "registry" }), 503, nonce);
     }
     return noStoreRedirect(new URL("/admin/pipedrive?error=registry", request.url), 303);
   }
@@ -399,7 +482,7 @@ async function handleTenantAdminAction(
   context.waitUntil(writeOperationAudit(
     request,
     identity.sub,
-    config.auditHmacKey,
+    config,
     "/admin/pipedrive/tenant",
     `tenant.${action}`,
     response.ok ? "success" : "error",
@@ -465,7 +548,7 @@ async function handleAdminForceDisconnect(
   context.waitUntil(writeOperationAudit(
     request,
     identity.sub,
-    config.auditHmacKey,
+    config,
     "/admin/pipedrive/force-disconnect",
     "oauth.force_disconnect",
     disconnected.ok ? "success" : "error",
@@ -596,7 +679,7 @@ async function handleSettings(
     writePolicyAudit(
       request,
       identity.sub,
-      config.auditHmacKey,
+      config,
       updated.revision,
       changes,
     ).catch(() => undefined),
@@ -666,7 +749,7 @@ async function handlePipedriveConnect(
     context.waitUntil(writeOperationAudit(
       request,
       identity.sub,
-      config.auditHmacKey,
+      config,
       "/pipedrive/connect",
       "oauth.connect",
       "denied",
@@ -700,7 +783,7 @@ async function handlePipedriveConnect(
       writeOperationAudit(
         request,
         identity.sub,
-        config.auditHmacKey,
+        config,
         "/pipedrive/connect",
         "oauth.connect",
         "error",
@@ -719,7 +802,7 @@ async function handlePipedriveConnect(
   authorizationUrl.searchParams.set("redirect_uri", redirectUri);
   authorizationUrl.searchParams.set("state", state);
   context.waitUntil(
-    writeOperationAudit(request, identity.sub, config.auditHmacKey, "/pipedrive/connect", "oauth.connect", "success", 302)
+    writeOperationAudit(request, identity.sub, config, "/pipedrive/connect", "oauth.connect", "success", 302)
       .catch(() => undefined),
   );
   return noStoreRedirect(authorizationUrl, 302);
@@ -757,7 +840,7 @@ async function handlePipedriveCallback(
       writeOperationAudit(
         request,
         identity.sub,
-        config.auditHmacKey,
+        config,
         "/oauth/pipedrive/callback",
         "oauth.callback",
         "error",
@@ -785,7 +868,7 @@ async function handlePipedriveCallback(
       writeOperationAudit(
         request,
         identity.sub,
-        config.auditHmacKey,
+        config,
         "/oauth/pipedrive/callback",
         "oauth.callback",
         "error",
@@ -800,7 +883,7 @@ async function handlePipedriveCallback(
     );
   }
   context.waitUntil(
-    writeOperationAudit(request, identity.sub, config.auditHmacKey, "/oauth/pipedrive/callback", "oauth.callback", "success", 303)
+    writeOperationAudit(request, identity.sub, config, "/oauth/pipedrive/callback", "oauth.callback", "success", 303)
       .catch(() => undefined),
   );
   return noStoreRedirect(new URL("/pipedrive?notice=connected", request.url), 303);
@@ -837,7 +920,7 @@ async function handleUserDisconnect(
   context.waitUntil(writeOperationAudit(
     request,
     identity.sub,
-    config.auditHmacKey,
+    config,
     "/pipedrive/disconnect",
     "oauth.disconnect",
     response.ok ? "success" : "error",
@@ -951,7 +1034,7 @@ function browserUiRecovery(request: Request, url: URL): Response | undefined {
   if (url.pathname === "/admin/pipedrive") {
     const nonce = styleNonce();
     return htmlResponse(
-      renderPipedriveAdminPage({ projection: { tenants: [], connections: [] }, nonce, error: "registry" }),
+      renderPipedriveAdminPage({ projection: emptyAdminProjection(), nonce, error: "registry" }),
       503,
       nonce,
     );
@@ -1082,15 +1165,15 @@ function policyChanges(
 async function writePolicyAudit(
   request: Request,
   sub: string,
-  auditHmacKey: string,
+  audit: Pick<RemoteConfig, "auditHmacKey" | "auditHmacEpoch" | "previousAudit">,
   revision: number,
   changes: NonNullable<AuditEvent["policyChanges"]>,
 ): Promise<void> {
   await auditSink.write({
-    v: 1,
+    v: 2,
+    ...(await auditIdentity(sub, audit)),
     ts: new Date().toISOString(),
     requestId: requestId(request),
-    actorId: await pseudonymizeAccessSub(sub, auditHmacKey),
     route: "/settings",
     operation: "policy.update",
     effect: "policy",
@@ -1105,7 +1188,7 @@ async function writePolicyAudit(
 async function writeOperationAudit(
   request: Request,
   sub: string,
-  auditHmacKey: string,
+  audit: Pick<RemoteConfig, "auditHmacKey" | "auditHmacEpoch" | "previousAudit">,
   route: string,
   operation: string,
   outcome: AuditEvent["outcome"],
@@ -1114,10 +1197,10 @@ async function writeOperationAudit(
   tenantId?: string,
 ): Promise<void> {
   await auditSink.write({
-    v: 1,
+    v: 2,
+    ...(await auditIdentity(sub, audit)),
     ts: new Date().toISOString(),
     requestId: requestId(request),
-    actorId: await pseudonymizeAccessSub(sub, auditHmacKey),
     route,
     operation,
     effect: "oauth",
@@ -1129,6 +1212,20 @@ async function writeOperationAudit(
   });
 }
 
+async function auditIdentity(
+  sub: string,
+  audit: Pick<RemoteConfig, "auditHmacKey" | "auditHmacEpoch" | "previousAudit">,
+): Promise<AuditIdentity> {
+  const actorId = await pseudonymizeAccessSub(sub, audit.auditHmacKey);
+  if (!audit.previousAudit || Date.now() >= audit.previousAudit.validUntilMs) return { actorId, auditEpoch: audit.auditHmacEpoch };
+  return {
+    actorId,
+    auditEpoch: audit.auditHmacEpoch,
+    previousActorId: await pseudonymizeAccessSub(sub, audit.previousAudit.key),
+    previousAuditEpoch: audit.previousAudit.epoch,
+  };
+}
+
 function adminRequiredResponse(
   request: Request,
   identity: AccessIdentity,
@@ -1138,7 +1235,7 @@ function adminRequiredResponse(
   context.waitUntil(writeOperationAudit(
     request,
     identity.sub,
-    config.auditHmacKey,
+    config,
     new URL(request.url).pathname,
     "admin.access",
     "denied",
@@ -1187,6 +1284,17 @@ function styleNonce(): string {
     binary += String.fromCharCode(byte);
   }
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+
+function emptyAdminProjection(): TenantAdminProjection {
+  return {
+    tenants: [],
+    connections: [],
+    encryptionReceipt: {
+      generatedAtMs: Date.now(),
+      currentKeyStates: { primary: 0, old: 0, legacy: 0, unknown: 0 },
+    },
+  };
 }
 
 function noStoreJson(body: unknown, init: ResponseInit = {}): Response {

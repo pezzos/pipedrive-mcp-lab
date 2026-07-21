@@ -1,6 +1,39 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { PipedriveClient } from "../src/pipedriveClient.js";
+import { PipedriveApiError, PipedriveClient } from "../src/pipedriveClient.js";
+
+test("bounds declared and streamed provider bodies", async () => {
+  const client = new PipedriveClient(config(), (async () => new Response("x", { headers: { "content-length": String(1024 * 1024 + 1) } })) as typeof fetch);
+  await assert.rejects(() => client.get("/api/v2/deals"), /pipedrive_response_too_large/);
+  let cancelled = false;
+  const chunked = new PipedriveClient(config(), (async () => new Response(new ReadableStream<Uint8Array>({ start(c) { c.enqueue(new Uint8Array(700_000)); c.enqueue(new Uint8Array(400_000)); }, cancel() { cancelled = true; } }))) as typeof fetch);
+  await assert.rejects(() => chunked.get("/api/v2/deals"), /pipedrive_response_too_large/); assert.equal(cancelled, true);
+});
+
+test("retries a response-body transport failure instead of classifying it as too large", async () => {
+  let calls = 0;
+  const client = new PipedriveClient(config(), (async () => {
+    calls += 1;
+    if (calls === 1) return new Response(new ReadableStream<Uint8Array>({ start(controller) { controller.error(new TypeError("stream_transport_failure")); } }));
+    return Response.json({ success: true, data: [] });
+  }) as typeof fetch);
+  assert.deepEqual(await client.get("/api/v2/deals"), { success: true, data: [] });
+  assert.equal(calls, 2);
+});
+
+test("operation abort cancels fallback and Retry-After sleeps before another fetch", async () => {
+  for (const response of [undefined, new Response("{}", { status: 503, headers: { "retry-after": "1" } })]) {
+    const controller = new AbortController(); let calls = 0;
+    const client = new PipedriveClient({ ...config(), operationSignal: controller.signal }, (async () => { calls += 1; setTimeout(() => controller.abort(), 0); if (response) return response; throw new TypeError("transport"); }) as typeof fetch);
+    await assert.rejects(client.get("/api/v2/deals"), /pipedrive_operation_deadline_exceeded/);
+    assert.equal(calls, 1);
+  }
+});
+
+test("final provider 429 is redacted and carries bounded retry metadata", async () => {
+  const client = new PipedriveClient(config(), (async () => new Response('{"error":"access_token=secret-canary"}', { status: 429, headers: { "retry-after": "999" } })) as typeof fetch);
+  await assert.rejects(() => client.get("/api/v2/deals"), (error: unknown) => error instanceof PipedriveApiError && error.code === "pipedrive_rate_limited" && error.retryAfterSeconds === 1 && !error.message.includes("secret-canary"));
+});
 
 test("calls an injected fetcher without rebinding its runtime receiver", async () => {
   const receiverSensitiveFetcher = async function (this: unknown): Promise<Response> {

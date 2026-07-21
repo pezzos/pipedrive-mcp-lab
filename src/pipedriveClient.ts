@@ -1,11 +1,15 @@
 import { PipedriveConfig, requireConfigured } from "./config.js";
+import { boundedText } from "./boundedBody.js";
 
 export type FetchLike = typeof fetch;
+const MAX_PROVIDER_RESPONSE_BYTES = 1024 * 1024;
 
 export class PipedriveApiError extends Error {
   constructor(
     readonly status: number,
     message: string,
+    readonly code?: "pipedrive_rate_limited",
+    readonly retryAfterSeconds?: number,
   ) {
     super(message);
     this.name = "PipedriveApiError";
@@ -75,7 +79,10 @@ export class PipedriveClient {
     let remainingRetryDelayMs = 5000;
 
     for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+      if (this.config.operationSignal?.aborted) throw new Error("pipedrive_operation_deadline_exceeded");
       const controller = new AbortController();
+      const abortOperation = () => controller.abort();
+      this.config.operationSignal?.addEventListener("abort", abortOperation, { once: true });
       const timeout = setTimeout(() => controller.abort(), this.config.requestTimeoutMs);
       let response: Response;
       let text: string;
@@ -89,20 +96,21 @@ export class PipedriveClient {
           signal: controller.signal,
           body: encodedBody,
         });
-        text = await response.text();
+        text = await boundedProviderText(response);
       } catch (error) {
         if (error instanceof Error && error.name === "AbortError") {
-          throw new Error(`Pipedrive API ${method} ${path} timed out`);
+          throw new Error(this.config.operationSignal?.aborted ? "pipedrive_operation_deadline_exceeded" : `Pipedrive API ${method} ${path} timed out`);
         }
         if (method === "GET" && attempt < maxAttempts) {
           const retryDelay = defaultRetryDelayMs(attempt);
           remainingRetryDelayMs -= retryDelay;
-          await sleep(retryDelay);
+          await sleep(retryDelay, this.config.operationSignal);
           continue;
         }
         throw error;
       } finally {
         clearTimeout(timeout);
+        this.config.operationSignal?.removeEventListener("abort", abortOperation);
       }
 
       const data = text ? safeJsonParse(text) : null;
@@ -111,16 +119,14 @@ export class PipedriveClient {
           const retryDelay = retryDelayMs(response.headers.get("retry-after"), attempt);
           if (retryDelay !== undefined && retryDelay <= remainingRetryDelayMs) {
             remainingRetryDelayMs -= retryDelay;
-            await sleep(retryDelay);
+            await sleep(retryDelay, this.config.operationSignal);
             continue;
           }
         }
-        throw new PipedriveApiError(
-          response.status,
-          redactSecretMarkers(
-            `Pipedrive API ${method} ${path} failed with ${response.status}: ${summarizeError(data)}`,
-          ),
-        );
+        if (response.status === 429) {
+          throw new PipedriveApiError(429, "pipedrive_rate_limited:429", "pipedrive_rate_limited", boundedRetryAfterSeconds(response.headers.get("retry-after")));
+        }
+        throw new PipedriveApiError(response.status, redactSecretMarkers(`Pipedrive API ${method} ${path} failed with ${response.status}: ${summarizeError(data)}`));
       }
       return data;
     }
@@ -138,6 +144,15 @@ export class PipedriveClient {
     }
     return url;
   }
+}
+
+function boundedRetryAfterSeconds(value: string | null): number {
+  const seconds = Number(value);
+  return Number.isInteger(seconds) && seconds >= 1 && seconds <= 60 ? seconds : 1;
+}
+
+async function boundedProviderText(response: Response): Promise<string> {
+  try { return await boundedText(response, MAX_PROVIDER_RESPONSE_BYTES); } catch (error) { if (error instanceof Error && error.message === "body_too_large") throw new Error("pipedrive_response_too_large"); throw error; }
 }
 
 function isTransientStatus(status: number): boolean {
@@ -165,8 +180,13 @@ function defaultRetryDelayMs(attempt: number): number {
   return Math.min(50 * 2 ** (attempt - 1), 200);
 }
 
-function sleep(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+function sleep(milliseconds: number, signal?: AbortSignal): Promise<void> {
+  if (signal?.aborted) return Promise.reject(new Error("pipedrive_operation_deadline_exceeded"));
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => { signal?.removeEventListener("abort", abort); resolve(); }, milliseconds);
+    const abort = () => { clearTimeout(timer); signal?.removeEventListener("abort", abort); reject(new Error("pipedrive_operation_deadline_exceeded")); };
+    signal?.addEventListener("abort", abort, { once: true });
+  });
 }
 
 function authHeaders(config: PipedriveConfig): Record<string, string> {

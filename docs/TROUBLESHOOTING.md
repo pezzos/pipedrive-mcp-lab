@@ -269,6 +269,29 @@ legacy entry exposed a credential that should no longer remain there.
 
 ## Package Contents Look Wrong
 
+## B6 configuration errors
+
+`remote_configuration_missing` and `remote_configuration_invalid` are
+fail-closed deployment configuration errors. Check names, not values: primary
+encryption/audit keys are canonical 32-byte base64url values; key ids are safe
+and distinct; epochs use `YYYY-Qn`; and every optional old/previous pair is
+complete. Do not paste secrets, JWTs, OAuth codes, or Pipedrive responses into
+tickets. A capacity or rate denial is intentionally redacted and retryable only
+after its bounded `Retry-After` value or the next UTC daily rollover.
+
+| Code | Action |
+| --- | --- |
+| `remote_request_too_large` / `remote_content_type_invalid` | Reduce the request; do not retry multipart. |
+| `remote_rate_limited` / `remote_service_busy` | Wait for bounded `Retry-After`; do not bypass limits. |
+| `pilot_daily_capacity_exceeded` | Wait for UTC rollover; do not raise quota automatically. |
+| `oauth_key_id_unknown` / `oauth_material_invalid` | Check rotation names; reconnect if material cannot be recovered. |
+| `pipedrive_response_too_large` / `pipedrive_rate_limited` | Retry only as directed; never copy provider payloads. |
+| Access previous-pair expiry | Complete cutover or restore a valid complete pair before cutoff. |
+
+Never paste secrets, JWTs, OAuth codes, raw subjects, IPs, or provider payloads
+into tickets, logs, or evidence, and never bypass Access, capacity, or rotation
+controls to recover service.
+
 Run:
 
 ```sh

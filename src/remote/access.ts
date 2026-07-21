@@ -1,3 +1,4 @@
+import { boundedText } from "../boundedBody.js";
 const MAX_JWT_LENGTH = 16_384;
 const DEFAULT_CLOCK_SKEW_SECONDS = 30;
 const DEFAULT_JWKS_TTL_MS = 5 * 60_000;
@@ -40,6 +41,7 @@ export type AccessIdentity = {
 export type AccessVerifierConfig = {
   issuer: string;
   audience: string;
+  previous?: { issuer: string; audience: string; validUntilMs: number };
   now?: () => number;
   fetcher?: typeof fetch;
   clockSkewSeconds?: number;
@@ -85,9 +87,13 @@ export async function verifyAccessJwt(
   const issuer = normalizeIssuer(config.issuer);
   const nowSeconds = Math.floor((config.now?.() ?? Date.now()) / 1000);
   const skew = config.clockSkewSeconds ?? DEFAULT_CLOCK_SKEW_SECONDS;
-  validateClaims(claims, issuer, config.audience, nowSeconds, skew);
+  const previous = config.previous && (config.now?.() ?? Date.now()) < config.previous.validUntilMs
+    ? { issuer: normalizeIssuer(config.previous.issuer), audience: config.previous.audience }
+    : undefined;
+  const selected = selectAccessPair(claims, { issuer, audience: config.audience }, previous);
+  validateClaims(claims, selected.issuer, selected.audience, nowSeconds, skew);
 
-  const key = await findVerificationKey(header.kid, issuer, config, false);
+  const key = await findVerificationKey(header.kid, selected.issuer, config, false);
   const verified = await crypto.subtle.verify(
     "RSASSA-PKCS1-v1_5",
     key,
@@ -102,6 +108,17 @@ export async function verifyAccessJwt(
     sub: claims.sub as string,
     email: normalizeEmail(claims.email),
   };
+}
+
+function selectAccessPair(
+  claims: AccessJwtClaims,
+  current: { issuer: string; audience: string },
+  previous: { issuer: string; audience: string } | undefined,
+): { issuer: string; audience: string } {
+  const audiences = typeof claims.aud === "string" ? [claims.aud] : Array.isArray(claims.aud) ? claims.aud : [];
+  if (claims.iss === current.issuer && audiences.includes(current.audience)) return current;
+  if (previous && claims.iss === previous.issuer && audiences.includes(previous.audience)) return previous;
+  throw new Error("access_token_invalid");
 }
 
 function validateClaims(
@@ -149,7 +166,8 @@ async function findVerificationKey(
     if (!response.ok) {
       throw new Error("access_jwks_unavailable");
     }
-    const parsed = await response.json() as JsonWebKeySet;
+    let parsed: JsonWebKeySet;
+    try { parsed = JSON.parse(await boundedText(response, 64 * 1024)) as JsonWebKeySet; } catch { throw new Error("access_jwks_invalid"); }
     if (!Array.isArray(parsed.keys)) {
       throw new Error("access_jwks_invalid");
     }

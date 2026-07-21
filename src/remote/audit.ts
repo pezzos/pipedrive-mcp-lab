@@ -1,7 +1,6 @@
 export type AuditOutcome = "success" | "denied" | "error";
 
-export type AuditEvent = {
-  v: 1;
+type AuditCommon = {
   ts: string;
   requestId: string;
   actorId: string;
@@ -20,6 +19,24 @@ export type AuditEvent = {
     Record<"writes" | "deletes" | "mailbox", { from: boolean; to: boolean }>
   >;
 };
+
+export type AuditEventV1 = AuditCommon & {
+  v: 1;
+  auditEpoch?: never;
+  previousActorId?: never;
+  previousAuditEpoch?: never;
+};
+
+export type AuditEventV2 = AuditCommon & {
+  v: 2;
+  /** v2: the active HMAC epoch that produced actorId. */
+  auditEpoch: string;
+} & (
+  | { previousActorId?: never; previousAuditEpoch?: never }
+  | { previousActorId: string; previousAuditEpoch: string }
+);
+
+export type AuditEvent = AuditEventV1 | AuditEventV2;
 
 export interface AuditSink {
   write(event: AuditEvent): Promise<void>;

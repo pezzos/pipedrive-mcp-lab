@@ -10,7 +10,7 @@ const forbiddenContentPatterns = [
   ["Access assertion", /cf-access-jwt-assertion\s*:\s*\S+/i],
   [
     "configured remote secret",
-    /^\s*(?:PIPEDRIVE_OAUTH_CLIENT_SECRET|PIPEDRIVE_OAUTH_ENCRYPTION_KEY|AUDIT_HMAC_KEY)\s*=\s*\S+/m,
+    /^\s*(?:PIPEDRIVE_OAUTH_CLIENT_SECRET|PIPEDRIVE_OAUTH_ENCRYPTION_KEY|PIPEDRIVE_OAUTH_OLD_ENCRYPTION_KEY|AUDIT_HMAC_KEY|AUDIT_HMAC_PREVIOUS_KEY)\s*=\s*\S+/m,
   ],
 ];
 

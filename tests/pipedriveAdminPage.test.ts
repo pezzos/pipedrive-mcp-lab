@@ -30,6 +30,7 @@ test("admin page renders only bounded token-free tenant and Access metadata", ()
         generation: 3,
         connectedAtMs: Date.UTC(2026, 6, 16),
       }],
+      encryptionReceipt: { generatedAtMs: Date.UTC(2026, 6, 16), currentKeyStates: { primary: 1, old: 0, legacy: 0, unknown: 1 } },
     },
     nonce: "nonce-fixture",
   });
@@ -41,6 +42,8 @@ test("admin page renders only bounded token-free tenant and Access metadata", ()
   assert.match(page, /Forcer la déconnexion/);
   assert.doesNotMatch(page, /<script>|access_token|refresh_token|Pipedrive user/);
   assert.doesNotMatch(page, /tenant-opaque/);
+  assert.match(page, /Preuve de rotation des clés/);
+  assert.match(page, /retraite de clé est bloquée/);
 });
 
 test("admin page uses valid empty table rows and a separate approval confirmation", () => {

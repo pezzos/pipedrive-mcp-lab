@@ -18,6 +18,15 @@ test("accepts a signed Access JWT and normalizes its identity", async () => {
   assert.deepEqual(identity, { sub: "access-user-1", email: "user@example.com" });
 });
 
+test("Access previous pair is time-bounded and never pair-mixes", async () => {
+  const previousIssuer = "https://previous.cloudflareaccess.com"; const previousAudience = "previous-aud";
+  const previous = await jwtFixture({ iss: previousIssuer, aud: [previousAudience] });
+  await assert.doesNotReject(verifyAccessJwt(previous.assertion, { ...previous.config, issuer, audience, previous: { issuer: previousIssuer, audience: previousAudience, validUntilMs: Date.now() + 60_000 } }));
+  await assert.rejects(verifyAccessJwt(previous.assertion, { ...previous.config, issuer, audience, previous: { issuer: previousIssuer, audience: previousAudience, validUntilMs: Date.now() - 1 } }), /access_token_invalid/);
+  const mixed = await jwtFixture({ iss: issuer, aud: [previousAudience] });
+  await assert.rejects(verifyAccessJwt(mixed.assertion, { ...mixed.config, issuer, audience, previous: { issuer: previousIssuer, audience: previousAudience, validUntilMs: Date.now() + 60_000 } }), /access_token_invalid/);
+});
+
 test("fails closed for missing assertions, invalid claims, and unavailable JWKS", async () => {
   await assert.rejects(
     verifyAccessRequest(new Request("https://example.test"), {
@@ -43,6 +52,22 @@ test("fails closed for missing assertions, invalid claims, and unavailable JWKS"
     }),
     /access_jwks_unavailable/,
   );
+});
+
+test("rejects declared, streamed, and malformed JWKS responses as invalid", async () => {
+  const fixture = await jwtFixture();
+  const oversized = 64 * 1024 + 1;
+  for (const fetcher of [
+    async () => new Response("{}", { headers: { "content-length": String(oversized) } }),
+    async () => new Response(byteStream(["{".repeat(32 * 1024), "}".repeat(32 * 1024 + 1)])),
+    async () => new Response("not-json"),
+  ]) {
+    clearAccessJwksCache();
+    await assert.rejects(
+      verifyAccessJwt(fixture.assertion, { ...fixture.config, fetcher }),
+      /access_jwks_invalid/,
+    );
+  }
 });
 
 test("rejects hostile Pipedrive API domains and returns an origin only", () => {
@@ -136,4 +161,14 @@ function base64Url(value: string | Uint8Array): string {
     binary += String.fromCharCode(byte);
   }
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+
+function byteStream(chunks: string[]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+      controller.close();
+    },
+  });
 }

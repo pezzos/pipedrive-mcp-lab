@@ -54,6 +54,14 @@ test("normalizes only one-label Pipedrive subdomains", () => {
   }
 });
 
+test("onboarding freezes only new tenant admissions at the daily warning", async () => {
+  const storage = new MemoryStorage();
+  await storage.put("capacity:v1", { windows: {}, daily: { day: "1970-01-01", count: 800 }, leases: {} });
+  const core = registryCore(storage, { now: () => 1_000, randomOpaqueId: () => "tenant-correlation-freeze" });
+  const ticket = await core.issueAdminAction("admin-sub", "approve", "acme");
+  await assert.rejects(() => core.approve("admin-sub", "acme", ticket), /pilot_onboarding_frozen/);
+});
+
 test("approves, suspends, resumes, and pin-or-matches safe company metadata", async () => {
   let now = 1_000;
   let tenantCounter = 0;
@@ -172,6 +180,7 @@ test("admin projection is bounded, token-free, and contains only approved fields
     "connectedAtMs",
     "connectionRef",
     "domain",
+    "encryptionKeyState",
     "generation",
     "lastUsedAtMs",
     "state",
@@ -181,6 +190,7 @@ test("admin projection is bounded, token-free, and contains only approved fields
   const projection = await core.getAdminProjection();
   assert.equal(projection.tenants[0]?.connectedUserCount, 1);
   assert.deepEqual(projection.connections, [row]);
+  assert.deepEqual(projection.encryptionReceipt.currentKeyStates, { primary: 0, old: 0, legacy: 0, unknown: 1 });
   assert.doesNotMatch(JSON.stringify(projection), /(?:access|refresh)-token-canary|provider-user-canary/);
 
   await storage.put(
@@ -199,6 +209,43 @@ test("admin projection is bounded, token-free, and contains only approved fields
     }),
     /tenant_registry_capacity_exceeded/,
   );
+});
+
+test("encryption receipt validates bounded evidence and never treats unknown as zero-use", async () => {
+  const core = registryCore(new MemoryStorage());
+  await approve(core, "acme");
+  await core.upsertConnectionProjection({ connectionRef: "primary", accessSub: "sub-primary", accessEmail: "primary@example.test", domain: "acme", state: "connected", generation: 1, connectedAtMs: 1, encryptionKeyState: "primary", encryptionKid: "key-current" });
+  await core.upsertConnectionProjection({ connectionRef: "legacy", accessSub: "sub-legacy", accessEmail: "legacy@example.test", domain: "acme", state: "connected", generation: 1, connectedAtMs: 1, encryptionKeyState: "legacy", lastNonPrimaryEncryptionSource: "legacy-old", lastNonPrimaryEncryptionAtMs: 2_000 });
+  const receipt = (await core.getAdminProjection()).encryptionReceipt;
+  assert.deepEqual(receipt.currentKeyStates, { primary: 1, old: 0, legacy: 1, unknown: 0 });
+  assert.deepEqual(receipt.latestNonPrimaryUse, { source: "legacy-old", atMs: 2_000 });
+  await core.removeConnectionProjection("legacy");
+  await core.upsertConnectionProjection({ connectionRef: "legacy", accessSub: "sub-legacy", accessEmail: "legacy@example.test", domain: "acme", state: "connected", generation: 2, connectedAtMs: 3, encryptionKeyState: "primary", encryptionKid: "current" });
+  await core.upsertConnectionProjection({ connectionRef: "primary", accessSub: "sub-primary", accessEmail: "primary@example.test", domain: "acme", state: "connected", generation: 2, connectedAtMs: 3, encryptionKeyState: "primary", encryptionKid: "current", lastNonPrimaryEncryptionSource: "old", lastNonPrimaryEncryptionAtMs: 1_000 });
+  assert.deepEqual((await core.getAdminProjection()).encryptionReceipt.latestNonPrimaryUse, { source: "legacy-old", atMs: 2_000 });
+  await assert.rejects(core.upsertConnectionProjection({ connectionRef: "bad", accessSub: "sub-bad", accessEmail: "bad@example.test", domain: "acme", state: "connected", generation: 1, connectedAtMs: 1, encryptionKeyState: "old" }), /tenant_connection_projection_invalid/);
+});
+
+test("previous-audit ledger fixes first-seen retention across redeploys and preserves history", async () => {
+  let now = 1_000;
+  const storage = new MemoryStorage(); const core = registryCore(storage, { now: () => now });
+  const fingerprint = "a".repeat(64);
+  await core.observePreviousAudit({ epoch: "2026-Q3", fingerprint, validUntilMs: now + 90 * 24 * 60 * 60_000 });
+  now += 1_000;
+  await core.observePreviousAudit({ epoch: "2026-Q3", fingerprint, validUntilMs: 1_000 + 90 * 24 * 60 * 60_000 });
+  await assert.rejects(core.observePreviousAudit({ epoch: "2026-Q3", fingerprint, validUntilMs: 1_001 + 90 * 24 * 60 * 60_000 }), /audit_rotation_guard_failed/);
+  await assert.rejects(core.observePreviousAudit({ epoch: "renamed", fingerprint, validUntilMs: 1_000 }), /audit_rotation_guard_failed/);
+  await assert.rejects(core.observePreviousAudit({ epoch: "2026-Q3", fingerprint: "b".repeat(64), validUntilMs: now + 60_000 }), /audit_rotation_guard_failed/);
+  await assert.rejects(core.observePreviousAudit({ epoch: "bad", fingerprint: "not-a-fingerprint", validUntilMs: now }), /audit_rotation_guard_failed/);
+});
+
+test("connection cap rejects only a fifth distinct ref while existing ref updates", async () => {
+  const core = registryCore(new MemoryStorage()); await approve(core, "acme");
+  const row = (ref: string, generation = 1) => ({ connectionRef: ref, accessSub: `sub-${ref}`, accessEmail: `${ref}@example.test`, domain: "acme", state: "connected" as const, generation, connectedAtMs: 1 });
+  for (const ref of ["ref-one", "ref-two", "ref-three", "ref-four"]) await core.upsertConnectionProjection(row(ref));
+  await assert.rejects(() => core.upsertConnectionProjection(row("ref-five")), /tenant_registry_capacity_exceeded/);
+  const updated = await core.upsertConnectionProjection(row("ref-one", 2)); assert.equal(updated.generation, 2);
+  assert.equal((await core.getAdminProjection()).connections.length, 4);
 });
 
 test("admin action tickets are one-shot and bound to actor, action, target, generation and expiry", async () => {
@@ -237,7 +284,7 @@ test("admin action tickets are one-shot and bound to actor, action, target, gene
     "admin-sub", "force-disconnect", "opaque-user-ref",
   );
   assert.deepEqual(Object.keys(displayTicket.forceDisconnectTarget ?? {}).sort(), [
-    "accessEmail", "connectedAtMs", "connectionRef", "domain", "generation", "state",
+    "accessEmail", "connectedAtMs", "connectionRef", "domain", "encryptionKeyState", "generation", "state",
   ]);
   assert.equal(displayTicket.forceDisconnectTarget?.connectionRef, "opaque-user-ref");
   assert.doesNotMatch(JSON.stringify(displayTicket.forceDisconnectTarget), /accessSub|tenantId|token|secret|oauth|crm|pipedrive/i);

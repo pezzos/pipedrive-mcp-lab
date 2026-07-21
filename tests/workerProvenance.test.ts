@@ -44,6 +44,8 @@ test("sandbox release provenance refuses dirty source by default and records a r
   assert.equal(record.public_origin, "https://pipedrive-mcp-sandbox.pezzoslabs.com");
   assert.equal(record.oauth_callback_url, "https://pipedrive-mcp-sandbox.pezzoslabs.com/oauth/pipedrive/callback");
   assert.deepEqual(record.required_secrets, ["PIPEDRIVE_OAUTH_CLIENT_ID", "PIPEDRIVE_OAUTH_CLIENT_SECRET", "PIPEDRIVE_OAUTH_ENCRYPTION_KEY", "AUDIT_HMAC_KEY"]);
+  assert.deepEqual(record.optional_variables, ["PIPEDRIVE_OAUTH_OLD_ENCRYPTION_KID", "AUDIT_HMAC_PREVIOUS_EPOCH", "AUDIT_HMAC_PREVIOUS_VALID_UNTIL", "ACCESS_PREVIOUS_ISSUER", "ACCESS_PREVIOUS_AUD", "ACCESS_PREVIOUS_VALID_UNTIL"]);
+  assert.deepEqual(record.optional_secrets, ["PIPEDRIVE_OAUTH_OLD_ENCRYPTION_KEY", "AUDIT_HMAC_PREVIOUS_KEY"]);
   assert.match(manifest, /Pipedrive MCP Sandbox Access/);
   assert.match(manifest, /Pipedrive MCP Sandbox OAuth/);
   assert.equal(typeof record.worker_output_tree_sha256, "string");

@@ -458,13 +458,10 @@ test("Durable Object HTTP boundary returns only stable allowlisted errors", asyn
   assert.equal(malformedResponse.status, 400);
   assert.deepEqual(await malformedResponse.json(), { code: "tenant_request_invalid" });
 
-  const invalidKey = new TenantSecrets(
+  assert.throws(() => new TenantSecrets(
     durableObjectState(new MemoryStorage()),
     tenantEnv({ PIPEDRIVE_OAUTH_ENCRYPTION_KEY: "invalid-key-canary-secret" }),
-  );
-  const invalidKeyResponse = await invalidKey.fetch(stateRequest());
-  assert.equal(invalidKeyResponse.status, 503);
-  assert.deepEqual(await invalidKeyResponse.json(), { code: "oauth_encryption_key_invalid" });
+  ), /remote_configuration_invalid:PIPEDRIVE_OAUTH_ENCRYPTION_KEY/);
 
   const storageFailure = new TenantSecrets(
     durableObjectState(new FailingStorage("put")),
@@ -611,10 +608,14 @@ function tenantEnv(overrides: Partial<RemoteEnv> = {}): RemoteEnv {
     ACCESS_ISSUER: "https://team.cloudflareaccess.com",
     ACCESS_AUD: "audience",
     REMOTE_ADMIN_EMAIL: "admin@example.com",
+    REMOTE_ADMIN_SUB: "admin-sub",
     PIPEDRIVE_OAUTH_CLIENT_ID: "client-fixture",
     PIPEDRIVE_OAUTH_CLIENT_SECRET: "credential-fixture",
     PIPEDRIVE_OAUTH_ENCRYPTION_KEY: encryptionKey(),
     AUDIT_HMAC_KEY: base64Url(Uint8Array.from({ length: 32 }, (_, index) => index + 1)),
+    PIPEDRIVE_OAUTH_CLIENT_EPOCH: "2026-Q3",
+    PIPEDRIVE_OAUTH_ENCRYPTION_KID: "key-2026",
+    AUDIT_HMAC_EPOCH: "2026-Q3",
     USER_POLICY: {} as DurableObjectNamespace,
     TENANT_SECRETS: {} as DurableObjectNamespace,
     ...overrides,

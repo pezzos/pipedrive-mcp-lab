@@ -1,4 +1,5 @@
 import { normalizePipedriveApiDomain } from "./apiDomain.js";
+import { boundedText } from "../boundedBody.js";
 import { loadRemoteStateConfig, type RemoteStateConfig, type RemoteEnv } from "./env.js";
 import { userConnectionObjectKey } from "./objectKey.js";
 import {
@@ -9,6 +10,8 @@ import {
 } from "./tenantRegistry.js";
 import {
   decryptMaterial,
+  decryptMaterialWithSource,
+  type EncryptionSourceClass,
   encryptMaterial,
   type EncryptedEnvelope,
   type OAuthMaterial,
@@ -33,6 +36,7 @@ type OAuthStateRecord = {
   redirectUriHash: string;
   expectedGeneration: number;
   operationId: string;
+  oauthClientEpoch: string;
   expiresAtMs: number;
 };
 
@@ -57,6 +61,10 @@ export type UserConnectionRecord = {
   connectedAtMs?: number;
   lastUsedAtMs?: number;
   purgedAtMs?: number;
+  encryptionKeyState?: "primary" | "old" | "legacy" | "unknown";
+  encryptionKid?: string;
+  lastNonPrimaryEncryptionSource?: Exclude<EncryptionSourceClass, "primary">;
+  lastNonPrimaryEncryptionAtMs?: number;
 };
 
 export type UserCredential = {
@@ -189,6 +197,7 @@ export class UserConnectionCore {
         redirectUriHash,
         expectedGeneration: connection.generation,
         operationId,
+        oauthClientEpoch: this.config.oauthClientEpoch,
         expiresAtMs: this.now() + STATE_TTL_MS,
       });
     });
@@ -234,7 +243,7 @@ export class UserConnectionCore {
     ) {
       throw new Error("tenant_admission_denied");
     }
-    const encrypted = await encryptMaterial(material, this.config.encryptionKey);
+    const encrypted = await encryptMaterial(material, this.config);
     const prior = await this.readStoredSnapshot();
     const connectionRef = prior.connection.connectionRef ?? this.randomId();
     validateOpaque(connectionRef);
@@ -258,6 +267,8 @@ export class UserConnectionCore {
         tenantGeneration: tenant.generation,
         operationId: oauthState.operationId,
         connectedAtMs: this.now(),
+        encryptionKeyState: "primary",
+        encryptionKid: this.config.encryptionKid,
       };
       await transaction.put(MATERIAL_KEY, encrypted);
       await transaction.put(CONNECTION_KEY, promoted);
@@ -274,8 +285,13 @@ export class UserConnectionCore {
       await this.compensatePromotion(prior, promoted as UserConnectionRecord, encrypted);
       throw new Error("tenant_admission_denied");
     }
+    try {
+      await this.project(promoted as UserConnectionRecord, material.expiresAtMs);
+    } catch (error) {
+      await this.compensatePromotion(prior, promoted as UserConnectionRecord, encrypted);
+      throw error;
+    }
     await this.scheduleRetention(promoted as UserConnectionRecord);
-    await this.projectBestEffort(promoted as UserConnectionRecord, material.expiresAtMs);
     return this.getStatus();
   }
 
@@ -315,7 +331,7 @@ export class UserConnectionCore {
       return { connected: false, reconnectRequired: false, generation: connection.generation };
     }
     try {
-      const material = await decryptMaterial(stored.envelope, this.config.encryptionKey);
+      const material = await decryptMaterial(stored.envelope, this.config);
       return {
         connected: true,
         reconnectRequired: false,
@@ -512,6 +528,7 @@ export class UserConnectionCore {
       record.digest !== digest ||
       record.accessSub !== accessSub ||
       record.redirectUriHash !== redirectUriHash ||
+      record.oauthClientEpoch !== this.config.oauthClientEpoch ||
       record.expiresAtMs <= this.now()
     ) {
       throw new Error("oauth_state_invalid");
@@ -555,7 +572,7 @@ export class UserConnectionCore {
     if (admissionAfterProvider.generation !== admissionBefore.generation) {
       throw new Error("tenant_admission_denied");
     }
-    const encrypted = await encryptMaterial(updated, this.config.encryptionKey);
+    const encrypted = await encryptMaterial(updated, this.config);
     const persisted = await this.withStorage(async (transaction) => {
       const [storedConnection, envelope] = await Promise.all([
         transaction.get<UserConnectionRecord>(CONNECTION_KEY),
@@ -654,8 +671,9 @@ export class UserConnectionCore {
     }
     let payload: unknown;
     try {
-      payload = await response.json();
-    } catch {
+      payload = await boundedProviderJson(response, "pipedrive_identity_response_too_large");
+    } catch (error) {
+      if (error instanceof Error && error.message === "pipedrive_identity_response_too_large") throw error;
       throw new Error("pipedrive_identity_invalid");
     }
     if (!response.ok || !isRecord(payload) || payload.success !== true || !isRecord(payload.data)) {
@@ -687,8 +705,9 @@ export class UserConnectionCore {
     }
     let parsed: OAuthResponse;
     try {
-      parsed = await response.json() as OAuthResponse;
-    } catch {
+      parsed = await boundedProviderJson(response, "pipedrive_oauth_response_too_large") as OAuthResponse;
+    } catch (error) {
+      if (error instanceof Error && error.message === "pipedrive_oauth_response_too_large") throw error;
       throw new Error(response.ok ? "pipedrive_oauth_invalid_response" : "pipedrive_oauth_failed");
     }
     if (!response.ok) {
@@ -724,12 +743,28 @@ export class UserConnectionCore {
   }
 
   private async readSnapshot(): Promise<MaterialSnapshot> {
-    const stored = await this.readStoredSnapshot();
+    let stored = await this.readStoredSnapshot();
+    const decrypted = stored.envelope ? await decryptMaterialWithSource(stored.envelope, this.config) : undefined;
+    const material = decrypted?.material;
+    if (stored.envelope && material && decrypted?.source !== "primary") {
+      const replacement = await encryptMaterial(material, this.config);
+      const persisted = await this.withStorage(async (transaction) => {
+        const [current, currentConnection] = await Promise.all([transaction.get<EncryptedEnvelope>(MATERIAL_KEY), transaction.get<UserConnectionRecord>(CONNECTION_KEY)]);
+        if (!sameEnvelope(current, stored.envelope)) return false;
+        await transaction.put(MATERIAL_KEY, replacement);
+        await transaction.put(CONNECTION_KEY, { ...connectionRecord(currentConnection), encryptionKeyState: "primary", encryptionKid: this.config.encryptionKid, lastNonPrimaryEncryptionSource: decrypted.source as Exclude<EncryptionSourceClass, "primary">, lastNonPrimaryEncryptionAtMs: this.now() });
+        return true;
+      });
+      if (persisted) {
+        stored = { ...stored, envelope: replacement, connection: { ...stored.connection, encryptionKeyState: "primary", encryptionKid: this.config.encryptionKid, lastNonPrimaryEncryptionSource: decrypted.source as Exclude<EncryptionSourceClass, "primary">, lastNonPrimaryEncryptionAtMs: this.now() } };
+      } else {
+        stored = { ...stored, connection: { ...stored.connection, encryptionKeyState: "unknown", encryptionKid: undefined } };
+      }
+      if (isConnectedRecord(stored.connection)) await this.projectBestEffort(stored.connection, material.expiresAtMs);
+    }
     return {
       ...stored,
-      material: stored.envelope
-        ? await decryptMaterial(stored.envelope, this.config.encryptionKey)
-        : undefined,
+      material,
     };
   }
 
@@ -967,6 +1002,10 @@ function projectionInput(
     connectedAtMs: connection.connectedAtMs,
     ...(connection.lastUsedAtMs === undefined ? {} : { lastUsedAtMs: connection.lastUsedAtMs }),
     tokenExpiresAtMs: expiresAtMs,
+    encryptionKeyState: connection.encryptionKeyState ?? "unknown",
+    ...(connection.encryptionKid === undefined ? {} : { encryptionKid: connection.encryptionKid }),
+    ...(connection.lastNonPrimaryEncryptionSource === undefined ? {} : { lastNonPrimaryEncryptionSource: connection.lastNonPrimaryEncryptionSource }),
+    ...(connection.lastNonPrimaryEncryptionAtMs === undefined ? {} : { lastNonPrimaryEncryptionAtMs: connection.lastNonPrimaryEncryptionAtMs }),
   };
 }
 
@@ -1133,7 +1172,7 @@ function sameEnvelope(
   left: EncryptedEnvelope | undefined,
   right: EncryptedEnvelope | undefined,
 ): boolean {
-  return Boolean(left && right && left.v === right.v && left.iv === right.iv &&
+  return Boolean(left && right && left.v === right.v && left.kid === right.kid && left.iv === right.iv &&
     left.ciphertext === right.ciphertext);
 }
 
@@ -1170,6 +1209,12 @@ function connectionErrorStatus(code: string): number {
     return 403;
   }
   return 503;
+}
+
+async function boundedProviderJson(response: Response, code: string): Promise<unknown> {
+  let text: string;
+  try { text = await boundedText(response, 64 * 1024); } catch (error) { if (error instanceof Error && error.message === "body_too_large") throw new Error(code); throw error; }
+  return JSON.parse(text) as unknown;
 }
 
 async function requestJson(request: Request): Promise<Record<string, unknown>> {

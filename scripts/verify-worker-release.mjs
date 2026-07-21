@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { configPath, loadTopology, requiredSecrets, requiredVariables, targets } from "./validate-worker-topology.mjs";
+import { configPath, loadTopology, requiredSecrets, requiredVariables, optionalSecrets, optionalVariables, targets } from "./validate-worker-topology.mjs";
 import { validateClientTarget } from "./validate-client-environment.mjs";
 import { requiredClientArtifactRecord } from "./worker-release-client.mjs";
 
@@ -29,6 +29,8 @@ const expectedManifest = {
   config_sha256: hashFile(configPath(target, root)),
   required_variables: requiredVariables,
   required_secrets: requiredSecrets,
+  optional_variables: optionalVariables,
+  optional_secrets: optionalSecrets,
   client_metadata_sha256: client.hash,
 };
 
@@ -51,6 +53,8 @@ assert.equal(record.worker_output_tree_sha256, hashWorkerOutputTree(output));
 assert.deepEqual(record.client, requiredClientArtifactRecord(target, root));
 assert.deepEqual(record.required_variables, requiredVariables);
 assert.deepEqual(record.required_secrets, requiredSecrets);
+assert.deepEqual(record.optional_variables, optionalVariables);
+assert.deepEqual(record.optional_secrets, optionalSecrets);
 assert.equal(record.public_origin, origin);
 assert.equal(record.oauth_callback_url, `${origin}/oauth/pipedrive/callback`);
 assert.equal(record.mcp_url, `${origin}/mcp`);

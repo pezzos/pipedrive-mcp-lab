@@ -122,6 +122,18 @@ test("artifact safety rejects symbolic links", () => {
   }
 });
 
+test("artifact safety rejects assigned rotation secrets but permits their names", () => {
+  const root = mkdtempSync(join(tmpdir(), "pipedrive-mcp-artifact-secrets-"));
+  try {
+    writeFileSync(join(root, "safe.txt"), "PIPEDRIVE_OAUTH_OLD_ENCRYPTION_KEY\nAUDIT_HMAC_PREVIOUS_KEY\n", "utf8");
+    assert.doesNotThrow(() => assertSafeTextTree(root));
+    writeFileSync(join(root, "unsafe.txt"), "PIPEDRIVE_OAUTH_OLD_ENCRYPTION_KEY=value\n", "utf8");
+    assert.throws(() => assertSafeTextTree(root), /configured remote secret/);
+    writeFileSync(join(root, "unsafe.txt"), "AUDIT_HMAC_PREVIOUS_KEY=value\n", "utf8");
+    assert.throws(() => assertSafeTextTree(root), /configured remote secret/);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
 test("all coupled delivery manifests use the package version", () => {
   const packageLock = JSON.parse(readFileSync(join(process.cwd(), "package-lock.json"), "utf8"));
   const plugin = JSON.parse(readFileSync(join(process.cwd(), "plugin", "claude", ".claude-plugin", "plugin.json"), "utf8"));

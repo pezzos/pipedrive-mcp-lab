@@ -34,7 +34,42 @@ test("Worker exposes health before Access and audits a missing assertion", async
   });
   assert.equal(denied.status, 401);
   assert.deepEqual(await denied.json(), { code: "access_token_missing" });
-  assert.equal(JSON.parse(logs[0] as string).actorId, "anonymous");
+  const event = JSON.parse(logs[0] as string);
+  assert.equal(event.actorId, "anonymous");
+  assert.equal(event.v, 2);
+  assert.equal(event.auditEpoch, "2026-Q3");
+  assert.equal("previousActorId" in event, false);
+  assert.equal("previousAuditEpoch" in event, false);
+});
+
+test("expired previous audit cutoff omits prior correlation fields", async () => {
+  const fixture = await accessFixture("admin@example.com", "wrong-admin");
+  const env = remoteEnv(failingNamespace(), failingNamespace(), failingNamespace());
+  env.AUDIT_HMAC_PREVIOUS_EPOCH = "2026-Q3-hotfix"; env.AUDIT_HMAC_PREVIOUS_KEY = base64Url(Uint8Array.from({ length: 32 }, () => 127)); env.AUDIT_HMAC_PREVIOUS_VALID_UNTIL = new Date(Date.now() - 1_000).toISOString();
+  await withJwks(fixture.jwk, async () => { const context = executionContext(); const { logs } = await captureLogs(async () => { const response = await worker.fetch(authorizedRequest("https://mcp.example.test/admin/pipedrive", fixture.assertion), env, context.value); await Promise.all(context.waits); return response; }); const event = JSON.parse(logs[0] as string); assert.equal(event.v, 2); assert.equal(event.auditEpoch, "2026-Q3"); assert.equal("previousActorId" in event, false); assert.equal("previousAuditEpoch" in event, false); });
+});
+
+test("protected capacity sends only opaque dimensions and maps stable denials", async () => {
+  const fixture = await accessFixture("user@example.test", "user-one");
+  const payloads: Record<string, unknown>[] = [];
+  await withJwks(fixture.jwk, async () => {
+    for (const [code, status, retry] of [["remote_rate_limited", 429, 7], ["remote_service_busy", 503, 1], ["pilot_daily_capacity_exceeded", 429, 60]] as const) {
+      const capacity = async (request: Request) => { payloads.push(await request.json() as Record<string, unknown>); return Response.json({ admitted: false, code, retryAfter: retry }); };
+      const response = await worker.fetch(authorizedRequest("https://mcp.example.test/pipedrive", fixture.assertion, { headers: { "cf-connecting-ip": "203.0.113.9" } }), remoteEnv(failingNamespace(), failingNamespace(), failingNamespace(), capacity), executionContext().value);
+      assert.equal(response.status, status); assert.equal(response.headers.get("retry-after"), String(retry)); assert.equal(response.headers.get("cache-control"), "no-store");
+      const body = await response.text(); assert.doesNotMatch(body, /203\.0\.113\.9|user-one|user@example\.test|ip:|count/i);
+    }
+  });
+  assert.equal(payloads[0]?.kind, "protected"); assert.match(String(payloads[0]?.ip), /^[a-f0-9]{32}$/); assert.match(String(payloads[0]?.user), /^[a-f0-9]{32}$/);
+});
+
+test("outer protected MCP capacity denial uses JSON-RPC framing", async () => {
+  const fixture = await accessFixture("user@example.test", "user-one");
+  await withJwks(fixture.jwk, async () => {
+    const response = await worker.fetch(mcpRequest(fixture.assertion), remoteEnv(failingNamespace(), failingNamespace(), failingNamespace(), async () => Response.json({ admitted: false, code: "remote_rate_limited", retryAfter: 7 })), executionContext().value);
+    assert.equal(response.status, 429);
+    assert.deepEqual(await response.json(), { jsonrpc: "2.0", error: { code: -32600, message: "remote_rate_limited" }, id: null });
+  });
 });
 
 test("any Access user can view only their own connection and start exact-origin OAuth", async () => {
@@ -185,6 +220,19 @@ test("admin allowlist is global and token-free while non-admins fail before regi
     assert.match(await response.text(), /admin-action-token/);
   });
   assert.equal(registryCalls, 2);
+});
+
+test("admin requires the exact configured email and subject before registry business access", async () => {
+  let business = 0;
+  const registry = namespaceFor(async (request) => { if (!new URL(request.url).pathname.startsWith("/capacity/")) business++; return Response.json({ tenants: [], connections: [] }); });
+  for (const [email, sub] of [["admin@example.com", "wrong-admin"], ["wrong@example.com", "admin-sub"], ["wrong@example.com", "wrong-admin"]]) {
+    const identity = await accessFixture(email, sub);
+    await withJwks(identity.jwk, async () => { const response = await worker.fetch(authorizedRequest("https://mcp.example.test/admin/pipedrive", identity.assertion), remoteEnv(failingNamespace(), failingNamespace(), registry), executionContext().value); assert.equal(response.status, 403); });
+  }
+  assert.equal(business, 0);
+  const exact = await accessFixture("admin@example.com", "admin-sub");
+  await withJwks(exact.jwk, async () => { const response = await worker.fetch(authorizedRequest("https://mcp.example.test/admin/pipedrive", exact.assertion), remoteEnv(failingNamespace(), failingNamespace(), registry), executionContext().value); assert.equal(response.status, 200); });
+  assert.equal(business, 1);
 });
 
 test("admin approval, tenant mutation, and force-disconnect enforce confirmation and audit", async () => {
@@ -632,11 +680,21 @@ test("successful MCP audit carries pseudonymous actor and tenant correlation but
     throw new Error(`unexpected_connection_path:${path}`);
   });
   const context = executionContext();
+  const capacity: Array<{ path: string; body: Record<string, unknown> }> = [];
+  const environment = remoteEnv(namespaceFor(async () => Response.json(writePolicy())), connection, failingNamespace(), async (request) => {
+    const body = await request.json() as Record<string, unknown>;
+    capacity.push({ path: new URL(request.url).pathname, body });
+    if (new URL(request.url).pathname === "/capacity/release") return new Response(null, { status: 204 });
+    return Response.json(body.kind === "tool" ? { admitted: true, lease: "leaseleaselease01" } : { admitted: true });
+  });
+  environment.AUDIT_HMAC_PREVIOUS_EPOCH = "2026-Q2";
+  environment.AUDIT_HMAC_PREVIOUS_KEY = base64Url(Uint8Array.from({ length: 32 }, () => 127));
+  environment.AUDIT_HMAC_PREVIOUS_VALID_UNTIL = new Date(Date.now() + 60_000).toISOString();
   await withJwks(fixture.jwk, async () => {
     const { value: response, logs } = await captureLogs(async () => {
       const result = await worker.fetch(
         mcpRequest(fixture.assertion),
-        remoteEnv(namespaceFor(async () => Response.json(writePolicy())), connection, failingNamespace()),
+        environment,
         context.value,
       );
       await Promise.all(context.waits);
@@ -647,7 +705,52 @@ test("successful MCP audit carries pseudonymous actor and tenant correlation but
     assert.equal(event.tenantId, "tenant-opaque");
     assert.equal(event.operation, "pipedrive_create_deal");
     assert.equal(event.outcome, "success");
+    assert.equal(event.v, 2); assert.equal(event.auditEpoch, "2026-Q3"); assert.equal(event.previousAuditEpoch, "2026-Q2"); assert.match(String(event.actorId), /^[a-f0-9]{32}$/); assert.match(String(event.previousActorId), /^[a-f0-9]{32}$/); assert.notEqual(event.actorId, event.previousActorId);
     assert.doesNotMatch(JSON.stringify(event), /user@example|user-one|oauth-access/);
+  });
+  assert.deepEqual(capacity.filter((item) => item.path === "/capacity/acquire").map((item) => item.body.kind), ["protected", "mcp", "tool"]);
+  const tool = capacity.find((item) => item.body.kind === "tool")?.body;
+  assert.equal(tool?.tenant, "tenant-opaque"); assert.match(String(tool?.ip), /^[a-f0-9]{32}$/); assert.match(String(tool?.user), /^[a-f0-9]{32}$/);
+  assert.doesNotMatch(JSON.stringify(capacity), /user-one|user@example|oauth-access/);
+  assert.deepEqual(capacity.filter((item) => item.path === "/capacity/release").map((item) => item.body.lease), ["leaseleaselease01"]);
+});
+
+test("tool capacity denial occurs before provider use and release", async () => {
+  const fixture = await accessFixture("user@example.test", "user-one"); let used = 0; const events: Array<{ path: string; body: Record<string, unknown> }> = [];
+  const connection = namespaceFor(async (request) => { const path = new URL(request.url).pathname; if (path === "/credential") return Response.json(credential()); if (path === "/used") { used++; return new Response(null, { status: 204 }); } throw new Error(`unexpected:${path}`); });
+  await withJwks(fixture.jwk, async () => {
+    const response = await worker.fetch(mcpRequest(fixture.assertion), remoteEnv(namespaceFor(async () => Response.json(writePolicy())), connection, failingNamespace(), async (request) => { const body = await request.json() as Record<string, unknown>; events.push({ path: new URL(request.url).pathname, body }); return body.kind === "tool" ? Response.json({ admitted: false, code: "remote_rate_limited", retryAfter: 9 }) : Response.json({ admitted: true }); }), executionContext().value);
+    assert.equal(response.status, 429); assert.equal(response.headers.get("retry-after"), "9"); assert.equal(response.headers.get("cache-control"), "no-store"); const body = await response.text(); assert.match(body, /jsonrpc/); assert.doesNotMatch(body, /user-one|user@example|oauth-access/);
+  });
+  assert.equal(used, 0); assert.equal(events.filter((event) => event.path === "/capacity/release").length, 0);
+});
+
+test("tool leases release once after provider or post-provider usage failures", async () => {
+  const fixture = await accessFixture("user@example.test", "user-one");
+  for (const usedFails of [false, true]) {
+    const events: Array<{ path: string; body: Record<string, unknown> }> = [];
+    const connection = namespaceFor(async (request) => { const path = new URL(request.url).pathname; if (path === "/credential") return Response.json(credential()); if (path === "/used") return usedFails ? Response.json({ code: "tenant_admission_denied" }, { status: 403 }) : new Response(null, { status: 204 }); throw new Error(`unexpected:${path}`); });
+    const { logs } = await captureLogs(async () => withJwks(fixture.jwk, async () => {
+      const original = globalThis.fetch;
+      globalThis.fetch = async (input) => { const url = new URL(input instanceof Request ? input.url : String(input)); if (url.origin === issuer) return Response.json({ keys: [fixture.jwk] }); return usedFails ? Response.json({ data: { id: 1 } }) : Promise.reject(new Error("provider_failure")); };
+      try { await worker.fetch(mcpRequest(fixture.assertion, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "pipedrive_create_deal", arguments: { title: "Fixture", dry_run: false } } }), remoteEnv(namespaceFor(async () => Response.json(writePolicy())), connection, failingNamespace(), async (request) => { const body = await request.json() as Record<string, unknown>; events.push({ path: new URL(request.url).pathname, body }); return new URL(request.url).pathname === "/capacity/release" ? new Response(null, { status: 204 }) : Response.json(body.kind === "tool" ? { admitted: true, lease: "leaseleaselease01" } : { admitted: true }); }), executionContext().value); } finally { globalThis.fetch = original; }
+    }));
+    assert.equal(events.filter((event) => event.path === "/capacity/release").length, 1);
+    assert.doesNotMatch(JSON.stringify(events), /user-one|user@example|oauth-access/);
+    assert.doesNotMatch(JSON.stringify(logs), /user-one|user@example|oauth-access/);
+  }
+});
+
+test("tool deadline drains aborted backoff before releasing lease", async () => {
+  const fixture = await accessFixture("user@example.test", "user-one"); const sequence: string[] = [];
+  const connection = namespaceFor(async (request) => { const path = new URL(request.url).pathname; if (path === "/credential") return Response.json(credential()); if (path === "/used") { sequence.push("used"); return new Response(null, { status: 204 }); } throw new Error(`unexpected:${path}`); });
+  await withJwks(fixture.jwk, async () => {
+    const originalFetch = globalThis.fetch; const originalTimeout = globalThis.setTimeout;
+    globalThis.setTimeout = ((fn: TimerHandler, ms?: number, ...args: any[]) => originalTimeout(fn, ms === 12_000 ? 0 : ms, ...args)) as typeof setTimeout;
+    globalThis.fetch = async (input) => { const url = new URL(input instanceof Request ? input.url : String(input)); if (url.origin === issuer) return Response.json({ keys: [fixture.jwk] }); sequence.push("provider"); return new Response("{}", { status: 503, headers: { "retry-after": "1" } }); };
+    const events: string[] = [];
+    try { const response = await worker.fetch(mcpRequest(fixture.assertion, { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "pipedrive_list_deals", arguments: {} } }), remoteEnv(namespaceFor(async () => Response.json(writePolicy())), connection, failingNamespace(), async (request) => { const path = new URL(request.url).pathname; if (path === "/capacity/release") sequence.push("release"); events.push(await request.text()); return path === "/capacity/release" ? new Response(null, { status: 204 }) : Response.json((await new Response(events.at(-1)).json() as any).kind === "tool" ? { admitted: true, lease: "leaseleaselease01" } : { admitted: true }); }), executionContext().value); assert.equal(response.status, 503); assert.match(await response.text(), /jsonrpc/); } finally { globalThis.fetch = originalFetch; globalThis.setTimeout = originalTimeout; }
+    assert.deepEqual(sequence, ["provider", "release"]); assert.equal(events.filter((event) => event.includes("leaseleaselease01")).length, 1);
   });
 });
 
@@ -697,6 +800,7 @@ function remoteEnv(
   policy: DurableObjectNamespace,
   connection: DurableObjectNamespace,
   registry: DurableObjectNamespace,
+  capacity?: (request: Request) => Promise<Response>,
 ): RemoteEnv {
   return {
     DEPLOY_ENVIRONMENT: "sandbox",
@@ -704,14 +808,39 @@ function remoteEnv(
     ACCESS_ISSUER: issuer,
     ACCESS_AUD: audience,
     REMOTE_ADMIN_EMAIL: "admin@example.com",
+    REMOTE_ADMIN_SUB: "admin-sub",
     PIPEDRIVE_OAUTH_CLIENT_ID: "client-fixture",
     PIPEDRIVE_OAUTH_CLIENT_SECRET: "credential-fixture",
     PIPEDRIVE_OAUTH_ENCRYPTION_KEY: base64Url(Uint8Array.from({ length: 32 }, (_, i) => i)),
     AUDIT_HMAC_KEY: base64Url(Uint8Array.from({ length: 32 }, (_, i) => 255 - i)),
+    PIPEDRIVE_OAUTH_CLIENT_EPOCH: "2026-Q3",
+    PIPEDRIVE_OAUTH_ENCRYPTION_KID: "key-2026",
+    AUDIT_HMAC_EPOCH: "2026-Q3",
     USER_POLICY: policy,
     USER_CONNECTION: connection,
-    TENANT_REGISTRY: registry,
+    TENANT_REGISTRY: coordinatorRegistry(registry, capacity),
   };
+}
+
+function coordinatorRegistry(registry: DurableObjectNamespace, capacity?: (request: Request) => Promise<Response>): DurableObjectNamespace {
+  return {
+    idFromName: registry.idFromName.bind(registry),
+    get(id: DurableObjectId) {
+      const stub = registry.get(id);
+      return { fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+        const request = new Request(input, init);
+        const path = new URL(request.url).pathname;
+        if (path === "/capacity/acquire") {
+          if (capacity) return capacity(request);
+          const body = await request.clone().json().catch(() => ({})) as Record<string, unknown>;
+          return Response.json(body.kind === "tool" ? { admitted: true, lease: "llllllllllllllll" } : { admitted: true });
+        }
+        if (path === "/capacity/release") return capacity ? capacity(request) : new Response(null, { status: 204 });
+        if (path === "/audit-rotation/observe") return new Response(null, { status: 204 });
+        return stub.fetch(request);
+      } } as DurableObjectStub;
+    },
+  } as DurableObjectNamespace;
 }
 
 function namespaceFor(

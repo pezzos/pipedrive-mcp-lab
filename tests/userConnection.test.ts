@@ -3,6 +3,7 @@ import test from "node:test";
 
 import type { RemoteConfig } from "../src/remote/env.js";
 import type { KeyValueOps, KeyValueStorage } from "../src/remote/policy.js";
+import { encryptMaterial } from "../src/remote/tenantSecrets.js";
 import type {
   AdminConnectionProjectionInput,
   TenantRecord,
@@ -33,6 +34,91 @@ test("connects two users independently and never crosses their material", async 
   assert.notEqual(credentialA.accessCredential, credentialB.accessCredential);
   await assert.rejects(userA.getCredential("user-b"), /pipedrive_not_connected/);
   await assert.rejects(userB.getCredential("user-a"), /pipedrive_not_connected/);
+});
+
+test("maps oversized OAuth and current-user responses without masking malformed OAuth JSON", async () => {
+  const oversized = 64 * 1024 + 1;
+  const tokenResponse = () => oauthResponse("code", 3_600);
+  const cases: Array<{ name: string; fetcher: typeof fetch; expected: RegExp }> = [
+    {
+      name: "declared OAuth response",
+      fetcher: async () => new Response("{}", { headers: { "content-length": String(oversized) } }),
+      expected: /pipedrive_oauth_response_too_large/,
+    },
+    {
+      name: "streamed OAuth response",
+      fetcher: async () => new Response(byteStream(["{".repeat(32 * 1024), "}".repeat(32 * 1024 + 1)])),
+      expected: /pipedrive_oauth_response_too_large/,
+    },
+    {
+      name: "oversized current-user response",
+      fetcher: async (input) => {
+        const url = new URL(input instanceof Request ? input.url : String(input));
+        return url.pathname === "/oauth/token"
+          ? tokenResponse()
+          : new Response("{}", { headers: { "content-length": String(oversized) } });
+      },
+      expected: /pipedrive_identity_response_too_large/,
+    },
+    {
+      name: "malformed OAuth response",
+      fetcher: async () => new Response("not-json"),
+      expected: /pipedrive_oauth_invalid_response/,
+    },
+  ];
+  for (const { name, fetcher, expected } of cases) {
+    const core = connection(new MemoryStorage(), registry("acme", "company-a", "Tenant A"), fetcher);
+    await assert.rejects(connect(core, "user-a", "a@example.test", "acme", name), expected);
+  }
+});
+
+test("rewraps old-kid and kid-less-old envelopes with safe projection evidence", async () => {
+  const oldKey = base64Url(Uint8Array.from({ length: 32 }, () => 127));
+  for (const legacy of [false, true]) {
+    const storage = new MemoryStorage();
+    const tenant = registry("acme", "company-a", "Tenant A");
+    const core = connection(storage, tenant, oauthFetcher("acme", "company-a", "Tenant A"), undefined, [], { ...config(), oldEncryption: { kid: "old-test", key: oldKey } });
+    await connect(core, "user-a", "a@example.test", "acme", legacy ? "legacy" : "old");
+    const material = { accessCredential: "access-old", refreshCredential: "refresh-old", expiresAtMs: 9_999_999, apiDomain: "https://acme.pipedrive.com" };
+    await storage.put("user-oauth-material:v1", legacy ? await encryptMaterial(material, oldKey) : await encryptMaterial(material, { encryptionKey: oldKey, encryptionKid: "old-test" }));
+    assert.equal((await core.getCredential("user-a")).accessCredential, "access-old");
+    assert.equal((await storage.get<{ kid?: string }>("user-oauth-material:v1"))?.kid, "primary-test");
+    const evidence = tenant.projections.at(-1);
+    assert.equal(evidence?.encryptionKeyState, "primary");
+    assert.equal(evidence?.encryptionKid, "primary-test");
+    assert.equal(evidence?.lastNonPrimaryEncryptionSource, legacy ? "legacy-old" : "old");
+    assert.equal(typeof evidence?.lastNonPrimaryEncryptionAtMs, "number");
+  }
+});
+
+test("CAS-lost rewrap projects unknown rather than claiming the primary key", async () => {
+  const oldKey = base64Url(Uint8Array.from({ length: 32 }, () => 127));
+  const storage = new RaceStorage();
+  const tenant = registry("acme", "company-a", "Tenant A");
+  const core = connection(storage, tenant, oauthFetcher("acme", "company-a", "Tenant A"), undefined, [], { ...config(), oldEncryption: { kid: "old-test", key: oldKey } });
+  await connect(core, "user-a", "a@example.test", "acme", "old");
+  const material = { accessCredential: "access-old", refreshCredential: "refresh-old", expiresAtMs: 9_999_999, apiDomain: "https://acme.pipedrive.com" };
+  await storage.put("user-oauth-material:v1", await encryptMaterial(material, { encryptionKey: oldKey, encryptionKid: "old-test" }));
+  storage.loseNextMaterialCas(await encryptMaterial(material, config()));
+  await core.getCredential("user-a");
+  assert.equal(tenant.projections.at(-1)?.encryptionKeyState, "unknown");
+  assert.equal(tenant.projections.at(-1)?.encryptionKid, undefined);
+});
+
+test("OAuth client-epoch mismatch consumes the pending callback without changing an existing connection", async () => {
+  const storage = new MemoryStorage();
+  const tenant = registry("acme", "company-a", "Tenant A");
+  const core = connection(storage, tenant, oauthFetcher("acme", "company-a", "Tenant A"));
+  await connect(core, "user-a", "a@example.test", "acme", "initial");
+  const before = await core.getCredential("user-a");
+  const actionToken = await core.issueSelfAction("user-a");
+  const state = await core.createState({ accessSub: "user-a", accessEmail: "a@example.test", expectedDomain: "acme", redirectUri, actionToken });
+  const rotated = connection(storage, tenant, oauthFetcher("acme", "company-a", "Tenant A"), undefined, [], { ...config(), oauthClientEpoch: "2026-Q4" });
+  await assert.rejects(rotated.exchange({ accessSub: "user-a", state, code: "rotated", redirectUri }), /oauth_state_invalid/);
+  await assert.rejects(rotated.exchange({ accessSub: "user-a", state, code: "rotated", redirectUri }), /oauth_state_invalid/);
+  const after = await rotated.getCredential("user-a");
+  assert.deepEqual(after, before);
+  assert.deepEqual(await rotated.getStatus(), await core.getStatus());
 });
 
 test("failed replacement preserves the prior connection and a stale callback cannot resurrect it", async () => {
@@ -327,7 +413,7 @@ test("self and admin disconnect are generation-bound and affect only their selec
   assert.equal(tenant.removed.length, 1);
 });
 
-test("requires one-shot user action for OAuth state and reports projection capacity safely", async () => {
+test("requires one-shot user action and rolls back OAuth promotion when projection capacity rejects", async () => {
   const tenant = registry("acme", "company-a", "Tenant A");
   tenant.upsertProjection = async () => { throw new Error("tenant_registry_capacity_exceeded"); };
   const core = connection(
@@ -343,17 +429,8 @@ test("requires one-shot user action for OAuth state and reports projection capac
     actionToken: "invalid-action-token",
   }), /user_action_invalid/);
 
-  const warnings: string[] = [];
-  const originalWarn = console.warn;
-  console.warn = (value?: unknown) => warnings.push(String(value));
-  try {
-    await connect(core, "user-a", "a@example.test", "acme", "working");
-  } finally {
-    console.warn = originalWarn;
-  }
-  assert.equal((await core.getCredential("user-a")).companyId, "company-a");
-  assert.equal(JSON.parse(warnings[0] as string).code, "tenant_registry_capacity_exceeded");
-  assert.doesNotMatch(warnings.join(""), /user-a|a@example|access-working|refresh-working/);
+  await assert.rejects(connect(core, "user-a", "a@example.test", "acme", "working"), /tenant_registry_capacity_exceeded/);
+  await assert.rejects(core.getCredential("user-a"), /pipedrive_not_connected/);
 });
 
 class MemoryStorage implements KeyValueStorage {
@@ -384,6 +461,20 @@ class MemoryStorage implements KeyValueStorage {
       release();
     }
   }
+}
+
+class RaceStorage implements KeyValueStorage {
+  private values = new Map<string, unknown>();
+  private replacement: unknown;
+  private readsUntilLoss = -1;
+  loseNextMaterialCas(replacement: unknown): void { this.replacement = replacement; this.readsUntilLoss = 1; }
+  async get<T>(key: string): Promise<T | undefined> {
+    if (key === "user-oauth-material:v1" && this.readsUntilLoss >= 0 && this.readsUntilLoss-- === 0) this.values.set(key, structuredClone(this.replacement));
+    return structuredClone(this.values.get(key)) as T | undefined;
+  }
+  async put<T>(key: string, value: T): Promise<void> { this.values.set(key, structuredClone(value)); }
+  async delete(key: string): Promise<boolean> { return this.values.delete(key); }
+  async transaction<T>(closure: (transaction: KeyValueOps) => Promise<T>): Promise<T> { return closure(this); }
 }
 
 function registry(domain: string, companyId: string, companyName: string) {
@@ -470,9 +561,10 @@ function connection(
   fetcher: typeof fetch,
   now: () => number = () => 1_000,
   alarms: number[] = [],
+  remoteConfig: RemoteConfig = config(),
 ): UserConnectionCore {
   let id = 0;
-  return new UserConnectionCore(storage, config(), tenant, {
+  return new UserConnectionCore(storage, remoteConfig, tenant, {
     fetcher,
     now,
     randomId: () => `opaque-operation-${++id}`,
@@ -561,10 +653,22 @@ function config(): RemoteConfig {
     pipedriveClientId: "client",
     pipedriveClientSecret: "secret",
     encryptionKey: base64Url(Uint8Array.from({ length: 32 }, (_, index) => index)),
+    encryptionKid: "primary-test",
+    oauthClientEpoch: "2026-Q3",
     auditHmacKey: base64Url(Uint8Array.from({ length: 32 }, (_, index) => 255 - index)),
   };
 }
 
 function base64Url(bytes: Uint8Array): string {
   return Buffer.from(bytes).toString("base64url");
+}
+
+function byteStream(chunks: string[]): ReadableStream<Uint8Array> {
+  const encoder = new TextEncoder();
+  return new ReadableStream({
+    start(controller) {
+      for (const chunk of chunks) controller.enqueue(encoder.encode(chunk));
+      controller.close();
+    },
+  });
 }

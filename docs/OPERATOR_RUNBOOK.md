@@ -341,6 +341,37 @@ the MCP package `.env` or the MCP host configuration.
 
 ## Validation
 
+## B6 configuration and rotation
+
+Before a B6-capable deployment, configure the required variable names
+`REMOTE_ADMIN_SUB`, `PIPEDRIVE_OAUTH_CLIENT_EPOCH`,
+`PIPEDRIVE_OAUTH_ENCRYPTION_KID`, and `AUDIT_HMAC_EPOCH`. Administration
+requires both the normalized configured email and the exact Access subject.
+Never set only one name of an optional rotation pair. Access cutover accepts a
+complete previous issuer/audience pair only through its exact UTC cutoff; it
+never mixes an issuer from one pair with an audience from another. Roll back a
+Worker version only to one compatible with the current v2 Durable Object
+topology; do not roll back secret rotation or delete connection material.
+
+For planned annual encryption rotation, install the new primary kid/key with
+the old pair decrypt-only. The protected admin receipt must show zero active
+`old`, `legacy`, and `unknown` envelopes (an unknown row is not zero-use), then
+wait 30 days after its latest non-primary decrypt/rewrap timestamp before
+retiring the old pair. A compromise rotates the primary immediately and may
+force reconnect; do not wait 30 days to stop using a compromised primary. Schedule
+a new audit epoch each quarter, while allowing immediate same-quarter emergency
+identifiers for compromise response; the prior audit rotation is always the
+triple `AUDIT_HMAC_PREVIOUS_EPOCH` + `AUDIT_HMAC_PREVIOUS_KEY` +
+`AUDIT_HMAC_PREVIOUS_VALID_UNTIL` UTC cutoff, and retains correlation for no more
+than 90 days; the registry retains a fingerprint-only first-seen ledger (64
+records) so removing and re-adding a prior key cannot extend that window.
+Rotate the provider client secret together with a new OAuth
+client epoch; old pending callbacks fail safely. Access cutover uses complete
+issuer/audience pairs and a UTC cutoff. Before any live action, verify MFA and
+that both configured admin email and subject are exact. Freeze onboarding at
+80% capacity; never auto-increase quota. Stop on capacity, identity, or
+rotation errors and use only a v2-compatible Worker rollback.
+
 Required local validation:
 
 ```sh

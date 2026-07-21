@@ -3,10 +3,23 @@ import type { KeyValueOps, KeyValueStorage } from "./policy.js";
 
 const TENANT_INDEX_KEY = "tenant-index:v1";
 const CONNECTION_INDEX_KEY = "connection-index:v1";
+const LATEST_NON_PRIMARY_USE_KEY = "latest-non-primary-use:v1";
+const AUDIT_ROTATION_INDEX_KEY = "audit-rotation-index:v1";
+const MAX_AUDIT_ROTATIONS = 64;
 const ADMIN_ACTION_TTL_MS = 10 * 60_000;
 const DEFAULT_ADMISSION_LATENCY_MS = 8;
-const MAX_TENANTS = 200;
-const MAX_CONNECTIONS = 500;
+// B0/D15 pilot ceilings. These gate only new records; already-indexed records
+// remain readable and operable during a temporary over-cap condition.
+const MAX_TENANTS = 2;
+const MAX_CONNECTIONS = 4;
+const CAPACITY_KEY = "capacity:v1";
+const LEASE_MS = 15_000;
+const CAPACITY_WARNING = 800;
+const CAPACITY_DAILY_LIMIT = 1000;
+
+type CapacityState = { windows: Record<string, { start: number; count: number }>; daily: { day: string; count: number }; leases: Record<string, { user: string; tenant: string; expiresAt: number }> };
+export type CapacityRequest = { ip: string; user: string; tenant?: string; kind: "protected" | "mcp" | "tool" };
+export type CapacityResult = { admitted: boolean; code?: "remote_rate_limited" | "pilot_daily_capacity_exceeded" | "remote_service_busy"; retryAfter?: number; warning?: boolean; lease?: string };
 
 export type TenantStatus = "active" | "suspended";
 export type TenantAdminAction = "approve" | "suspend" | "resume" | "force-disconnect";
@@ -27,6 +40,8 @@ export type TenantAdmission =
   | { active: true; tenant: TenantRecord };
 
 export type AdminConnectionState = "connected" | "reconnect-required";
+export type EncryptionKeyState = "primary" | "old" | "legacy" | "unknown";
+export type NonPrimaryEncryptionSource = Exclude<import("./tenantSecrets.js").EncryptionSourceClass, "primary">;
 
 export type AdminConnectionProjectionInput = {
   connectionRef: string;
@@ -38,6 +53,10 @@ export type AdminConnectionProjectionInput = {
   connectedAtMs: number;
   lastUsedAtMs?: number;
   tokenExpiresAtMs?: number;
+  encryptionKeyState?: EncryptionKeyState;
+  encryptionKid?: string;
+  lastNonPrimaryEncryptionSource?: NonPrimaryEncryptionSource;
+  lastNonPrimaryEncryptionAtMs?: number;
 };
 
 export type AdminConnectionProjection = Omit<AdminConnectionProjectionInput, "accessSub">;
@@ -45,6 +64,9 @@ export type AdminConnectionProjection = Omit<AdminConnectionProjectionInput, "ac
 type StoredAdminConnectionProjection = AdminConnectionProjection & {
   accessSub: string;
 };
+type LatestNonPrimaryUse = { source: NonPrimaryEncryptionSource; atMs: number };
+export type PreviousAuditObservation = { epoch: string; fingerprint: string; validUntilMs: number };
+type AuditRotationRecord = PreviousAuditObservation & { firstSeenAtMs: number };
 
 export type ForceDisconnectTarget = AdminConnectionProjection & {
   accessSub: string;
@@ -60,6 +82,11 @@ export type AdminActionTicket = {
 export type TenantAdminProjection = {
   tenants: Array<TenantRecord & { connectedUserCount: number }>;
   connections: AdminConnectionProjection[];
+  encryptionReceipt: {
+    generatedAtMs: number;
+    currentKeyStates: Record<EncryptionKeyState, number>;
+    latestNonPrimaryUse?: { source: NonPrimaryEncryptionSource; atMs: number };
+  };
 };
 
 type AdminActionRecord = {
@@ -131,6 +158,50 @@ export class TenantRegistryCore {
       return { active: true, tenant: cloneTenantRecord(record) };
     }
     return { active: false, code: "tenant_admission_denied" };
+  }
+
+  /** Global bounded B6 coordinator. Inputs must already be HMAC-derived opaque ids. */
+  async acquireCapacity(input: CapacityRequest): Promise<CapacityResult> {
+    validateCapacityRequest(input);
+    const now = this.now();
+    const day = utcDay(now);
+    return this.withStorage(async (transaction) => {
+      const stored = await transaction.get<CapacityState>(CAPACITY_KEY);
+      const state = stored === undefined ? { windows: {}, daily: { day, count: 0 }, leases: {} } : normalizeCapacityState(stored);
+      if (state.daily.day !== day) state.daily = { day, count: 0 };
+      const minute = Math.floor(now / 60_000) * 60_000;
+      for (const [key, value] of Object.entries(state.windows)) if (!value || value.start !== minute || !Number.isSafeInteger(value.count) || value.count < 0) delete state.windows[key];
+      for (const [id, lease] of Object.entries(state.leases)) if (lease.expiresAt <= now) delete state.leases[id];
+      const limits: Array<[string, number]> = input.kind === "protected" ? [[`ip:${input.ip}`, 120]] : input.kind === "mcp" ? [[`mcp:${input.user}`, 60]] : [[`tool-user:${input.user}`, 20], [`tool-tenant:${input.tenant}`, 60], ["global", 120]];
+      if (input.kind === "tool") {
+        if (!input.tenant) throw registryError("tenant_registry_request_invalid");
+        if (state.daily.count >= CAPACITY_DAILY_LIMIT) { await transaction.put(CAPACITY_KEY, state); return { admitted: false, code: "pilot_daily_capacity_exceeded", retryAfter: secondsUntilUtcDay(now) }; }
+      }
+      for (const [key, limit] of limits) {
+        const current = state.windows[key];
+        const start = Math.floor(now / 60_000) * 60_000;
+        const count = current?.start === start ? current.count : 0;
+        if (count >= limit) { await transaction.put(CAPACITY_KEY, state); return { admitted: false, code: "remote_rate_limited", retryAfter: Math.max(1, Math.ceil((start + 60_000 - now) / 1000)) }; }
+      }
+      const newKeys = limits.filter(([key]) => state.windows[key] === undefined).length;
+      if (Object.keys(state.windows).length + newKeys > 256) { await transaction.put(CAPACITY_KEY, state); return { admitted: false, code: "remote_service_busy", retryAfter: 1 }; }
+      for (const [key] of limits) { const start = Math.floor(now / 60_000) * 60_000; const current = state.windows[key]; state.windows[key] = { start, count: (current?.start === start ? current.count : 0) + 1 }; }
+      if (input.kind === "tool") state.daily.count += 1;
+      let lease: string | undefined;
+      if (input.kind === "tool") {
+        const userLeases = Object.values(state.leases).filter((item) => item.user === input.user).length;
+        const tenantLeases = Object.values(state.leases).filter((item) => item.tenant === input.tenant).length;
+        if (userLeases >= 2 || tenantLeases >= 4 || Object.keys(state.leases).length >= 8) { await transaction.put(CAPACITY_KEY, state); return { admitted: false, code: "remote_service_busy", retryAfter: 1 }; }
+        lease = this.randomOpaqueId(); state.leases[lease] = { user: input.user, tenant: input.tenant as string, expiresAt: now + LEASE_MS };
+      }
+      await transaction.put(CAPACITY_KEY, state);
+      return { admitted: true, ...(lease ? { lease } : {}), ...(input.kind === "tool" && state.daily.count >= CAPACITY_WARNING ? { warning: true } : {}) };
+    });
+  }
+
+  async releaseCapacity(lease: unknown): Promise<void> {
+    const id = boundedString(lease, 16, "tenant_registry_request_invalid");
+    await this.withStorage(async (transaction) => { const state = await transaction.get<CapacityState>(CAPACITY_KEY); if (state?.leases) { delete state.leases[id]; await transaction.put(CAPACITY_KEY, state); } });
   }
 
   async issueAdminAction(
@@ -242,6 +313,7 @@ export class TenantRegistryCore {
       }
       const index = await readStringIndex(transaction, CONNECTION_INDEX_KEY, MAX_CONNECTIONS);
       if (!index.includes(row.connectionRef)) {
+        if (await onboardingFrozen(transaction, this.now())) throw registryError("pilot_onboarding_frozen");
         if (index.length >= MAX_CONNECTIONS) {
           throw registryError("tenant_registry_capacity_exceeded");
         }
@@ -249,6 +321,10 @@ export class TenantRegistryCore {
         await transaction.put(CONNECTION_INDEX_KEY, index);
       }
       await transaction.put(connectionStorageKey(row.connectionRef), row);
+      if (row.lastNonPrimaryEncryptionSource && row.lastNonPrimaryEncryptionAtMs !== undefined) {
+        const prior = await transaction.get<LatestNonPrimaryUse>(LATEST_NON_PRIMARY_USE_KEY);
+        if (!prior || row.lastNonPrimaryEncryptionAtMs > prior.atMs || (row.lastNonPrimaryEncryptionAtMs === prior.atMs && row.lastNonPrimaryEncryptionSource > prior.source)) await transaction.put(LATEST_NON_PRIMARY_USE_KEY, { source: row.lastNonPrimaryEncryptionSource, atMs: row.lastNonPrimaryEncryptionAtMs });
+      }
       return publicConnectionProjection(row);
     });
   }
@@ -270,11 +346,30 @@ export class TenantRegistryCore {
     });
   }
 
+  async observePreviousAudit(input: unknown): Promise<void> {
+    const value = auditObservation(input);
+    await this.withStorage(async (transaction) => {
+      const index = await readStringIndex(transaction, AUDIT_ROTATION_INDEX_KEY, MAX_AUDIT_ROTATIONS);
+      const key = lengthPrefixedObjectKey("audit-rotation", value.fingerprint);
+      const existing = await transaction.get<AuditRotationRecord>(key);
+      const epochRecords = await Promise.all(index.map((fingerprint) => transaction.get<AuditRotationRecord>(lengthPrefixedObjectKey("audit-rotation", fingerprint))));
+      if (epochRecords.some((record) => !isAuditRotationRecord(record) || (record.epoch === value.epoch && record.fingerprint !== value.fingerprint))) throw registryError("audit_rotation_guard_failed");
+      if (existing) {
+        if (!isAuditRotationRecord(existing) || existing.epoch !== value.epoch || value.validUntilMs > existing.firstSeenAtMs + 90 * 24 * 60 * 60_000) throw registryError("audit_rotation_guard_failed");
+        return;
+      }
+      if (index.length >= MAX_AUDIT_ROTATIONS || value.validUntilMs > this.now() + 90 * 24 * 60 * 60_000) throw registryError("audit_rotation_guard_failed");
+      index.push(value.fingerprint); await transaction.put(AUDIT_ROTATION_INDEX_KEY, index);
+      await transaction.put(key, { ...value, firstSeenAtMs: this.now() });
+    });
+  }
+
   async getAdminProjection(): Promise<TenantAdminProjection> {
     return this.withStorage(async (transaction) => {
-      const [tenantDomains, connectionRefs] = await Promise.all([
+      const [tenantDomains, connectionRefs, latestNonPrimaryUse] = await Promise.all([
         readStringIndex(transaction, TENANT_INDEX_KEY, MAX_TENANTS),
         readStringIndex(transaction, CONNECTION_INDEX_KEY, MAX_CONNECTIONS),
+        transaction.get<LatestNonPrimaryUse>(LATEST_NON_PRIMARY_USE_KEY),
       ]);
       const [tenantValues, connectionValues] = await Promise.all([
         Promise.all(tenantDomains.map((domain) => transaction.get<TenantRecord>(tenantStorageKey(domain)))),
@@ -284,6 +379,10 @@ export class TenantRegistryCore {
       const connections = connectionValues
         .filter((value): value is StoredAdminConnectionProjection => isConnectionProjection(value))
         .map(publicConnectionProjection);
+      const currentKeyStates: Record<EncryptionKeyState, number> = { primary: 0, old: 0, legacy: 0, unknown: 0 };
+      for (const connection of connections) {
+        if (connection.state === "connected") currentKeyStates[connection.encryptionKeyState ?? "unknown"] += 1;
+      }
       return {
         tenants: tenants.map((tenant) => ({
           ...cloneTenantRecord(tenant),
@@ -292,6 +391,7 @@ export class TenantRegistryCore {
           ).length,
         })),
         connections,
+        encryptionReceipt: { generatedAtMs: this.now(), currentKeyStates, ...(latestNonPrimaryUse ? { latestNonPrimaryUse } : {}) },
       };
     });
   }
@@ -379,6 +479,7 @@ export class TenantRegistryCore {
         const tenantId = this.randomOpaqueId();
         validateOpaque(tenantId, 16, 128, "tenant_registry_internal_error");
         const index = await readStringIndex(transaction, TENANT_INDEX_KEY, MAX_TENANTS);
+        if (await onboardingFrozen(transaction, timestamp)) return { ok: false, error: "pilot_onboarding_frozen" };
         if (index.length >= MAX_TENANTS) {
           return { ok: false, error: "tenant_registry_capacity_exceeded" };
         }
@@ -448,6 +549,13 @@ export class TenantRegistry {
           ? Response.json(admission)
           : Response.json({ code: admission.code }, { status: 403 });
       }
+      if (request.method === "POST" && url.pathname === "/capacity/acquire") {
+        return Response.json(await this.core.acquireCapacity(await requestJson(request) as CapacityRequest));
+      }
+      if (request.method === "POST" && url.pathname === "/capacity/release") {
+        const body = await requestJson(request); await this.core.releaseCapacity(body.lease); return new Response(null, { status: 204 });
+      }
+      if (request.method === "POST" && url.pathname === "/audit-rotation/observe") { await this.core.observePreviousAudit(await requestJson(request)); return new Response(null, { status: 204 }); }
       if (request.method === "GET" && url.pathname === "/admin/projection") {
         return Response.json(await this.core.getAdminProjection());
       }
@@ -513,6 +621,35 @@ export function tenantRegistryStub(env: TenantRegistryEnv): DurableObjectStub {
   );
 }
 
+/** Client boundary for the global coordinator; never forwards provider or identity data. */
+export async function acquireCapacity(env: TenantRegistryEnv, input: CapacityRequest): Promise<CapacityResult> {
+  try {
+    const response = await tenantRegistryStub(env).fetch("https://registry.internal/capacity/acquire", {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(input),
+    });
+    const value = await response.json().catch(() => undefined);
+    return validCapacityResult(value) ? value : { admitted: false, code: "remote_service_busy", retryAfter: 1 };
+  } catch { return { admitted: false, code: "remote_service_busy", retryAfter: 1 }; }
+}
+
+export async function releaseCapacity(env: TenantRegistryEnv, lease: string | undefined): Promise<void> {
+  if (typeof lease !== "string" || !/^[A-Za-z0-9_-]{16,128}$/.test(lease)) return;
+  await tenantRegistryStub(env).fetch("https://registry.internal/capacity/release", {
+    method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ lease }),
+  }).catch(() => undefined);
+}
+
+export async function observePreviousAudit(env: TenantRegistryEnv, observation: PreviousAuditObservation): Promise<boolean> {
+  try { return (await tenantRegistryStub(env).fetch("https://registry.internal/audit-rotation/observe", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(observation) })).ok; } catch { return false; }
+}
+
+function validCapacityResult(value: unknown): value is CapacityResult {
+  if (!value || typeof value !== "object") return false;
+  const item = value as Record<string, unknown>;
+  if (item.admitted === true) return (item.lease === undefined || typeof item.lease === "string") && (item.warning === undefined || item.warning === true);
+  return item.admitted === false && (item.code === "remote_rate_limited" || item.code === "pilot_daily_capacity_exceeded" || item.code === "remote_service_busy") && (item.retryAfter === undefined || (Number.isInteger(item.retryAfter) && (item.retryAfter as number) >= 1 && (item.retryAfter as number) <= 86_400));
+}
+
 export function normalizePipedriveSubdomain(value: unknown): string {
   if (typeof value !== "string") {
     throw registryError("tenant_domain_invalid");
@@ -529,6 +666,7 @@ export function normalizePipedriveSubdomain(value: unknown): string {
 }
 
 const registryErrorStatuses = {
+  pilot_onboarding_frozen: 429,
   tenant_admission_denied: 403,
   tenant_admin_action_invalid: 403,
   tenant_company_invalid: 400,
@@ -541,6 +679,7 @@ const registryErrorStatuses = {
   tenant_registry_not_found: 404,
   tenant_registry_request_invalid: 400,
   tenant_registry_unavailable: 503,
+  audit_rotation_guard_failed: 503,
 } as const;
 
 export type TenantRegistryErrorCode = keyof typeof registryErrorStatuses;
@@ -555,6 +694,31 @@ function normalizeRegistryError(error: unknown): TenantRegistryErrorCode {
     ? message as TenantRegistryErrorCode
     : "tenant_registry_internal_error";
 }
+
+function validateCapacityRequest(input: CapacityRequest): void {
+  for (const value of [input.ip, input.user, ...(input.tenant ? [input.tenant] : [])]) {
+    if (!/^[A-Za-z0-9_-]{16,128}$/.test(value)) throw registryError("tenant_registry_request_invalid");
+  }
+  if (input.kind !== "protected" && input.kind !== "mcp" && input.kind !== "tool") throw registryError("tenant_registry_request_invalid");
+}
+function normalizeCapacityState(value: unknown): CapacityState {
+  if (!value || typeof value !== "object") throw registryError("tenant_registry_internal_error");
+  const state = value as CapacityState;
+  if (!state.windows || !state.daily || !state.leases || typeof state.windows !== "object" || typeof state.leases !== "object" || !/^\d{4}-\d{2}-\d{2}$/.test(state.daily.day) || !Number.isSafeInteger(state.daily.count) || state.daily.count < 0 || state.daily.count > CAPACITY_DAILY_LIMIT) throw registryError("tenant_registry_internal_error");
+  const windows = Object.entries(state.windows); const leases = Object.entries(state.leases);
+  if (windows.length > 256 || leases.length > 8) throw registryError("tenant_registry_internal_error");
+  for (const [key, item] of windows) if (!/^[a-z-]+:[A-Za-z0-9_-]{16,128}$/.test(key) && key !== "global" || !item || !Number.isSafeInteger(item.start) || !Number.isSafeInteger(item.count) || item.start < 0 || item.count < 0) throw registryError("tenant_registry_internal_error");
+  for (const [id, lease] of leases) if (!/^[A-Za-z0-9_-]{16,128}$/.test(id) || !lease || !/^[A-Za-z0-9_-]{16,128}$/.test(lease.user) || !/^[A-Za-z0-9_-]{16,128}$/.test(lease.tenant) || !Number.isSafeInteger(lease.expiresAt) || lease.expiresAt < 0) throw registryError("tenant_registry_internal_error");
+  return structuredClone(state);
+}
+async function onboardingFrozen(transaction: KeyValueOps, now: number): Promise<boolean> {
+  const stored = await transaction.get<CapacityState>(CAPACITY_KEY);
+  if (stored === undefined) return false;
+  const state = normalizeCapacityState(stored);
+  return state.daily.day === utcDay(now) && state.daily.count >= CAPACITY_WARNING;
+}
+function utcDay(now: number): string { return new Date(now).toISOString().slice(0, 10); }
+function secondsUntilUtcDay(now: number): number { return Math.max(1, Math.ceil((Date.UTC(new Date(now).getUTCFullYear(), new Date(now).getUTCMonth(), new Date(now).getUTCDate() + 1) - now) / 1000)); }
 
 async function consumeActionRecord(
   transaction: KeyValueOps,
@@ -607,6 +771,12 @@ function normalizeConnectionProjection(input: unknown): StoredAdminConnectionPro
   const connectedAtMs = timestamp(value.connectedAtMs);
   const lastUsedAtMs = optionalTimestamp(value.lastUsedAtMs);
   const tokenExpiresAtMs = optionalTimestamp(value.tokenExpiresAtMs);
+  const encryptionKeyState = value.encryptionKeyState === undefined ? "unknown" : encryptionState(value.encryptionKeyState);
+  const encryptionKid = value.encryptionKid === undefined ? undefined : boundedString(value.encryptionKid, 128, "tenant_connection_projection_invalid");
+  if ((encryptionKeyState === "primary" || encryptionKeyState === "old") !== (encryptionKid !== undefined)) throw registryError("tenant_connection_projection_invalid");
+  const lastNonPrimaryEncryptionSource = value.lastNonPrimaryEncryptionSource === undefined ? undefined : nonPrimarySource(value.lastNonPrimaryEncryptionSource);
+  const lastNonPrimaryEncryptionAtMs = optionalTimestamp(value.lastNonPrimaryEncryptionAtMs);
+  if ((lastNonPrimaryEncryptionSource === undefined) !== (lastNonPrimaryEncryptionAtMs === undefined)) throw registryError("tenant_connection_projection_invalid");
   const generation = nonNegativeInteger(value.generation);
   return {
     connectionRef: boundedString(value.connectionRef, 256, "tenant_connection_projection_invalid"),
@@ -618,8 +788,25 @@ function normalizeConnectionProjection(input: unknown): StoredAdminConnectionPro
     connectedAtMs,
     ...(lastUsedAtMs === undefined ? {} : { lastUsedAtMs }),
     ...(tokenExpiresAtMs === undefined ? {} : { tokenExpiresAtMs }),
+    encryptionKeyState,
+    ...(encryptionKid === undefined ? {} : { encryptionKid }),
+    ...(lastNonPrimaryEncryptionSource === undefined ? {} : { lastNonPrimaryEncryptionSource }),
+    ...(lastNonPrimaryEncryptionAtMs === undefined ? {} : { lastNonPrimaryEncryptionAtMs }),
   };
 }
+
+function auditObservation(input: unknown): PreviousAuditObservation {
+  if (!input || typeof input !== "object") throw registryError("audit_rotation_guard_failed");
+  const value = input as Record<string, unknown>;
+  const epoch = boundedString(value.epoch, 64, "audit_rotation_guard_failed");
+  const fingerprint = boundedString(value.fingerprint, 64, "audit_rotation_guard_failed");
+  if (!/^[A-Za-z0-9._-]{1,64}$/.test(epoch) || !/^[a-f0-9]{64}$/.test(fingerprint) || !Number.isSafeInteger(value.validUntilMs) || (value.validUntilMs as number) < 0) throw registryError("audit_rotation_guard_failed");
+  return { epoch, fingerprint, validUntilMs: value.validUntilMs as number };
+}
+function isAuditRotationRecord(value: unknown): value is AuditRotationRecord { try { const record = value as AuditRotationRecord; return auditObservation(record).epoch === record.epoch && Number.isSafeInteger(record.firstSeenAtMs); } catch { return false; } }
+
+function encryptionState(value: unknown): EncryptionKeyState { if (value === "primary" || value === "old" || value === "legacy" || value === "unknown") return value; throw registryError("tenant_connection_projection_invalid"); }
+function nonPrimarySource(value: unknown): NonPrimaryEncryptionSource { if (value === "old" || value === "legacy-primary" || value === "legacy-old") return value; throw registryError("tenant_connection_projection_invalid"); }
 
 function isConnectionProjection(value: unknown): value is StoredAdminConnectionProjection {
   try {
@@ -664,7 +851,9 @@ async function readStringIndex(
   }
   if (
     !Array.isArray(value) ||
-    value.length > limit ||
+    // Legacy registries can temporarily exceed the B0 pilot cap. Keep those
+    // references operable; admission code applies `limit` only to new writes.
+    value.length > 500 ||
     value.some((entry) => typeof entry !== "string")
   ) {
     throw registryError("tenant_registry_internal_error");
