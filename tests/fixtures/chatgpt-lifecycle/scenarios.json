@@ -1,0 +1,20 @@
+{
+  "format": "pipedrive-chatgpt-profile-fixture-v1",
+  "schema_version": 1,
+  "files": [
+    { "path": "unrelated/keep.txt", "mode": "0640", "content": "preserve these bytes\n" },
+    { "path": "notes/operator.txt", "mode": "0600", "content": "unrelated profile fixture\n" },
+    { "path": ".tmp/marketplaces/keep.txt", "mode": "0600", "content": "foreign marketplace cache\n" },
+    { "path": "tmp/keep.txt", "mode": "0600", "content": "foreign temporary data\n" },
+    { "path": "plugins/cache/foreign/keep.txt", "mode": "0600", "content": "foreign cached plugin\n" }
+  ],
+  "mcp_servers": [
+    { "name": "other-mcp", "url": "https://other.example/mcp" },
+    { "name": "pipedrive-sandbox", "url": "https://other.example/mcp" },
+    { "name": "other-mcp", "url": "https://pipedrive-mcp-sandbox.pezzoslabs.com/mcp" }
+  ],
+  "diagnostic": {
+    "offline": ["DNS lookup failed", "connect timeout", "HTTP 503"],
+    "registration": "invalid_client_metadata"
+  }
+}

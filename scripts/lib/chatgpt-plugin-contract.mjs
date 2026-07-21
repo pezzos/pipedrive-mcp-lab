@@ -4,7 +4,8 @@ export const CHATGPT_PLUGIN_SLUG = "pipedrive-sandbox";
 export const CHATGPT_PLUGIN_NAME = "Pipedrive Sandbox";
 export const CHATGPT_PLUGIN_DESCRIPTION = "Private sandbox for seven controlled Pipedrive workflows. Read-only by default.";
 export const CHATGPT_MCP_URL = "https://pipedrive-mcp-sandbox.pezzoslabs.com/mcp";
-export const CHATGPT_APP_ID = "plugin_asdk_app_6a5f066a2b788191b7694a13343b6da0";
+export const CHATGPT_REMOTE_PLUGIN_ID = "plugin_asdk_app_6a5f066a2b788191b7694a13343b6da0";
+export const CHATGPT_APP_ID = "asdk_app_6a5f066a2b788191b7694a13343b6da0";
 export const CHATGPT_SKILLS = [
   "pipedrive-add-activity",
   "pipedrive-add-note",
@@ -15,7 +16,8 @@ export const CHATGPT_SKILLS = [
   "pipedrive-update-record",
 ];
 
-const appIdPattern = /^plugin_asdk_app[A-Za-z0-9_-]+$/;
+const remotePluginIdPattern = /^plugin_asdk_app_[A-Za-z0-9_-]+$/;
+const appIdPattern = /^asdk_app_[A-Za-z0-9_-]+$/;
 const forbiddenReferencePattern = /(?:placeholder|fake|todo|connector|process\.env|\benv\b)/i;
 
 export function loadChatgptPluginSource(path) {
@@ -30,6 +32,7 @@ export function validateChatgptPluginSource(source) {
     name: CHATGPT_PLUGIN_NAME,
     description: CHATGPT_PLUGIN_DESCRIPTION,
     mcp_url: CHATGPT_MCP_URL,
+    remote_plugin_id: CHATGPT_REMOTE_PLUGIN_ID,
     app_id: CHATGPT_APP_ID,
   };
   for (const [key, expected] of Object.entries(requiredStrings)) {
@@ -37,8 +40,11 @@ export function validateChatgptPluginSource(source) {
       throw new Error(`ChatGPT plugin source ${key} must equal the frozen contract`);
     }
   }
+  if (!remotePluginIdPattern.test(source.remote_plugin_id) || forbiddenReferencePattern.test(source.remote_plugin_id)) {
+    throw new Error("ChatGPT plugin source remote_plugin_id must be a real plugin_asdk_app install ID");
+  }
   if (!appIdPattern.test(source.app_id) || forbiddenReferencePattern.test(source.app_id)) {
-    throw new Error("ChatGPT plugin source app_id must be a real plugin_asdk_app resource ID");
+    throw new Error("ChatGPT plugin source app_id must be a real asdk_app resource ID");
   }
   if (source.required !== true) {
     throw new Error("ChatGPT plugin source must require the Pipedrive Sandbox app");

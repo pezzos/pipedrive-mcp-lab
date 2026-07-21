@@ -28,6 +28,28 @@ et ne crée pas la connexion OAuth Pipedrive de cet utilisateur.
 > Worker et la [recette sandbox restante](docs/REMOTE_MCP_CLOUDFLARE.md#sandbox-acceptance)
 > avant de distribuer l'un de ces parcours.
 
+## Application ChatGPT privée et preuve de cycle isolé
+
+Le package ChatGPT **Pipedrive Sandbox** contient une déclaration d'application
+requise et les sept skills; il ne contient ni connecteur MCP direct, ni secret.
+La source distingue l'identifiant d'installation distant `plugin_asdk_app...`
+de l'identifiant d'application `asdk_app...` utilisé par `.app.json`.
+
+Pour la preuve B3 locale uniquement, exécutez `npm run pack:chatgpt-lifecycle`
+puis `npm run accept:chatgpt-lifecycle`. Les profils sont jetables et restent
+sous `dist/chatgpt-lifecycle/profiles/`; la recette vérifie le cycle local de
+marketplace Codex, une déclaration d'application et sept skills, sans
+authentification ni découverte MCP.
+
+N'exécutez pas la commande de fallback direct pendant B3 : `codex mcp add
+pipedrive-sandbox --url https://pipedrive-mcp-sandbox.pezzoslabs.com/mcp` peut
+démarrer l'enregistrement dynamique du client. Le plan sans secret refuse les
+conflits de nom ou d'URL et reste bloqué jusqu'à B8 (connexion externe, DCR,
+Access, authentification, action, découverte des outils et première lecture
+sûre). `invalid_client_metadata`
+signifie que l'enregistrement n'est pas accepté : ne réessayez pas
+automatiquement et n'ajoutez aucun secret.
+
 ## Offre gratuite : skills autonomes
 
 Un compte gratuit peut importer des skills personnalisés et utiliser un

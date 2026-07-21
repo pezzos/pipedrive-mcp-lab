@@ -24,14 +24,26 @@ Pipedrive action.
 - App manifest: one required `Pipedrive Sandbox` app resource; no direct MCP
   server declaration. The remote app resource, not the package, encapsulates
   the endpoint.
+- ID boundary: `remote_plugin_id` is exactly
+  `plugin_asdk_app_6a5f066a2b788191b7694a13343b6da0`; `app_id` is exactly
+  `asdk_app_6a5f066a2b788191b7694a13343b6da0`. Only `app_id` is emitted in
+  `.app.json`; there is no lifecycle transformation between the two.
+  Derived locally from the official created-by-me remote plugin cache,
+  `.codex-remote-plugin-install.json` supplied `remote_plugin_id` and its
+  cached `.app.json` supplied `app_id`; both are resource identifiers, not
+  credentials.
+  This is a subsequent B3 prerequisite correction to the original `ce00096`
+  B2 artifact evidence, not a claim that the original artifact already had the
+  corrected two-ID model.
 
 ## Deferred external acceptance
 
 The resource reference is intentionally committed because it is an app resource
 ID, not a credential. The app is still disconnected. Endpoint/OAuth discovery
 does not prove a connection, available action, pilot installation, or tool
-success. B3 owns the connection/action lifecycle and B8 owns external
-acceptance.
+success. B3 owns only isolated local install, update, disable, enable,
+uninstall, and reinstall acceptance. B8 owns the external connection,
+authentication, action, tool discovery, and first safe read.
 
 ## Review result
 

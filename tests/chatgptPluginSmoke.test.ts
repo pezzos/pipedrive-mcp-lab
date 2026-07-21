@@ -7,6 +7,7 @@ import test from "node:test";
 import { assertSafeTextTree, walk } from "../scripts/lib/artifact-safety.mjs";
 import {
   CHATGPT_APP_ID,
+  CHATGPT_REMOTE_PLUGIN_ID,
   CHATGPT_PLUGIN_DESCRIPTION,
   CHATGPT_PLUGIN_NAME,
   CHATGPT_MCP_URL,
@@ -37,6 +38,7 @@ test("ChatGPT package is deterministic, complete, and isolated", { timeout: 180_
   assert.equal(source.name, CHATGPT_PLUGIN_NAME);
   assert.equal(source.description, CHATGPT_PLUGIN_DESCRIPTION);
   assert.equal(source.app_id, CHATGPT_APP_ID);
+  assert.equal(source.remote_plugin_id, CHATGPT_REMOTE_PLUGIN_ID);
   assert.equal(CHATGPT_MCP_URL, "https://pipedrive-mcp-sandbox.pezzoslabs.com/mcp");
   assert.equal(source.mcp_url, CHATGPT_MCP_URL);
   assert.deepEqual(source.listing.safety_labels, ["Private sandbox", "Read-only by default"]);
@@ -67,6 +69,7 @@ test("ChatGPT package is deterministic, complete, and isolated", { timeout: 180_
   assert.equal(JSON.stringify(plugin).includes("mcpServers"), false);
   assert.deepEqual(JSON.parse(readFileSync(join(pluginRoot, ".app.json"), "utf8")), expectedAppManifest(source));
   assert.equal(readFileSync(join(pluginRoot, ".app.json"), "utf8").includes(CHATGPT_APP_ID), true);
+  assert.equal(readFileSync(join(pluginRoot, ".app.json"), "utf8").includes(CHATGPT_REMOTE_PLUGIN_ID), false);
   const artifactText = files.map((file) => readFileSync(join(artifactRoot, file), "utf8")).join("\n");
   assert.equal(artifactText.includes(CHATGPT_MCP_URL), false);
   assert.equal(artifactText.includes("mcpServers"), false);

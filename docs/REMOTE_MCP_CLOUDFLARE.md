@@ -398,6 +398,9 @@ It stops future calls for that connection but does not revoke the provider
 grant. Until Pipedrive exposes a suitable revocation API for this flow,
 provider-side revocation requires manually uninstalling the application.
 
+For the four-layer ChatGPT/plugin, Worker disconnect, Access removal, and
+provider revocation distinction, see the [operator removal ladder](OPERATOR_RUNBOOK.md#chatgpt-removal-ladder).
+
 ## Primary References
 
 - [Anthropic remote MCP connectors](https://support.claude.com/en/articles/11175166-get-started-with-custom-connectors-using-remote-mcp)

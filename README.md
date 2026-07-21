@@ -48,12 +48,16 @@ Build the local private ChatGPT package:
 npm install
 npm run check
 npm run pack:chatgpt-plugin
+npm run pack:chatgpt-lifecycle
+npm run accept:chatgpt-lifecycle
 ```
 
 The output is a deterministic, local-only package under
 `dist/chatgpt-plugin/pipedrive-sandbox-0.3.4/`, with its adjacent SHA-256
 receipt. See [ChatGPT delivery](docs/CHATGPT_DELIVERY.md). This package does not
-install an app, connect OAuth, or call Pipedrive. Claude compatibility packages
+install a real ChatGPT app, connect OAuth, discover actions, or call Pipedrive.
+The lifecycle acceptance is an isolated local Codex-plugin proxy; direct MCP
+registration is deferred to B8. Claude compatibility packages
 remain available through `npm run pack:claude-delivery`; see
 [Claude delivery](docs/CLAUDE_DELIVERY.md).
 

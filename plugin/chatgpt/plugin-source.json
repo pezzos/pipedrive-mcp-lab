@@ -2,7 +2,8 @@
   "name": "Pipedrive Sandbox",
   "description": "Private sandbox for seven controlled Pipedrive workflows. Read-only by default.",
   "mcp_url": "https://pipedrive-mcp-sandbox.pezzoslabs.com/mcp",
-  "app_id": "plugin_asdk_app_6a5f066a2b788191b7694a13343b6da0",
+  "remote_plugin_id": "plugin_asdk_app_6a5f066a2b788191b7694a13343b6da0",
+  "app_id": "asdk_app_6a5f066a2b788191b7694a13343b6da0",
   "required": true,
   "listing": {
     "private": true,

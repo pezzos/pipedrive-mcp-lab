@@ -164,6 +164,16 @@ encrypted local tokens. They do not uninstall the Pipedrive application or
 revoke its provider grant. Provider-side revocation remains a separate manual,
 destructive action.
 
+## ChatGPT removal ladder
+
+Treat these as four separate layers, in order: (1) uninstall the private
+ChatGPT plugin/app from the client profile; (2) use `/pipedrive` self-disconnect
+or the selected admin force-disconnect to remove that user's Worker-held grant;
+(3) remove the user or group from the Cloudflare Access Allow policy; (4) revoke
+or uninstall the provider-side Pipedrive grant manually. No layer implies that
+the next was performed. B3 validates only local isolated plugin cleanup; the
+real ChatGPT/Access/provider layers remain B8 gates.
+
 ### Moving from sandbox to the intended company
 
 Before attempting the connection, verify that the OAuth application can be

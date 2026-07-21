@@ -44,6 +44,23 @@ state. Installation is private to named pilot workspaces/users and remains a B3
 package alone. Do not install a second manual Pipedrive MCP connector alongside
 the managed ChatGPT app.
 
+### Isolated lifecycle evidence (operators)
+
+For local B3 evidence only, run `npm run pack:chatgpt-lifecycle` then
+`npm run accept:chatgpt-lifecycle`. The harness creates disposable profiles
+only under `dist/chatgpt-lifecycle/profiles/` and exercises local Codex plugin
+marketplace install/update/disable/enable/uninstall/reinstall. It verifies the
+required app declaration and seven skills, not an authenticated connector.
+
+Do not run the planned direct fallback command during B3: `codex mcp add
+pipedrive-sandbox --url https://pipedrive-mcp-sandbox.pezzoslabs.com/mcp`.
+It can initiate dynamic client registration. The plan has no bearer token,
+refuses same-name or same-URL conflicts, and is held for B8 together with the
+external connection, DCR, Access, authentication, action, tool discovery, and
+the first safe read. An
+`invalid_client_metadata` result is registration-unaccepted, not an offline
+reason to retry or add secrets.
+
 ## Claude Free: standalone skills
 
 Free accounts can upload custom skills and use one custom remote connector.
