@@ -42,7 +42,7 @@ Remediation verification: targeted audit, parser, and AJV-equivalence tests pass
 ## Live/external checks: NOT RUN / UNPROVEN
 
 - Cloudflare Logpush delivery.
-- Dedicated R2 durability, queryability, 90-day retention, and legal-hold behavior.
+- Dedicated sandbox R2 durability, queryability, 30-day retention, and legal-hold behavior.
 - Alert email receipt and acknowledgement.
 - Live sandbox trace query.
 - Live billing signals.
@@ -51,7 +51,7 @@ Remediation verification: targeted audit, parser, and AJV-equivalence tests pass
 
 D08 is designated-not-activated: Davy Guittard of Keilintech still requires notification, acceptance, least-privilege access provisioning, and recovery validation. Exact `SW` authorization/configuration remains a live gate. B7 remains `in_progress`; no external effects are claimed. Privacy and legal drafts are **NON-FINAL** pending post-B9/pre-B10 finalization.
 
-The sandbox exception receipt is not yet recorded and exact `SW` is unrun/unproven; this remains local evidence only.
+The sandbox policy is accepted as a dedicated R2 bucket, 30-day retention, pipeline-only writes, and Alexandre-only reads. The sandbox exception receipt is not yet recorded and exact `SW` is unrun/unproven; this remains local evidence only and creates no bucket or live configuration.
 
 When recorded, the sandbox receipt must be revalidated within 30 days of its review date. Its incident ledger receipt is the immutable, monotone anchor for containment, closure, and renewed authority; verification must follow the ledger chain rather than infer a cleared incident from current flags.
 

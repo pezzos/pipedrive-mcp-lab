@@ -725,7 +725,7 @@ unowned operations.
 ### Entry
 
 - Local implementation may proceed under `L1`.
-- Before B7 sandbox action, the one-customer unpaid informed pilot receipt, separate sandbox/safe data scope, five stop triggers, and exact `SW` are recorded; this exception waives only active D08 and never production or legal authority.
+- Before B7 sandbox action, the one-customer unpaid informed pilot receipt, dedicated sandbox R2 policy (30-day retention, Alexandre-only reads), safe data scope, five stop triggers, and exact `SW` are recorded; this exception waives only active D08 and never production or legal authority.
 
 ### Sol assignment
 

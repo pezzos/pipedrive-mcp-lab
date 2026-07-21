@@ -35,6 +35,6 @@ Any production export requires a dedicated R2 bucket with 90d retention, pipelin
 
 Only B7/B8 may use the separate named sandbox before D08 completion, after a recorded unpaid informed-testing receipt, safe expected records, Alexandre-only reads/alerts, and exact authority. Customer billing, additional-customer access, real production data or traffic, public availability, or security incident stops that exception; a security incident requires closure and fresh authority. B9/B10, production, billing, and expansion remain completed-D08 gated. This creates no live durability, routing, or current-effect claim.
 
-Sandbox bucket, retention, and read access remain placeholders. Use a separate bucket recommendation rather than treating sandbox and production as a shared durable boundary.
+Sandbox export uses its own dedicated R2 bucket, separate from production, with 30-day retention, pipeline-only writes, controlled immutability/expiry/legal hold, and Alexandre-only reads. This accepted sandbox policy does not provision the bucket or authorize live configuration by itself; exact `SW` remains required.
 
 Privacy/legal text is final only after B9 and before B10. Until the gates and live configuration are accepted, this document explicitly makes no live durability/routing claim.
