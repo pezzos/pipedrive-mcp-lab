@@ -1,0 +1,103 @@
+{
+  "schema": "b7-live-deployment-remediation-receipt",
+  "version": 1,
+  "status": "partial",
+  "block": "B7",
+  "hash_algorithm": "sha256",
+  "live_claims": true,
+  "environment": "sandbox",
+  "authority": {
+    "current_session_source": "explicit_user_authorization_for_SW_and_DW",
+    "authorized_actions": [
+      "credential_rotation",
+      "isolated_deploy",
+      "alert_test",
+      "rollback_cleanup"
+    ],
+    "prior_SW_receipt_hash": "355a0cb047a7c686027a7f1383bfa98598fbb6d6debedf73c59f6cbe43880c46",
+    "chat_authority_receipt_hash": "not_invented_current_session_source_only",
+    "DW_cleanup": "authorized_current_session_not_performed"
+  },
+  "failed_deployments": [
+    {
+      "occurred_at": "2026-07-21T20:30:14.199Z",
+      "scope": "isolated_cron_only_no_route_public_url_pipedrive_or_secrets",
+      "version_hash": "e787286bd4b19ea911caf286ddc591b643be5784280917286343a2684c75266e",
+      "event_hash": "e832db0ccd876e75086cf9491d8cc0c1db82c8ea54469d28b242ae71d26fb932",
+      "outcome_binding_hash": "3f9dbde4b1eaaf450aa74d980e3423b6093969c5e2bd5ceec52a878b799c4fc3",
+      "result": "config_validation_failure_all_metadata_unknown"
+    },
+    {
+      "occurred_at": "2026-07-21T20:45:14.082Z",
+      "scope": "isolated_cron_only_exact_candidate_tag_and_epoch",
+      "version_hash": "6aaa8c11c27392bd595a120ed02e2d2a7f84954399d0fc012170eb2db143b416",
+      "event_hash": "252a52e78b85bf7fd8f581feffdf16f68e40a78caad438d1315cf03436ee582b",
+      "outcome_hash": "f5ac64aa5551720b3c0156a5fdc8f515979ffce7d84c19be1709a86fe6d58d0f",
+      "result": "config_validation_failure_epoch_proven_version_metadata_atomically_unknown"
+    }
+  ],
+  "root_cause": "Cloudflare real version timestamp carried 6 fractional digits while runtime accepted only canonical 3",
+  "remediation": {
+    "commit": "b99479c1043a9611de69304c8063f9f0fb8e68bc",
+    "review": ["Sol_PASS", "compliance_PASS"],
+    "focused_tests": "44_of_44_passed",
+    "validators_and_dry_runs": "passed",
+    "full_check": "unavailable_ENOSPC_prior_attempt_220_tests_before_artifact_failures",
+    "claude_review": "not_used"
+  },
+  "successful_deployment": {
+    "source": "clean_exact_Git_archive_of_remediation_commit",
+    "target": "same_exact_isolated_sandbox_target",
+    "candidate_tag": "b99479c1043a9611de69304c8063f9f0fb8e68bc",
+    "deployment_controls": {
+      "public_origin": "reserved_inert_invalid_origin",
+      "DEPLOY_ENVIRONMENT": "sandbox",
+      "AUDIT_HMAC_EPOCH": "2026-Q3",
+      "keep_vars": false,
+      "secrets": false,
+      "routes": false,
+      "public_url": false,
+      "pipedrive": false,
+      "production": false
+    },
+    "live_version_hash": "bccbba95cddaf784662ce35bd37ad34d1ea97da2df90763713ca18aac16fb499",
+    "event_hash": "ef93075c278d834a995de2b4a08138d7555be6c11624bf136e428729e8757a53",
+    "candidate_hash": "f6feec51ffdc27578efc7945b69775e7d62528cc8fa91bb439e44323e78eaa0d",
+    "candidate_binding_hash": "5743f0950dbeebe9167d7952c4a53f778e5444cf690f2d3e334ce69b6305639c"
+  },
+  "successful_cron": {
+    "occurred_at": "2026-07-21T21:00:05.468Z",
+    "event_type": "audit.export.heartbeat",
+    "environment": "sandbox",
+    "worker_identity": "verified_redacted",
+    "version_tag": "exact_candidate_tag_verified",
+    "uploaded_on": "real_timestamp_normalized_verified",
+    "audit_epoch": "2026-Q3",
+    "outcome": "success",
+    "http_status": 200,
+    "freshness_seconds": 0,
+    "unknown": false,
+    "validation_failure": false,
+    "platform_outcome": "ok_no_exceptions",
+    "outcome_hash": "c785de86fa21c29f362672a0d36b773530210843848681a1819a1bd6d29886a8"
+  },
+  "proven": [
+    "isolated_worker_exists",
+    "source_heartbeat_emission_valid",
+    "deployment_provenance_binding_verified",
+    "no_pipedrive_public_or_production_effect"
+  ],
+  "unproven": [
+    "Logpush_R2_object_delivery_immutability_query",
+    "alert_receipt_and_ack",
+    "credential_rotation_and_old_token_revocation",
+    "DW_rollback_not_performed",
+    "full_check_ENOSPC",
+    "B7_sandbox_actions_beyond_synthetic_heartbeat",
+    "browser_control_unavailable",
+    "API_read_auth_403_no_mutation"
+  ],
+  "historical_context": "earlier_worker_absent_state_is_superseded_not_erased",
+  "residual_risk": "token_outlives_SW_until_authorized_DW_cleanup_is_performed",
+  "receipt_hash": "b9761421970bb7d448bd99e0d58c34c2e989fad7b36beddccba2d36ad01301a2"
+}

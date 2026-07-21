@@ -4,7 +4,7 @@ Date: 2026-07-21 (Europe/Paris)
 
 Status: `in_progress`
 
-Scope: this document records deterministic local verification. The separate hash-verified live-configuration receipt records limited Cloudflare sandbox configuration and destination validation; it does not establish B7 completion.
+Scope: this document records deterministic local verification. The separate hash-verified live-configuration and live-deployment-remediation receipts record limited Cloudflare sandbox configuration, an isolated synthetic heartbeat, and destination validation; they do not establish B7 completion.
 
 ## Receipt hashes
 
@@ -42,14 +42,15 @@ Remediation verification: targeted audit, parser, and AJV-equivalence tests pass
 ## Live/external configuration: partial / remaining proof unproven
 
 - Proven configuration: dedicated sandbox R2 with 30-day lifecycle and lock, pipeline-only filtered Logpush job, destination-validation write connectivity, and Alexandre-only alert configuration.
+- The prior Worker-absent state is historical and superseded, not erased. A clean exact archive of remediation commit `b99479c1043a9611de69304c8063f9f0fb8e68bc` now proves an isolated sandbox Worker and exactly one successful synthetic `audit.export.heartbeat`, with no Pipedrive, public, route, or production effect. The current-session SW+DW authorization is recorded only as current-session authority; no chat-authority hash was invented, and DW cleanup remains unperformed.
 - Actual Worker trace delivery, immutable export receipt, queryability, and 30-day lifecycle/lock behavior under real audit data remain unproven.
 - Alert email receipt and acknowledgement.
 - Live sandbox trace query.
-- Hard cost enforcement; the observed USD warning and zero billable usage are not enforcement proof.
+- Hard cost enforcement; the observed USD warning and zero billable usage are not enforcement proof. Browser control was unavailable and the API read returned auth 403; neither caused a mutation.
 
 ## Gates and boundaries
 
-D08 is designated-not-activated: Davy Guittard of Keilintech still requires notification, acceptance, least-privilege access provisioning, and recovery validation. Exact `SW` authorization is recorded in the expurgated, hash-verified `B7-sw-authority.json` receipt, issued 2026-07-21 and expiring 2026-07-22 at 23:59 Europe/Paris. The hash-verified `B7-live-configuration.json` records partial Cloudflare sandbox configuration: dedicated locked 30-day R2, pipeline-only Logpush configuration, destination-write connectivity, and Alexandre-only email alert configuration. It does not prove Worker trace delivery, an immutable export receipt, queryability, or alert acknowledgement. The intended sandbox Worker is absent; exact separate deployment authority is required and the filter was not broadened. B7 remains `in_progress`; legal/privacy drafts are **NON-FINAL**.
+D08 is designated-not-activated: Davy Guittard of Keilintech still requires notification, acceptance, least-privilege access provisioning, and recovery validation. Exact `SW` authorization is recorded in the expurgated, hash-verified `B7-sw-authority.json` receipt, issued 2026-07-21 and expiring 2026-07-22 at 23:59 Europe/Paris. The hash-verified `B7-live-configuration.json` records partial Cloudflare sandbox configuration: dedicated locked 30-day R2, pipeline-only Logpush configuration, destination-write connectivity, and Alexandre-only email alert configuration. The hash-verified `B7-live-deployment-remediation.json` records the later isolated Worker heartbeat remediation; it supersedes the earlier Worker-absent narrative without proving trace delivery, immutable export, queryability, or alert acknowledgement. B7 remains `in_progress`; legal/privacy drafts are **NON-FINAL**.
 
 The sandbox policy is accepted as a dedicated R2 bucket, 30-day retention, pipeline-only writes, and Alexandre-only reads. The expurgated, hash-verified `B7-pilot-exception.json` records an operator-owned self-pilot acceptance for Alexandre's own Pipedrive account. For B7 it permits synthetic audit records only, no Pipedrive access, no external-party access, no charge, and no SLA/24×7. The five stop triggers remain active. This receipt creates no bucket or live configuration by itself.
 
@@ -57,4 +58,4 @@ When recorded, the sandbox receipt must be revalidated within 30 days of its rev
 
 Read-only gate verification uses `node scripts/validate-audit-operations.mjs --evidence <path> --block B7 --as-of <ISO> --prior-incident-head <hash> --prior-incident-ever-triggered false --expected-candidate-binding <hash>`; use `--customer-effect true|false` for B8 only. The prior head must come from the last verified immutable receipt, and the expected candidate binding must come from the independently accepted candidate receipt, never from the candidate evidence packet.
 
-The current exact `SW` expires at `2026-07-22T21:59:00.000Z`. After that point, Logpush use, configuration mutation, and testing are prohibited without fresh exact SW, except the already-authorized expiry rollback. That rollback is limited to disabling Logpush and alerts, retaining objects to their expiry, and no destructive delete. The token outlives SW through observed date 2026-08-20: renewal is prohibited without fresh exact token and SW authority; revocation is not authorized, will not happen automatically, and remains a residual risk requiring separate exact `DW` authority. B7 progression remains blocked on exact sandbox deployment authority, exact `DW` authority for token cleanup, then trace delivery, immutable receipt, queryability, and alert-ack proof work.
+The current exact `SW` expires at `2026-07-22T21:59:00.000Z`. After that point, Logpush use, configuration mutation, and testing are prohibited without fresh exact SW, except the already-authorized expiry rollback. That rollback is limited to disabling Logpush and alerts, retaining objects to their expiry, and no destructive delete. The token outlives SW through observed date 2026-08-20: renewal is prohibited without fresh exact token and SW authority. The earlier live-configuration receipt correctly records that revocation was not authorized at its observation time; the current session now authorizes exact `DW` cleanup, including old-token revocation, but that cleanup has not yet been performed. The isolated Worker deployment does not discharge those gates: B7 progression remains blocked on execution of the authorized DW token cleanup, then trace delivery, immutable receipt, queryability, and alert-ack proof work.
