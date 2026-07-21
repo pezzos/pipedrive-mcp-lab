@@ -2,6 +2,8 @@
 
 Support is best effort, owned by **Alexandre**, the sole current owner and alert recipient; Davy Guittard of Keilintech is designated future D08 backup, not informed or accepted, with no access or validated recovery. There is no 24x7 coverage and no contractual SLA. Email alert routing is a placeholder and is not configured; this runbook makes no claim that any live alert or support action occurred.
 
+Only receipt-backed, exact-authority B7/B8 work may use the separate sandbox before D08 activation. Billing, additional-customer access, real production data or traffic, public availability, or a suspected/confirmed security, tenancy, access, or integrity incident terminates the exception; containment, closure, and fresh explicit authority are required before resumption. B9/B10, production, billing, and expansion remain completed-D08 gated.
+
 ## Intake and safe data boundary
 
 Open a redacted ticket with the requester, approved contact channel, reported time, severity, pseudonymous request/event ID, tenant pseudonymous ID, deployment version, route name, status/error code, and bounded timestamp range. These are the only identifiers safe to request.

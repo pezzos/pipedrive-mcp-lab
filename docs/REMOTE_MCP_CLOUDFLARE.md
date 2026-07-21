@@ -131,7 +131,8 @@ change.
   can be additive orchestration/discovery only, never shared CRM credentials,
   OAuth clients, registries, policies, keys, or migration state without a new
   ADR/program rebaseline.
-- Alexandre is the sole temporary production administrator. Davy Guittard of Keilintech is designated-not-activated and may receive access only at separately authorized production activation; B7--B10 live work remains blocked until notification, acceptance, least-privilege access, and recovery validation.
+- Alexandre is the sole temporary production administrator. Davy Guittard of Keilintech is designated-not-activated and may receive access only at separately authorized production activation; B9/B10 and any production, billing, or expansion work require notification, acceptance, least-privilege access, and recovery validation.
+- Only B7/B8 separate-sandbox work may proceed before active D08 after a redacted unpaid informed-testing receipt and exact authority. Billing, additional-customer access, real production data or traffic, public availability, or a suspected/confirmed security, tenancy, access, or integrity incident immediately terminates it; the latter requires containment, closure, and fresh explicit authority, not acknowledgement alone. B9/B10, production, billing, and expansion remain completed-D08 gated.
 - Production audit uses Cloudflare Logpush to a dedicated production R2 bucket:
   90-day retention, pipeline-only writes, Alexandre-only reads while D08 remains designated-not-activated, controlled immutability/versioning, automatic expiry deletion, and a
   documented legal hold. Critical alerts email Alexandre only; there is no

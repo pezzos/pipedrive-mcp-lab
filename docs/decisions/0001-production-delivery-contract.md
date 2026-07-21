@@ -55,7 +55,7 @@ operate those concerns.
 1. Alexandre is the sole temporary production administrator and owns support,
    incident command, and offboarding for the named pilot. This is an accepted
    concentration risk, not a TBD.
-2. **Hard gate:** Davy Guittard of Keilintech is the designated future backup, not informed or accepted, with no access and unvalidated recovery. Access may be provisioned only during separately authorized production activation. No B7, B8, B9, or B10 live, credentialed operation or rollout may proceed until notification, acceptance, least-privilege access, and recovery validation are recorded. The gate does not prohibit permitted local implementation.
+2. **Narrow sandbox exception:** Davy Guittard of Keilintech remains the designated future backup, not informed or accepted, with no access or validated recovery. Only B7 live audit/operations validation and B8 acceptance work may proceed in the separate named sandbox for Pezzos Labs and one existing authorized pilot customer, after a redacted receipt records development/in-progress disclosure, testing acceptance, no charge, and exact action authority. It waives only the active-backup prerequisite; Alexandre remains the sole current administrator, audit reader, support/incident/offboarding owner, and alert recipient, with no 24/7 or SLA. Customer billing, additional-customer access, real production data or traffic, public availability, or a suspected or confirmed security/tenancy/access/integrity incident immediately stops the exception; a security incident requires containment and closure plus fresh explicit authority before sandbox resumption. B9/B10, production endpoints or credentials, production data or traffic, billing, and expansion remain hard-gated until D08 notification, acceptance, least-privilege production access, and recovery validation are recorded. Pilot acknowledgement is not consent, legal basis, DPA, privacy approval, production authorization, or blanket customer-effect authority.
 3. Cloudflare Logpush exports production audit events to a dedicated production
    R2 bucket. Audit retention is 90 days with pipeline-only writes,
    Alexandre-only reads while D08 is designated-not-activated, controlled
@@ -122,6 +122,5 @@ date, next review gate, and trigger per decision.
 
 - Later blocks must implement and verify these decisions; this ADR is not
   evidence that any external resource or acceptance test exists.
-- The designated-but-inactive D08 backup gate prevents B7--B10 live execution, even though the
-  decisions are complete enough for local B0 documentation work.
+- The designated-but-inactive D08 gate is waived only for the receipt-backed B7/B8 separate-sandbox exception; it remains a hard gate for B9/B10, production, billing, and expansion.
 - Private distribution and bounded scope avoid a public-availability claim.

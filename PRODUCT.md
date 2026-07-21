@@ -49,6 +49,8 @@ budgets, canary, and singleton-purge constraints are defined by
 They do not assert that an external installation, publication, or production
 resource already exists.
 
+Before D08 activation, a narrow exception permits only B7/B8 work in the separate named sandbox for Pezzos Labs and the one existing authorized pilot customer after a redacted receipt records development/in-progress disclosure, testing acceptance, and no charge. Exact SW, SR, and CW remain required where applicable; tenant isolation, safe expected sandbox data, audit/redaction, rollback, and read-only defaults remain mandatory. Customer billing, additional-customer access, real production data or traffic, public availability, or a security incident stops the exception. It never covers B9/B10, production, billing, or expansion, which require completed D08. Pilot acknowledgement is not legal basis, DPA, privacy approval, production authorization, or blanket customer-effect authority.
+
 ## Problem
 
 The original Worker authenticated every Claude user independently through
@@ -546,8 +548,7 @@ Before production promotion, the operator must separately approve and verify:
 
 - Pipedrive private app distribution status and callback;
 - Cloudflare migration and rollback plan;
-- named-pilot Access membership, Alexandre's temporary administration, and the
-  Davy Guittard of Keilintech as designated future D08 backup, with notification, acceptance, least-privilege access provisioning only at separately authorized production activation, and recovery validation still required;
+- named-pilot Access membership, Alexandre's temporary administration, and completed D08: Davy Guittard of Keilintech informed and accepted, with separately authorized least-privilege production access and recorded recovery validation;
 - durable Logpush-to-R2 audit export, 90-day retention, controlled access,
   email alerting, and the B0 cost caps;
 - the concrete Alexandre/Romain isolation acceptance sequence.

@@ -2,6 +2,8 @@
 
 Accepted D09 assigns owner **Alexandre**. Davy Guittard of Keilintech is D08 designated-not-activated; second-person verification is blocked until notification, acceptance, least-privilege access provisioning, and recovery validation. This is a preparation runbook, not a claim that any live action occurred.
 
+The B7/B8 sandbox exception creates no second-person coverage. Under accepted risk, Alexandre may perform only separately authorized sandbox containment/offboarding; production, billing, and expansion remain completed-D08 gated.
+
 ## Trigger and authorization
 
 Record operator or customer offboarding variant, authorized requester, scope, freeze authority, tenant/customer boundary, legal-hold conflict, and approved deletion/return authority.

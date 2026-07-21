@@ -1,6 +1,8 @@
 # Incident response runbook
 
-**NON-FINAL; no live claim, 24x7 commitment, or SLA.** Alexandre is the sole current primary and recipient. Davy Guittard of Keilintech is designated future D08 backup, not informed or accepted, with no access or validated recovery; it remains the hard gate. Customer, regulator, legal, and escalation contacts require approved placeholders.
+**NON-FINAL; no live claim, 24x7 commitment, or SLA.** Alexandre is the sole current primary and recipient. Davy Guittard of Keilintech is designated future D08 backup, not informed or accepted, with no access or validated recovery; B9/B10 and any production, billing, or expansion remain hard-gated. Customer, regulator, legal, and escalation contacts require approved placeholders.
+
+The receipt-backed B7/B8 separate-sandbox exception does not create second-person coverage. Billing, additional-customer access, real production data or traffic, public availability, or a suspected/confirmed security, tenancy, access, or integrity incident immediately terminates it. Containment, closure, and fresh explicit authority are required before sandbox resumption; acknowledgement alone is insufficient. B9/B10, production, billing, and expansion remain completed-D08 gated.
 
 ## Scope, severity, and intake
 

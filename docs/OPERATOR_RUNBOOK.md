@@ -13,7 +13,9 @@ Existing Claude delivery is compatibility-only and does not establish a new
 customer surface or acceptance promise.
 
 Alexandre is the sole temporary production administrator and owner of support,
-incident command, and offboarding. Davy Guittard of Keilintech is designated-not-activated: not informed, not accepted, with no access or validated recovery. No B7--B10 live, credentialed operation or rollout may begin until notification, acceptance, least-privilege access provisioning, and recovery validation are recorded.
+incident command, and offboarding. Davy Guittard of Keilintech is designated-not-activated: not informed, not accepted, with no access or validated recovery. B9/B10 and any production, billing, or expansion work require notification, acceptance, least-privilege access provisioning, and recovery validation.
+
+The sole pre-D08 exception is B7/B8 work in the separate named sandbox after a recorded unpaid informed-testing receipt, safe expected records, Alexandre-only reads/alerts, and exact authority. Billing, additional-customer access, real production data or traffic, public availability, or security incident stops it; a security incident needs closure and fresh authority. B9/B10, production, billing, and expansion remain completed-D08 gated.
 
 Production audit is specified as Cloudflare Logpush to a dedicated production
 R2 bucket with 90-day retention, pipeline-only writes, controlled

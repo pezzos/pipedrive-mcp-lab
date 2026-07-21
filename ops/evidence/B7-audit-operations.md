@@ -50,3 +50,9 @@ Remediation verification: targeted audit, parser, and AJV-equivalence tests pass
 ## Gates and boundaries
 
 D08 is designated-not-activated: Davy Guittard of Keilintech still requires notification, acceptance, least-privilege access provisioning, and recovery validation. Exact `SW` authorization/configuration remains a live gate. B7 remains `in_progress`; no external effects are claimed. Privacy and legal drafts are **NON-FINAL** pending post-B9/pre-B10 finalization.
+
+The sandbox exception receipt is not yet recorded and exact `SW` is unrun/unproven; this remains local evidence only.
+
+When recorded, the sandbox receipt must be revalidated within 30 days of its review date. Its incident ledger receipt is the immutable, monotone anchor for containment, closure, and renewed authority; verification must follow the ledger chain rather than infer a cleared incident from current flags.
+
+Read-only gate verification uses `node scripts/validate-audit-operations.mjs --evidence <path> --block B7 --as-of <ISO> --prior-incident-head <hash> --prior-incident-ever-triggered false`; use `--customer-effect true|false` for B8 only. The prior head must come from the last verified immutable receipt, never from the candidate evidence packet.

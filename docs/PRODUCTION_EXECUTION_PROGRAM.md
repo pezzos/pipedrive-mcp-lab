@@ -267,17 +267,17 @@ Allowed states are `not_started`, `planning`, `blocked_user`, `in_progress`,
 
 | Block | State | Commit or evidence | External gate |
 | --- | --- | --- | --- |
-| B0 Decisions and contract | completed | ADR-0001 + structured record; full local gate 2026-07-20: `WRANGLER_SEND_METRICS=false npm run check` 115/115, benchmark p95 3.295ms <20ms, `npm pack --dry-run`, `git diff --check`; original Sol PASS; compliance-legal PASS | D08 backup prerequisite remains for B7--B10 live/credentialed work |
+| B0 Decisions and contract | completed | ADR-0001 + structured record; full local gate 2026-07-20: `WRANGLER_SEND_METRICS=false npm run check` 115/115, benchmark p95 3.295ms <20ms, `npm pack --dry-run`, `git diff --check`; original Sol PASS; compliance-legal PASS | B7/B8 sandbox-only risk exception; completed D08 before B9/B10, billing, or additional customer |
 | B1 V1 baseline | completed | Candidate `9de8d0c69daeb6cd4a882d66a8e231eacf7f314b`; [B1 baseline evidence](../evidence/B1-v1-baseline.md): 118/118 local check, benchmark p95 3.34ms <20ms, 21-file pack exclusions, offline cache audit 0 (non-fresh), original Sol PASS, security-specialist PASS | Push/PR excluded; sandbox/live acceptance remains B8 |
 | B2 ChatGPT app and workflows | completed | [B2 evidence](../evidence/B2-chatgpt-plugin.md): 19/19 focused, 124/124 full check, benchmark p95 3.383ms <20ms, dry-run pack, offline cache-backed audit 0; workflow-specialist findings remediated; original Sol final PASS. B3 local lifecycle is completed; real-surface installation/assignment, OAuth/authentication, tool discovery/actions, and first safe read remain deferred to B8. | None for local package |
 | B3 ChatGPT lifecycle | completed | [B3 evidence](../evidence/B3-chatgpt-lifecycle.md): isolated receipt-bound marketplace lifecycle, 11-case acceptance, 21/21 focused and 126/126 full checks, p95 3.505ms <20ms, 0.3.4 22-file dry-run pack, cache-backed/non-fresh offline audit 0, `git diff --check`, workflow-tester final PASS, and original Sol final PASS after remediation. | Real ChatGPT/Access acceptance deferred to B8 |
 | B4 Impeccable UX/UI | completed | [B4 UI evidence](../evidence/B4-impeccable-ui.md): approved A1/B1 briefs and user-approved image skip; actual local server renderers, recovery and trusted ticket projection; 130/130 full local check, 26/26 browser matrix, p95 3.384ms <20ms, 22-file dry-run pack, high-level audit pass with one low transitive `body-parser` finding, `git diff --check`, accessibility-tester final PASS, original Sol final PASS, no Claude. | None for local UI; live UI/OAuth remains B8 |
 | B5 Production topology | completed | [B5 topology evidence](../evidence/B5-production-topology.md): 14/14 focused, 144/144 full check, sandbox/production dry-runs, p95 3.562ms <20ms, 22-file dry-run pack, offline high audit 0, original Sol PASS, devops-automator PASS; production client metadata remains intentionally missing and blocks production preparation. | Protected deploy remains separately authorized; remote reservation excluded |
 | B6 Security and rotation | completed | [B6 security and rotation evidence](../evidence/B6-security-rotation.md): local-only B6 gate 126/126, later proof 54/54, final canonical check 179/179; original Sol and security-specialist PASS | Secret/MFA drill excluded |
-| B7 Audit and operations | in_progress | [B7 local evidence](../ops/evidence/B7-audit-operations.md): local preparation complete; live durability unproven | D08 backup prerequisite plus exact `SW` Logpush/R2/alert-routing live proof |
-| B8 Sandbox acceptance | not_started |  | D08 backup prerequisite plus `SR` and `SW` |
-| B9 Personal production canary | not_started |  | D08 backup prerequisite plus `PW` |
-| B10 Publish and first customer | not_started |  | D08 backup prerequisite plus `DW`, `PW`, and `CW` |
+| B7 Audit and operations | in_progress | [B7 local evidence](../ops/evidence/B7-audit-operations.md): local preparation complete; live durability unproven | Recorded pilot exception receipt plus exact `SW` Logpush/R2/alert-routing proof |
+| B8 Sandbox acceptance | not_started |  | B7 complete, recorded pilot exception receipt, exact `SR`/`SW`/`CW` where applicable |
+| B9 Personal production canary | not_started |  | Completed D08 plus `PW` |
+| B10 Publish and first customer | not_started |  | Completed D08 plus `DW`/`PW`/`CW` |
 | B11 Stabilize and close V1 | not_started |  | Verifies prior singleton-purge evidence only |
 | B12 V1.1 diagnostic | not_started |  | Publication deferred |
 | B13 V1.1 write safety | not_started |  | Real write tests deferred |
@@ -338,7 +338,7 @@ and [`decisions/B0-production-decisions.json`](decisions/B0-production-decisions
 ### Exit
 
 Every critical decision has a value, owner, evidence, ISO last-reviewed date,
-next review gate, and revisit trigger. No `TBD` remains on the B1 through B10 path. D08 is designated-not-activated: Davy Guittard of Keilintech is not informed, accepted, provisioned, or recovery-validated. Access is production-activation-only; Alexandre-only audit reads and alert routing remain until completion. This is a hard B7--B10 live gate, not an unresolved decision.
+next review gate, and revisit trigger. No `TBD` remains on the B1 through B10 path. D08 is designated-not-activated: access is production-activation-only and Alexandre-only audit reads and alert routing remain until completion. A narrow recorded-receipt, one-customer unpaid informed sandbox exception applies only to B7/B8 with exact authority and stops on billing, additional access, production data/traffic, public availability, or security incident; it never applies to B9/B10.
 
 ### Stop
 
@@ -725,9 +725,7 @@ unowned operations.
 ### Entry
 
 - Local implementation may proceed under `L1`.
-- Before any live, credentialed B7 action, a distinct named backup operator is
-  accepted and their access and recovery path are validated (D08). Ordinary
-  `SR` or `SW` authority does not bypass this prerequisite.
+- Before B7 sandbox action, the one-customer unpaid informed pilot receipt, separate sandbox/safe data scope, five stop triggers, and exact `SW` are recorded; this exception waives only active D08 and never production or legal authority.
 
 ### Sol assignment
 
@@ -807,9 +805,7 @@ users and two distinct Pipedrive companies.
 ### Entry
 
 - B1 through B7 complete;
-- before any live, credentialed B8 action, a distinct named backup operator is
-  accepted and their access and recovery path are validated (D08); `SR` and
-  `SW` authority does not bypass this prerequisite;
+- before B8 sandbox action, B7 is complete and the one-customer unpaid informed pilot receipt, stop triggers, and exact `SR`/`SW`/`CW` where applicable are recorded; `CW` remains required for customer-scoped external effects;
 - Pipedrive application installable in two distinct non-production companies;
 - two named test identities;
 - safe expected records;
@@ -881,8 +877,7 @@ any customer is admitted.
 ### Entry
 
 - B8 complete;
-- a distinct named backup operator is accepted and their access and recovery
-  path are validated (D08); `PW` authority does not bypass this prerequisite;
+- the sandbox exception does not apply: completed D08 is required; `PW` authority does not bypass this prerequisite;
 - go-live packet accepted;
 - a controlled canary authorization/evidence packet accepts the exact opaque
   IDs for a dedicated synthetic organization, person, deal, and activity. The
@@ -946,9 +941,7 @@ customer-specific Worker, token, or code fork.
 ### Entry
 
 - B9 complete;
-- a distinct named backup operator is accepted and their access and recovery
-  path are validated (D08); `DW`, `PW`, or `CW` authority does not bypass this
-  prerequisite;
+- the sandbox exception does not apply: completed D08 is required; `DW`, `PW`, or `CW` authority does not bypass this prerequisite;
 - an operator checklist/evidence reference records the completed review of
   Alexandre's support, incident-command, and offboarding concentration risk;
 - after B9, the final privacy notice, DPA, subprocessor list, DSAR workflow,
