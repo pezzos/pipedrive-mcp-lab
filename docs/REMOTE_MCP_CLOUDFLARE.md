@@ -229,6 +229,53 @@ groups are all-or-none: encryption is `PIPEDRIVE_OAUTH_OLD_ENCRYPTION_KID` +
 `ACCESS_PREVIOUS_VALID_UNTIL`. No secret value belongs
 in release records, workflow output, logs, or evidence.
 
+### Isolated B7 audit-only sandbox remediation
+
+This is not the normal sandbox release procedure. It is the narrow B7
+audit-metadata remediation and may run only from an exact, clean candidate
+checkout. An operator supplies `<approved-full-sha>` as the full, independently
+accepted candidate SHA; the checks below refuse a dirty checkout or a different
+commit before the deploy command can use that tag. An exported candidate is
+eligible only when its material is independently verified as that same clean
+candidate; use the checkout procedure below for the deploy itself.
+
+Cloudflare supplies the real version ID and upload timestamp through
+`VERSION_METADATA`; its timestamp may carry uppercase-UTC fractional precision
+from 3 through 9 digits. Audit v3 emits canonical UTC with exactly three
+fractional digits by truncating accepted metadata precision; do not fabricate a
+local fallback for either value. `--message` is descriptive only and never sets
+the version tag.
+
+The isolated command supplies only these exact non-secret variables:
+`DEPLOY_ENVIRONMENT:sandbox`,
+`PUBLIC_ORIGIN:https://pipedrive-mcp-sandbox.invalid`, and
+`AUDIT_HMAC_EPOCH:<approved-quarter>`. It intentionally omits `--keep-vars`,
+so Wrangler removes or refuses unexpected remote variables. It must not include
+Access, Pipedrive, administrator, secret, route, domain, or other release
+values. `workers_dev`, preview URLs, and routes/domains remain disabled or
+absent in the checked-in configuration.
+
+```sh
+approved_full_sha='<approved-full-sha>'
+test "$(git rev-parse HEAD)" = "$approved_full_sha"
+test -z "$(git status --porcelain)"
+WRANGLER_SEND_METRICS=false ./node_modules/.bin/wrangler deploy \
+  --config wrangler.sandbox.jsonc \
+  --name pipedrive-mcp-sandbox \
+  --tag "$approved_full_sha" \
+  --message "isolated B7 audit metadata remediation" \
+  --var "DEPLOY_ENVIRONMENT:sandbox" \
+  --var "PUBLIC_ORIGIN:https://pipedrive-mcp-sandbox.invalid" \
+  --var "AUDIT_HMAC_EPOCH:<approved-quarter>" \
+  --strict
+```
+
+The locally verified Wrangler 4.111 deploy help supports `--strict`; it
+prevents an upload when remote changes conflict. Record the Cloudflare-returned
+version ID and timestamp after deploy. A normal sandbox release must instead
+follow the existing guarded release procedure with the full approved
+secret/variable set; it must not use this isolated B7 command.
+
 Keep the encryption and audit keys independent. B6 must implement versioned
 AES-256-GCM envelopes with a `kid`, a primary key and an old decrypt-only key:
 planned annual rotation, immediate compromise rotation, bounded re-encryption,

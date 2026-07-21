@@ -14,6 +14,31 @@ import worker from "../src/remote/worker.js";
 const issuer = "https://team.cloudflareaccess.com";
 const audience = "worker-audience";
 
+test("scheduled heartbeat emits complete deployment context without touching dependencies", async () => {
+  const context = executionContext();
+  const { logs } = await captureLogs(async () => {
+    await worker.scheduled({} as ScheduledController, scheduledAuditEnv(), context.value);
+    await Promise.all(context.waits);
+  });
+  assert.equal(logs.length, 1);
+  const event = JSON.parse(logs[0] as string);
+  assert.deepEqual(event,{recordType:"pipedrive.audit",v:3,eventId:event.eventId,ts:event.ts,environment:"sandbox",service:"pipedrive-mcp",worker:"pipedrive-mcp-sandbox",versionId:"version-fixture",versionTag:"tag-fixture",uploadedOn:"2026-07-21T12:00:00.123Z",exportState:"source_emitted",category:"export",requestId:"scheduled-heartbeat",actorId:"system",auditEpoch:"2026-Q3",route:"scheduled",operation:"audit.export.heartbeat",effect:"system",outcome:"success",httpStatus:200,latencyMs:0,measurements:{freshness_seconds:0}});
+  assert.match(event.eventId,/^[0-9a-f-]{36}$/); assert.match(event.ts,/^\d{4}-\d\d-\d\dT/); assert.doesNotMatch(JSON.stringify(event),/unknown|validation_failure/);
+});
+
+test("scheduled missing version tag or audit epoch emits only a redacted config diagnostic", async () => {
+  for (const [name, overrides] of [["tag",{VERSION_METADATA:{id:"version-fixture",timestamp:"2026-07-21T12:00:00.123456Z"}}],["timestamp",{VERSION_METADATA:{id:"version-fixture",tag:"tag-fixture",timestamp:"2026-07-21T12:00:00.12Z"}}],["epoch",{AUDIT_HMAC_EPOCH:undefined}]] as const) {
+    const context = executionContext();
+    const { logs } = await captureLogs(async () => {
+      await worker.scheduled({} as ScheduledController, scheduledAuditEnv(overrides), context.value);
+      await Promise.all(context.waits);
+    });
+    assert.equal(logs.length, 1, name);
+    const event = JSON.parse(logs[0] as string);
+    assert.equal(event.category,"config",name); assert.equal(event.operation,"audit.export.validation_failure",name); assert.equal(event.route,"audit",name); assert.equal(event.effect,"system",name); assert.equal(event.outcome,"error",name); assert.equal(event.actorId,"system",name); assert.equal(event.auditEpoch,name === "epoch" ? "unknown" : "2026-Q3",name); assert.doesNotMatch(JSON.stringify(event),/audit\.export\.heartbeat/,name);
+  }
+});
+
 test("Worker exposes health before Access and audits a missing assertion", async () => {
   const health = await worker.fetch(
     new Request("https://mcp.example.test/healthz"),
@@ -1073,6 +1098,12 @@ function remoteEnv(
     USER_CONNECTION: connection,
     TENANT_REGISTRY: coordinatorRegistry(registry, capacity),
   };
+}
+
+function scheduledAuditEnv(overrides: Partial<RemoteEnv> = {}): RemoteEnv {
+  const allowed = new Set(["DEPLOY_ENVIRONMENT","AUDIT_HMAC_EPOCH","VERSION_METADATA"]);
+  const values = { DEPLOY_ENVIRONMENT:"sandbox", AUDIT_HMAC_EPOCH:"2026-Q3", VERSION_METADATA:{id:"version-fixture",tag:"tag-fixture",timestamp:"2026-07-21T12:00:00.123456Z"}, ...overrides };
+  return new Proxy(values, { get(target, property, receiver) { if (typeof property === "string" && !allowed.has(property)) throw new Error(`scheduled_dependency_access:${property}`); return Reflect.get(target, property, receiver); } }) as RemoteEnv;
 }
 
 function coordinatorRegistry(registry: DurableObjectNamespace, capacity?: (request: Request) => Promise<Response>): DurableObjectNamespace {
