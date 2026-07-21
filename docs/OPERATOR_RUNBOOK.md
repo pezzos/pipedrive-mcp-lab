@@ -194,6 +194,27 @@ a known read. Do not infer the account from an OAuth success screen alone.
 
 ### Worker rollback
 
+Before a separately authorized Worker change, validate its local target and
+write a dry-run provenance record. This has no Cloudflare effect:
+
+```sh
+npm run validate:worker-topology
+npm run prepare:worker-release -- --target sandbox
+npm run verify:worker-release -- --target sandbox
+```
+
+Preparation refuses a dirty source tree. The workflow-dispatch-only GitHub
+workflow targets the protected `pipedrive-sandbox` or
+`pipedrive-production` environment, serializes each target, checks the exact
+checked-out SHA is clean, creates and revalidates the record, then deploys only
+that target config. It never runs automatically. The protected environment must
+provide the three Worker variables, four Worker secrets,
+`CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_API_TOKEN`; the deploy script uses a
+temporary mode-`0600` JSON secrets file and removes it afterward. Preparation
+needs no live Access variables. Production
+preparation must stop when real production client metadata is missing, rather
+than reusing the sandbox client.
+
 Before deploying a Worker update, capture `npx wrangler deployments list`. If
 smoke tests regress, run `npx wrangler rollback <version-id>` with the captured
 healthy version and repeat `/healthz`, anonymous `/mcp`, Access protection, the

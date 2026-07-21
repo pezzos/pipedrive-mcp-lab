@@ -662,7 +662,7 @@ test("Worker uses only the declared multi-tenant namespaces", () => {
   namespaceFor(async () => Response.json({}), registryNames).idFromName(tenantRegistryObjectKey());
   assert.deepEqual(registryNames, [tenantRegistryObjectKey()]);
 
-  const wrangler = readFileSync("wrangler.jsonc", "utf8");
+  const wrangler = [readFileSync("wrangler.sandbox.jsonc", "utf8"), readFileSync("wrangler.production.jsonc", "utf8")].join("\n");
   const workerSource = readFileSync("src/remote/worker.ts", "utf8");
   const policySource = readFileSync("src/remote/policy.ts", "utf8");
   assert.match(wrangler, /"tag": "v1"[\s\S]*"tag": "v2"/);
@@ -699,6 +699,8 @@ function remoteEnv(
   registry: DurableObjectNamespace,
 ): RemoteEnv {
   return {
+    DEPLOY_ENVIRONMENT: "sandbox",
+    PUBLIC_ORIGIN: "https://mcp.example.test",
     ACCESS_ISSUER: issuer,
     ACCESS_AUD: audience,
     REMOTE_ADMIN_EMAIL: "admin@example.com",

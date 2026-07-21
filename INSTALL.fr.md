@@ -6,6 +6,13 @@ Ce guide concerne le pilote sandbox en version `0.3.4`. Il utilise uniquement :
 https://pipedrive-mcp-sandbox.pezzoslabs.com/mcp
 ```
 
+Seules les métadonnées client sandbox sont suivies. Un endpoint ou artefact
+client de production n'est pas une alternative d'installation et ne doit pas
+être déduit de ce guide.
+
+Le déploiement du Worker est une opération manuelle protégée distincte ;
+l'installation de ce client ne le déclenche ni ne l'autorise.
+
 Le connecteur distant est protégé par Cloudflare Access. L'utilisateur ne
 saisit jamais de token Pipedrive. L'administrateur de la plateforme approuve le
 domaine Pipedrive prévu, puis chaque utilisateur Access ouvre `/pipedrive` et

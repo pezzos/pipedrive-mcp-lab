@@ -24,6 +24,14 @@ This hostname and the connected Pipedrive tenant are for the sandbox pilot.
 Publishing a production artifact or changing the hostname is a separate
 operator-controlled promotion.
 
+There is no tracked production client artifact for either Claude or ChatGPT.
+The Worker release-preparation guard rejects a production target until a real,
+separately approved production client contract exists; it never repackages this
+sandbox connector as production metadata. The dispatch-only Worker workflow is
+separate from client delivery and requires the protected target environment plus
+an explicit operator run, a clean checked-out SHA, and verified release
+provenance.
+
 Commit `c7398c9` was deployed and smoke-tested at that hostname as Worker
 version `d0b493c2-7cbe-411d-af29-e7d08562c28a`. Verify the active deployment
 before onboarding: the hardcoded URL does not prove which version is currently

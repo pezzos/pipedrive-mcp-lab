@@ -7,7 +7,7 @@ import {
   pseudonymizeAccessSub,
   type AuditEvent,
 } from "./audit.js";
-import { loadRemoteConfig, type RemoteConfig, type RemoteEnv } from "./env.js";
+import { loadRemoteConfig, requestUsesConfiguredOrigin, type RemoteConfig, type RemoteEnv } from "./env.js";
 import {
   normalizeRemoteOAuthErrorCode,
   remoteOAuthDependencyStatus,
@@ -89,6 +89,10 @@ export default {
         { code },
         { status: 401 },
       );
+    }
+
+    if (!requestUsesConfiguredOrigin(request, config)) {
+      return noStoreJson({ code: "remote_origin_invalid" }, { status: 400 });
     }
 
     try {
@@ -674,7 +678,7 @@ async function handlePipedriveConnect(
       303,
     );
   }
-  const redirectUri = new URL("/oauth/pipedrive/callback", request.url).toString();
+  const redirectUri = config.oauthCallbackUrl;
   const response = await userConnectionStub(env, identity.sub).fetch(
     "https://connection.internal/state",
     {
@@ -737,7 +741,7 @@ async function handlePipedriveCallback(
   }
   const stub = userConnectionStub(env, identity.sub);
   if (url.searchParams.has("error")) {
-    const redirectUri = new URL("/oauth/pipedrive/callback", request.url).toString();
+    const redirectUri = config.oauthCallbackUrl;
     await stub.fetch("https://connection.internal/state/discard", {
       method: "POST",
       headers: { "content-type": "application/json" },
@@ -763,7 +767,7 @@ async function handlePipedriveCallback(
     );
     return noStoreRedirect(new URL("/pipedrive?notice=oauth-cancelled", request.url), 303);
   }
-  const redirectUri = new URL("/oauth/pipedrive/callback", request.url).toString();
+  const redirectUri = config.oauthCallbackUrl;
   const response = await stub.fetch("https://connection.internal/exchange", {
     method: "POST",
     headers: { "content-type": "application/json" },

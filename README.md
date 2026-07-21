@@ -61,6 +61,33 @@ registration is deferred to B8. Claude compatibility packages
 remain available through `npm run pack:claude-delivery`; see
 [Claude delivery](docs/CLAUDE_DELIVERY.md).
 
+## Worker release preparation
+
+The tracked Worker topology is local-only preparation, not a deployment: the
+separate `wrangler.sandbox.jsonc` and `wrangler.production.jsonc` files fix the
+Worker names, public origins, Durable Object bindings, and migration sequence.
+Validate either configuration with `npm run validate:worker-topology`. A
+secret-free dry-run release record can be prepared only after supplying the
+three explicit deployment variables:
+
+```sh
+npm run prepare:worker-release -- --target sandbox
+npm run verify:worker-release -- --target sandbox
+```
+
+Preparation requires a clean source tree by default. The record is written to
+`dist/releases/sandbox/release-record.json` and contains Git/tree, lockfile,
+configuration, canonical-input, bundle/deployable-output-tree, and available
+client artifact/receipt hashes, plus Node/npm/Wrangler versions
+and variable/secret **names**—never their values. Production preparation
+deliberately stops until a real, separate production client metadata contract
+exists; it does not synthesize one from the sandbox package. The
+workflow-dispatch-only workflow has deploy jobs guarded by the
+`pipedrive-sandbox` and `pipedrive-production` GitHub environments, target
+concurrency, clean-SHA and record revalidation immediately before deployment.
+It never runs automatically. Preparation needs no live Access variables; only
+the protected deployment job receives and validates them.
+
 For a plain MCP host or repository checkout:
 
 ```sh

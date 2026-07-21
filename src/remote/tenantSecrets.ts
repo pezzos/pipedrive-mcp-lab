@@ -1,5 +1,5 @@
 import { normalizePipedriveApiDomain } from "./apiDomain.js";
-import type { RemoteConfig, RemoteEnv } from "./env.js";
+import { loadRemoteStateConfig, type RemoteStateConfig, type RemoteEnv } from "./env.js";
 import {
   normalizeRemoteOAuthErrorCode,
   remoteOAuthErrorStatus,
@@ -95,7 +95,7 @@ export class TenantSecretsCore {
 
   constructor(
     private readonly storage: KeyValueStorage,
-    private readonly config: RemoteConfig,
+    private readonly config: RemoteStateConfig,
     fetcher: typeof fetch = fetch,
     private readonly now: () => number = Date.now,
   ) {
@@ -430,15 +430,7 @@ export class TenantSecrets {
   constructor(state: DurableObjectState, env: RemoteEnv) {
     this.core = new TenantSecretsCore(
       state.storage as unknown as KeyValueStorage,
-      {
-        accessIssuer: "",
-        accessAudience: "",
-        adminEmail: "",
-        pipedriveClientId: env.PIPEDRIVE_OAUTH_CLIENT_ID,
-        pipedriveClientSecret: env.PIPEDRIVE_OAUTH_CLIENT_SECRET,
-        encryptionKey: env.PIPEDRIVE_OAUTH_ENCRYPTION_KEY,
-        auditHmacKey: env.AUDIT_HMAC_KEY,
-      },
+      loadRemoteStateConfig(env),
     );
   }
 

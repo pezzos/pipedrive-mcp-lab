@@ -1,5 +1,5 @@
 import { normalizePipedriveApiDomain } from "./apiDomain.js";
-import type { RemoteConfig, RemoteEnv } from "./env.js";
+import { loadRemoteStateConfig, type RemoteStateConfig, type RemoteEnv } from "./env.js";
 import { userConnectionObjectKey } from "./objectKey.js";
 import {
   tenantRegistryStub,
@@ -137,7 +137,7 @@ export class UserConnectionCore {
 
   constructor(
     private readonly storage: KeyValueStorage,
-    private readonly config: RemoteConfig,
+    private readonly config: RemoteStateConfig,
     private readonly registry: TenantRegistryPort,
     options: UserConnectionCoreOptions = {},
   ) {
@@ -808,7 +808,7 @@ export class UserConnection {
     const registry = registryPort(env);
     this.core = new UserConnectionCore(
       state.storage as unknown as KeyValueStorage,
-      connectionConfig(env),
+      loadRemoteStateConfig(env),
       registry,
       { setAlarm: (timestamp) => state.storage.setAlarm(timestamp) },
     );
@@ -1127,18 +1127,6 @@ function boundedLabel(value: unknown, max: number, code: string): string {
     throw new Error(code);
   }
   return result;
-}
-
-function connectionConfig(env: RemoteEnv): RemoteConfig {
-  return {
-    accessIssuer: "",
-    accessAudience: "",
-    adminEmail: "",
-    pipedriveClientId: env.PIPEDRIVE_OAUTH_CLIENT_ID,
-    pipedriveClientSecret: env.PIPEDRIVE_OAUTH_CLIENT_SECRET,
-    encryptionKey: env.PIPEDRIVE_OAUTH_ENCRYPTION_KEY,
-    auditHmacKey: env.AUDIT_HMAC_KEY,
-  };
 }
 
 function sameEnvelope(

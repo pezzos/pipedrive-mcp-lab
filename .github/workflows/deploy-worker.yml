@@ -1,0 +1,147 @@
+name: Prepare and deploy protected Worker release
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Worker target to prepare, verify, and (after approval) deploy.
+        required: true
+        type: choice
+        options: [sandbox, production]
+
+permissions:
+  contents: read
+
+jobs:
+  prepare-sandbox:
+    if: inputs.target == 'sandbox'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify exact checked-out clean source revision
+        run: |
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test -z "$(git status --porcelain --untracked-files=all)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - run: npm run pack:chatgpt-plugin
+      - name: Prepare and verify exact sandbox release record
+        run: npm run prepare:worker-release -- --target sandbox && npm run verify:worker-release -- --target sandbox
+      - uses: actions/upload-artifact@v4
+        with:
+          name: worker-release-sandbox-${{ github.sha }}
+          path: dist/releases/sandbox
+          if-no-files-found: error
+          overwrite: false
+
+  prepare-production:
+    if: inputs.target == 'production'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify exact checked-out clean source revision
+        run: |
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test -z "$(git status --porcelain --untracked-files=all)"
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - name: Prepare and verify exact production release record
+        run: npm run prepare:worker-release -- --target production && npm run verify:worker-release -- --target production
+      - uses: actions/upload-artifact@v4
+        with:
+          name: worker-release-production-${{ github.sha }}
+          path: dist/releases/production
+          if-no-files-found: error
+          overwrite: false
+
+  deploy-sandbox:
+    if: inputs.target == 'sandbox'
+    needs: prepare-sandbox
+    environment:
+      name: pipedrive-sandbox
+    concurrency:
+      group: pipedrive-worker-sandbox-deployment
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci && npm run pack:chatgpt-plugin
+      - uses: actions/download-artifact@v4
+        with:
+          name: worker-release-sandbox-${{ github.sha }}
+          path: dist/releases/sandbox
+      - name: Re-verify exact sandbox record and deploy target config
+        run: |
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          npm run verify:worker-release -- --target sandbox
+          npm run deploy:worker-release -- --target sandbox
+        env:
+          ACCESS_ISSUER: ${{ vars.ACCESS_ISSUER }}
+          ACCESS_AUD: ${{ vars.ACCESS_AUD }}
+          REMOTE_ADMIN_EMAIL: ${{ vars.REMOTE_ADMIN_EMAIL }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PIPEDRIVE_OAUTH_CLIENT_ID: ${{ secrets.PIPEDRIVE_OAUTH_CLIENT_ID }}
+          PIPEDRIVE_OAUTH_CLIENT_SECRET: ${{ secrets.PIPEDRIVE_OAUTH_CLIENT_SECRET }}
+          PIPEDRIVE_OAUTH_ENCRYPTION_KEY: ${{ secrets.PIPEDRIVE_OAUTH_ENCRYPTION_KEY }}
+          AUDIT_HMAC_KEY: ${{ secrets.AUDIT_HMAC_KEY }}
+
+  deploy-production:
+    if: inputs.target == 'production'
+    needs: prepare-production
+    environment:
+      name: pipedrive-production
+    concurrency:
+      group: pipedrive-worker-production-deployment
+      cancel-in-progress: false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@v4
+        with:
+          name: worker-release-production-${{ github.sha }}
+          path: dist/releases/production
+      - name: Re-verify exact production record and deploy target config
+        run: |
+          test "$(git rev-parse HEAD)" = "${GITHUB_SHA}"
+          test -z "$(git status --porcelain --untracked-files=all)"
+          npm run verify:worker-release -- --target production
+          npm run deploy:worker-release -- --target production
+        env:
+          ACCESS_ISSUER: ${{ vars.ACCESS_ISSUER }}
+          ACCESS_AUD: ${{ vars.ACCESS_AUD }}
+          REMOTE_ADMIN_EMAIL: ${{ vars.REMOTE_ADMIN_EMAIL }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          PIPEDRIVE_OAUTH_CLIENT_ID: ${{ secrets.PIPEDRIVE_OAUTH_CLIENT_ID }}
+          PIPEDRIVE_OAUTH_CLIENT_SECRET: ${{ secrets.PIPEDRIVE_OAUTH_CLIENT_SECRET }}
+          PIPEDRIVE_OAUTH_ENCRYPTION_KEY: ${{ secrets.PIPEDRIVE_OAUTH_ENCRYPTION_KEY }}
+          AUDIT_HMAC_KEY: ${{ secrets.AUDIT_HMAC_KEY }}

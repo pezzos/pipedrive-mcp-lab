@@ -6,6 +6,13 @@ This guide covers the version `0.3.4` sandbox pilot. It uses only:
 https://pipedrive-mcp-sandbox.pezzoslabs.com/mcp
 ```
 
+Only sandbox client metadata is tracked. A production endpoint or client
+artifact is not an installation alternative and must not be inferred from this
+guide.
+
+Worker deployment is a separate protected, manual operation; installing this
+client neither triggers nor authorizes it.
+
 The remote connector works through Cloudflare Access. Users never enter a
 Pipedrive token. The platform administrator approves the intended Pipedrive
 company domain, then each Access user opens `/pipedrive` and completes OAuth

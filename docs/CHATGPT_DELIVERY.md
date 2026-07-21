@@ -21,6 +21,15 @@ The tracked source contract freezes the sandbox MCP URL:
 https://pipedrive-mcp-sandbox.pezzoslabs.com/mcp
 ```
 
+There is intentionally no tracked production client metadata. Local Worker
+release preparation refuses a production target until a separately approved
+production client contract is supplied; it never copies or rewrites this
+sandbox package into a production artifact.
+
+Installing or packaging this client cannot deploy the Worker. Deployment is a
+separate protected workflow that verifies target provenance and live-gated
+infrastructure inputs.
+
 The generated ten-file package intentionally does **not** contain that URL or a
 direct MCP configuration. Its `.app.json` carries only the one required real
 `asdk_app...` resource reference. The tracked source also carries the distinct

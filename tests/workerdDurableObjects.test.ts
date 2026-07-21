@@ -20,6 +20,8 @@ test("workerd routes the v2 registry, per-user connection, and composite policy 
       USER_POLICY: { className: "UserPolicy", useSQLite: true },
     },
     bindings: {
+      DEPLOY_ENVIRONMENT: "sandbox",
+      PUBLIC_ORIGIN: "https://mcp.example.test",
       PIPEDRIVE_OAUTH_CLIENT_ID: "fixture-client",
       PIPEDRIVE_OAUTH_CLIENT_SECRET: "fixture-secret",
       PIPEDRIVE_OAUTH_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",

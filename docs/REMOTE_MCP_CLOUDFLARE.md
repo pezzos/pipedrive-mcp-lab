@@ -181,10 +181,13 @@ is immediate and does not require confirmation.
 
 ## Required Cloudflare Configuration
 
-The checked-in `wrangler.jsonc` declares `USER_POLICY`, `USER_CONNECTION`, and
-`TENANT_REGISTRY`, with the original v1 migration retained and an additive v2
-migration for the two new classes. Configure these values without committing
-their contents:
+The checked-in `wrangler.sandbox.jsonc` and `wrangler.production.jsonc` declare
+the same `USER_POLICY`, `USER_CONNECTION`, and `TENANT_REGISTRY` bindings, with
+the original v1 migration retained and an additive v2 migration for the two new
+classes. They use distinct Worker names and public origins, turn off
+`keep_vars`, `workers_dev`, and preview URLs, and contain no namespace IDs or
+secret values. Configure these deployment inputs without committing their
+contents:
 
 | Name | Storage | Purpose |
 | --- | --- | --- |
@@ -205,20 +208,60 @@ current emit key and prior correlation key remain available for at most 90
 days, historical logs are not rewritten, and compromise starts a new epoch
 immediately with bounded administrator-only cross-epoch correlation.
 
+## Local target validation and release record
+
+These commands validate the checked-in topology and produce a local Wrangler
+dry-run bundle and provenance record; they do not create Cloudflare resources,
+write secrets, change DNS or Access, or deploy a Worker.
+
+```sh
+npm ci
+npm run validate:worker-topology
+npm run prepare:worker-release -- --target sandbox
+npm run verify:worker-release -- --target sandbox
+```
+
+Preparation requires a clean source tree. The ignored
+`dist/releases/sandbox/release-record.json` records the target, Git and tree
+SHAs, lockfile/config/canonical-input hashes, Worker bundle and deployable
+output-tree hashes, available target-client metadata/artifact/receipt/tree
+hashes, Node/npm/Wrangler versions,
+derived Worker/origin/MCP/callback URLs, committed target application labels,
+and variable/secret names. It never stores deployment-input or secret values,
+including an administrator-email hash. Sandbox labels are **Pipedrive MCP
+Sandbox Access** and **Pipedrive MCP Sandbox OAuth**; production uses the
+distinct **Pipedrive MCP Production Access** and **Pipedrive MCP Production
+OAuth** labels. Actual Access audiences and Pipedrive client IDs remain live
+gates.
+
+The production target is deliberately refused while production client metadata
+is absent; do not invent it from the sandbox client.
+`.github/workflows/deploy-worker.yml` is workflow-dispatch-only and uses the
+protected `pipedrive-sandbox` and `pipedrive-production` environments,
+per-target deployment concurrency, the exact target config, and clean-SHA plus
+record revalidation immediately before deployment. It never runs on a push or
+pull request. Preparation needs no live Access values. Its protected deploy path
+requires the three explicit Worker variables, all four Worker secrets,
+`CLOUDFLARE_ACCOUNT_ID`, and `CLOUDFLARE_API_TOKEN` from the selected protected
+environment. Secrets are written only to a temporary mode-`0600` JSON Wrangler
+secrets file and removed after the command; they are not put in command
+arguments or a record. Configure environment reviewers and those values outside
+this repository before authorizing it.
+
 ## Sandbox Setup
 
-1. Validate and deploy the Worker once to create the Cloudflare resource:
+1. Validate the sandbox Worker topology and create a local dry-run release
+   record before any separately authorized Cloudflare action:
 
    ```sh
    npm ci
-   npm run check
-   npm run benchmark:server
-   npx wrangler deploy
+   npm run validate:worker-topology
+   npm run prepare:worker-release -- --target sandbox
    ```
 
 2. Attach a dedicated Custom Domain such as
-   `pipedrive-mcp-sandbox.example.com`: open **Workers & Pages**, select
-   `pipedrive-mcp-remote`, then **Settings > Domains & Routes > Add > Custom
+   `pipedrive-mcp-sandbox.pezzoslabs.com`: open **Workers & Pages**, select
+   `pipedrive-mcp-sandbox`, then **Settings > Domains & Routes > Add > Custom
    Domain**. The parent domain must be an active zone in the same account.
 3. In Zero Trust, open **Access controls > Applications > Create new
    application**, select **Self-hosted and private**, and add the complete
@@ -330,13 +373,16 @@ rotate secrets, or uninstall the Pipedrive application.
 ## Production Promotion
 
 Promote from the same verified source commit, lockfile, and Wrangler version.
-Rebuild from those exact inputs and compare the local dry-run Worker bundle hash
-with the accepted sandbox reference before deployment. Because `wrangler
-deploy` rebundles from source, this comparison proves reproducible local inputs,
-not byte identity with the uploaded Worker. Record the resulting production
-version after deployment. Replace the sandbox Pipedrive OAuth application values
-with the production application values, review Access membership and durations,
-then repeat allowlist approval, per-user connections, and acceptance smoke tests
+First supply a real, approved production client metadata contract: the local
+production preparation command refuses to proceed while it is absent and never
+derives it from the sandbox artifact. Rebuild from those exact inputs and
+compare the local dry-run Worker bundle hash with the accepted sandbox reference
+before any separately authorized deployment. Because a real `wrangler deploy`
+rebundles from source, this comparison proves reproducible local inputs, not
+byte identity with the uploaded Worker. Record the resulting production version
+after deployment. Replace the sandbox Pipedrive OAuth application values with
+the production application values, review Access membership and durations, then
+repeat allowlist approval, per-user connections, and acceptance smoke tests
 against deliberately selected production records.
 
 A private Pipedrive application in `DRAFT` can be tested only in its developer

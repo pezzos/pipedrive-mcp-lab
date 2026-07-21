@@ -606,6 +606,8 @@ function durableObjectState(storage: KeyValueStorage): DurableObjectState {
 
 function tenantEnv(overrides: Partial<RemoteEnv> = {}): RemoteEnv {
   return {
+    DEPLOY_ENVIRONMENT: "sandbox",
+    PUBLIC_ORIGIN: "https://mcp.example.test",
     ACCESS_ISSUER: "https://team.cloudflareaccess.com",
     ACCESS_AUD: "audience",
     REMOTE_ADMIN_EMAIL: "admin@example.com",
