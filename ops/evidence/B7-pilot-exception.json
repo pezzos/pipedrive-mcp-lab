@@ -1,0 +1,42 @@
+{
+  "schema": "b7-pilot-exception-receipt",
+  "version": 1,
+  "status": "recorded",
+  "scope": "B7_B8_live_sandbox_only",
+  "pilot_type": "operator_owned_self_pilot",
+  "pilot_customer_id_hash": "ac8e09838255c03be848705d2b65015f1bb116b0ea7e9efcc04286b101d8e912",
+  "authorized_representative_id_hash": "192e52a0ac7db369a7ee845346811c6d61995baa8c680c766810539cec98b615",
+  "accepted_at": "2026-07-21T19:14:40.000Z",
+  "review_date": "2026-07-21",
+  "expires_at": "2026-08-20T19:14:40.000Z",
+  "approved_channel_reference": "codex-task:20260721-self-pilot",
+  "approver": "Alexandre",
+  "disclosure_version": "v1",
+  "disclosure_hash": "e6e1abd3dfe7976e5acdde8f35672505727da8274d09d4caf050e6eded535dfe",
+  "evidence_hash": "38313e28becf957e989650c2c43c5fe092dc460426c46855e3c5b5bf5c5f629f",
+  "sandbox_scope_evidence_hash": "28f61296d366e80226138f1eb49021c663cf00faa85bfb43d163e9e4f9f520df",
+  "controls": {
+    "development_in_progress_disclosed": true,
+    "testing_participation_accepted": true,
+    "no_charge_confirmed": true,
+    "best_effort_no_24x7_no_sla_disclosed": true,
+    "separate_sandbox_or_safe_expected_records_only": true,
+    "b7_synthetic_audit_records_only": true,
+    "external_party_access": false
+  },
+  "stop_triggers": [
+    "customer_billing",
+    "additional_customer_access",
+    "real_production_data_or_traffic",
+    "public_availability",
+    "security_incident"
+  ],
+  "authority_receipts": {
+    "SW": "355a0cb047a7c686027a7f1383bfa98598fbb6d6debedf73c59f6cbe43880c46"
+  },
+  "legal_boundary": "not_dpa_privacy_legal_production_or_blanket_customer_authority",
+  "revoked": false,
+  "live_effects_performed": false,
+  "hash_algorithm": "sha256",
+  "receipt_hash": "2f8ac60bb9ed174f22de36cbf8a6d91839e1ba6ba08705ae6c98c4bbf668ac7f"
+}
