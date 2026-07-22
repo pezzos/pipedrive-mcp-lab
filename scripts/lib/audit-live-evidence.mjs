@@ -170,6 +170,32 @@ export const validateB7SrImpactEvidence=(authority,observation,predecessor)=>{
   return observation;
 };
 
+export const validateB7SrImpactAttributionEvidence=(receipt,{authority,predecessor})=>{
+  if(!receipt||typeof receipt!=="object"||Array.isArray(receipt)||!authority||typeof authority!=="object"||Array.isArray(authority)||!predecessor||typeof predecessor!=="object"||Array.isArray(predecessor))fail("impact_attribution_shape");
+  const keys=["schema","version","status","block","b7_status","recorded_at","observation_timing","provider","environment_scope","hash_algorithm","authority_receipt_hash","predecessor_observation_receipt_hash","principal_attribution","operator_direction","smallest_next_boundary","safety","receipt_hash"];
+  if(!equal(Object.keys(receipt),keys)||Object.keys(receipt).at(-1)!=="receipt_hash")fail("impact_attribution_keys");
+  if(!verifyReceiptHash(receipt)||hasRawLiveMaterial(receipt))fail("impact_attribution_hash_or_raw");
+  if(!verifyReceiptHash(authority)||!verifyReceiptHash(predecessor)||authority.receipt_hash!=="ddea65a00247671e81f1fe3e150e8bfc261568258acc1db8e778cbe2f34f6c1e"||predecessor.receipt_hash!=="89cc1a0d7b5de6ce4706a9b8ab206ad9a576caf48a22fa506861d4a9a4d37762"||predecessor.authority_receipt_hash!==authority.receipt_hash||receipt.authority_receipt_hash!==authority.receipt_hash||receipt.predecessor_observation_receipt_hash!==predecessor.receipt_hash)fail("impact_attribution_chain");
+  const environmentScope={sandbox:true,shared_or_non_sandbox_dependency_metadata:true,production_effects:false};
+  if(receipt.schema!=="b7-sr-impact-attribution-observation-receipt"||receipt.version!==1||receipt.status!=="partial"||receipt.block!=="B7"||receipt.b7_status!=="in_progress"||receipt.recorded_at!=="2026-07-22T14:14:48Z"||receipt.provider!=="Cloudflare"||!equal(receipt.environment_scope,environmentScope)||receipt.hash_algorithm!=="sha256"||receipt.receipt_hash!=="da78e6ac5a0220f16969ceed2542a933a88c75059de26d93e2da49d77cf029f0")fail("impact_attribution_metadata");
+  const timing={completed_no_later_than:"2026-07-22T14:14:48Z",exact_start_recorded:false,completed_before_authority_expiry:true};
+  if(!equal(receipt.observation_timing,timing)||Date.parse(timing.completed_no_later_than)>Date.parse(receipt.recorded_at)||Date.parse(timing.completed_no_later_than)>=Date.parse(authority.expires_at))fail("impact_attribution_timing");
+  const expectedAttribution=[
+    {principal_hash:"bd661569b4ef3137ddb0baa7c83dac527322b151076c750f423954b808ec0844",principal_type:"account",active:true,permission_model:{total_permissions:45,policy_count:3,permission_counts_by_policy:{account:23,all_zones:21,analytics:1},r2_scope:"all_buckets_admin_read_write"},last_used_metadata:"within_one_day_without_resource_attribution",control_plane_observation:{window_days:7,successful_create_deployment_count:4,event_date:"2026-07-15",product:"Pages",sampled_unique_detail_count:3,single_project_identifier_sha256:"c04beac944655c3d3b50ad7daf42b7181747f0be5d37dc1fcbcb751fc78fa812"},attribution:{live_non_sandbox_use_proven:true,direct_r2_use_proven:false,safe_to_revoke_or_broadly_edit:false}},
+    {principal_hash:"55ae7959b6a758f32208d2eec5b9fef22f334ed8dda6304d87cda07cc0e42ea9",principal_type:"user",active:true,issued_on:"2025-07-27",raw_label_hash_binding:{sha256:"55ae7959b6a758f32208d2eec5b9fef22f334ed8dda6304d87cda07cc0e42ea9",matches_principal_hash:true,raw_label_retained:false},permission_model:{r2_scope:"all_buckets_admin_read_write"},historical_consumer_observation:{identifier_sha256:"582a432583f62e5f3488165d7ebc8f0f89e423cdc429fb2c26cf6d8f1f733cf3",current_workers_pages_app_count:10,present_in_current_inventory:false},control_plane_observation:{window_days:7,matching_event_count:0},attribution:{r2_s3_data_plane_use_observable:false,direct_r2_use_proven:false,safe_to_revoke_or_broadly_edit:false}}
+  ];
+  if(!equal(receipt.principal_attribution,expectedAttribution))fail("impact_attribution_principals");
+  const direction={selection:"targeted_investigation",authority_semantics:"direction_only",live_read_authority_granted:false,mutation_authority_granted:false,exact_SW_or_DW_safe:false};
+  if(!equal(receipt.operator_direction,direction))fail("impact_attribution_direction");
+  const principalHashes=expectedAttribution.map(({principal_hash})=>principal_hash);
+  const consumerIdentifiers={pages_project:expectedAttribution[0].control_plane_observation.single_project_identifier_sha256,historical_worker:expectedAttribution[1].historical_consumer_observation.identifier_sha256};
+  const nextBoundary={authority:"SR-B7-CONSUMERS",status:"not_granted",provenance_principal_hashes:principalHashes,consumer_identifiers_sha256:consumerIdentifiers,allowed_read_only_metadata:["github_repository","github_workflow_identity_and_timestamps","github_deployment_identity_and_timestamps","github_integration_identity_and_timestamps","github_secret_names_and_timestamps_never_values"],excluded:["source_or_workflow_contents","logs_or_artifacts","workflow_trigger_or_rerun","deployment_execution","repository_PR_or_comment_write","secret_or_variable_values","secret_mutation","all_other_writes"],inconclusive_result_keeps_principals_unsafe:true,does_not_authorize_SW_or_DW:true};
+  if(!equal(receipt.smallest_next_boundary,nextBoundary))fail("impact_attribution_boundary");
+  const safety={secret_values_read_or_retained:false,object_content_read_or_retained:false,PII_read_or_retained:false,CRM_or_Pipedrive_read:false,raw_identifiers_retained:false,live_effects_performed:false,expected_incremental_charge_eur:0,stop_triggers:stopTriggers};
+  if(!equal(receipt.safety,safety))fail("impact_attribution_safety");
+  return receipt;
+};
+
 export const validateB7SandboxValidationObservationEvidence=(receipt,{cutover,alertAck,srAuthority,swAuthority})=>{
   if(!receipt||typeof receipt!=="object"||Array.isArray(receipt))fail("validation_observation_shape");
   const keys=["schema","version","status","block","b7_status","recorded_at","observed_between","environment","provider","hash_algorithm","authority_receipts","predecessor_receipts","inventory","live_effects","validation_summary","not_run","finding","stop_triggers","negative_effect_facts","current_blockers","smallest_next_authority","receipt_hash"];
