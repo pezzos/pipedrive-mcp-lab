@@ -1,0 +1,193 @@
+{
+  "schema": "b7-sandbox-validation-observation-receipt",
+  "version": 1,
+  "status": "partial",
+  "block": "B7",
+  "b7_status": "in_progress",
+  "recorded_at": "2026-07-22T13:14:53Z",
+  "observed_between": {
+    "start": "2026-07-22T13:03:58Z",
+    "end": "2026-07-22T13:12:58.410Z"
+  },
+  "environment": "sandbox",
+  "provider": "Cloudflare",
+  "hash_algorithm": "sha256",
+  "authority_receipts": {
+    "SR": "3309db33522808b711962c8ba84f97cba60d5e9faf8cedee59ce060645756ddb",
+    "SW": "41dd71739661844ddedb03a5c9ec64953faf6e0c81de5b518f050485b76fef17",
+    "expires_at": "2026-07-23T21:59:00.000Z"
+  },
+  "predecessor_receipts": {
+    "cutover": "e4c8ea22cfc6028847e162d6960175c156469c9d6a968e7617d6477140dc3a6e",
+    "alert_ack": "1af763477a186e9e159d2e6400e4cfd2962ef74414f80badd737cff2b0ddbd7e"
+  },
+  "inventory": {
+    "account_access": {
+      "active_human_member_count": 1,
+      "operator_identity_hash": "192e52a0ac7db369a7ee845346811c6d61995baa8c680c766810539cec98b615",
+      "additional_human_member_observed": false,
+      "r2_reader_capable_technical_principal_count": 3,
+      "bucket_scoped_object_read_write_count": 1,
+      "all_buckets_admin_read_write_count": 2,
+      "read_access_operator_only": false,
+      "raw_principal_labels_retained": false
+    },
+    "worker": {
+      "worker_hash": "dfa355b7199c2aec8a81fa6f0700e0ca842b48b91cd0898a45975cbb4518214a",
+      "public_urls_enabled": false,
+      "domain_count": 0,
+      "route_count": 0,
+      "scheduled_trigger_count": 1,
+      "durable_object_binding_count": 3,
+      "version_metadata_binding_count": 1,
+      "worker_logs_enabled": false,
+      "worker_traces_enabled": false,
+      "metrics_window": "24h",
+      "invocation_count": 202,
+      "subrequest_count": 0,
+      "error_count": 0,
+      "external_host_count": 0,
+      "cpu_time_ms": 0.63,
+      "wall_time_ms": 0.96,
+      "request_duration_ms": 0
+    },
+    "logpush": {
+      "accepted_job_id_hash": "e91cb0519bc26fc0c42868eeb70986cec96c99b60736fb70aa5ca88dfb21a810",
+      "job_count": 1,
+      "dataset": "workers_trace_events",
+      "destination_type": "R2",
+      "status": "pushing",
+      "enabled": true,
+      "health_24h": "no_activity",
+      "last_push_at": "2026-07-22T11:31:52Z",
+      "expected_delivery_cadence_seconds": 300,
+      "observed_last_push_lag_seconds": 6066.41,
+      "freshness_check": "failed",
+      "accepted_job_untouched": true
+    },
+    "r2": {
+      "bucket_hash": "13decf6feca3b39441f00236ce1407a0c7f6cb1876e1d5576a3e37bd764b4a4b",
+      "dedicated": true,
+      "private": true,
+      "region": "WEUR",
+      "storage_class": "Standard",
+      "custom_domain_count": 0,
+      "public_development_url_enabled": false,
+      "lifecycle_delete_days": 30,
+      "lifecycle_rule_enabled": true,
+      "bucket_lock_days": 30,
+      "bucket_lock_rule_enabled": true,
+      "empty_action_disabled_by_lock": true,
+      "delete_action_disabled_by_lock": true,
+      "event_notification_count": 0,
+      "bucket_object_count_display": 203,
+      "bucket_size_display_kb": 137.4,
+      "global_class_a_operations": 350,
+      "global_class_b_operations": 70,
+      "global_storage_display_kb": 133.24,
+      "billable_usage_current_period_usd": 0,
+      "billable_usage_incurred": false,
+      "visible_prefix_row_count": 4,
+      "raw_object_labels_retained": false
+    },
+    "alerts": {
+      "policy_count": 2,
+      "enabled_count": 2,
+      "failing_logpush_job_disabled_enabled": true,
+      "billing_budget_enabled": true,
+      "configured_method": "email",
+      "operator_recipient_hash_linked_to_ack": true,
+      "fresh_sample_test_dialog_confirmed": true,
+      "mailbox_or_delivery_receipt_claimed": false
+    }
+  },
+  "live_effects": [
+    {
+      "effect": "provider_sample_alert_test_confirmation",
+      "notification_event_class": "failing_logpush_job_disabled",
+      "sample_data_only": true,
+      "configured_method": "email",
+      "confirmation_dialog_closed_after_submit": true,
+      "mailbox_read_performed": false,
+      "accepted_logpush_job_mutated": false
+    }
+  ],
+  "validation_summary": {
+    "read_only_inventory_completed": true,
+    "dashboard_query_completed": true,
+    "provider_sample_alert_test_completed": true,
+    "exhaustive_26_check_packet_completed": false,
+    "read_access_operator_only_check": "failed",
+    "accepted_logpush_export_freshness_check": "failed",
+    "actual_live_job_failure_notification_proven": false,
+    "optional_disposable_failing_job_created": false
+  },
+  "not_run": [
+    {
+      "action": "synthetic_permission_toggle_restore",
+      "reason": "no_safe_internal_control_plane_without_public_route_or_unspecified_deployment"
+    },
+    {
+      "action": "synthetic_tenant_suspend_resume",
+      "reason": "no_safe_internal_control_plane_without_public_route_or_unspecified_deployment"
+    },
+    {
+      "action": "non_destructive_recovery_config_restore",
+      "reason": "would_require_unapproved_control_plane_or_credential_mutation"
+    },
+    {
+      "action": "isolated_disposable_failing_logpush_job",
+      "reason": "no_failure_destination_without_new_raw_secret_or_unapproved_external_endpoint"
+    }
+  ],
+  "finding": {
+    "code": "r2_reader_boundary_not_operator_only",
+    "severity": "high",
+    "acceptance_blocking": true,
+    "observed_reader_capable_technical_principal_count": 3,
+    "observed_all_buckets_admin_read_write_count": 2,
+    "unauthorized_access_observed": false,
+    "security_incident_triggered": false,
+    "remediation_requires_excluded_secret_or_principal_change": true
+  },
+  "stop_triggers": {
+    "customer_billing": false,
+    "additional_customer_access": false,
+    "real_production_data_or_traffic": false,
+    "public_availability": false,
+    "security_incident": false
+  },
+  "negative_effect_facts": {
+    "pipedrive_or_crm_access": false,
+    "production_mutation": false,
+    "public_route_created": false,
+    "additional_customer_or_user_added": false,
+    "designated_backup_contacted_or_provisioned": false,
+    "billing_or_plan_changed": false,
+    "secret_rotated_or_exposed": false,
+    "principal_revoked": false,
+    "deletion_performed": false,
+    "gmail_read_performed": false
+  },
+  "current_blockers": [
+    "read_access_operator_only_remediation_or_explicit_boundary_decision",
+    "accepted_logpush_export_freshness",
+    "exhaustive_B7_sandbox_validation_packet",
+    "safe_internal_control_plane_for_reversible_permission_tenant_and_recovery_checks",
+    "actual_live_job_failure_notification"
+  ],
+  "smallest_next_authority": {
+    "required": true,
+    "next_gate": "SR",
+    "scope": "read_only_dependency_and_usage_impact_mapping_for_three_reader_capable_R2_principals",
+    "targets_must_be_hash_bound_before_mutation": true,
+    "subsequent_authorities_not_granted": [
+      "exact_SW_for_replacement_or_scope_reduction",
+      "separate_DW_for_revocation"
+    ],
+    "non_remediation_alternative": "explicit_product_security_boundary_policy_decision",
+    "shared_or_non_sandbox_workload_impact_must_be_resolved_first": true,
+    "no_existing_authority_covers_it": true
+  },
+  "receipt_hash": "b5ea18a6d1776f867778057d192092f26377da3dd653f0ea9c6604c9519beb0e"
+}

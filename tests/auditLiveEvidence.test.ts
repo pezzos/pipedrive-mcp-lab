@@ -2,12 +2,13 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { hasRawLiveMaterial, validateAlertEmailAckEvidence, validateB7LiveAuthorityEvidence, validateLiveCutoverEvidence, verifyReceiptHash } from "../scripts/lib/audit-live-evidence.mjs";
+import { hasRawLiveMaterial, validateAlertEmailAckEvidence, validateB7LiveAuthorityEvidence, validateB7SandboxValidationObservationEvidence, validateLiveCutoverEvidence, verifyReceiptHash } from "../scripts/lib/audit-live-evidence.mjs";
 
 const receiptPath = "ops/evidence/B7-live-cutover-2026-07-22.json";
 const alertAckReceiptPath = "ops/evidence/B7-alert-email-ack-2026-07-22.json";
 const srAuthorityPath = "ops/evidence/B7-sr-authority-2026-07-22.json";
 const swAuthorityPath = "ops/evidence/B7-sw-validation-authority-2026-07-22.json";
+const validationObservationPath = "ops/evidence/B7-sandbox-validation-observation-2026-07-22.json";
 const loadReceipt = () => JSON.parse(readFileSync(receiptPath, "utf8"));
 const loadAlertAckReceipt = () => JSON.parse(readFileSync(alertAckReceiptPath, "utf8"));
 const loadAuthority = (path: string) => JSON.parse(readFileSync(path, "utf8"));
@@ -172,4 +173,20 @@ test("B7 authorities reject widened scopes, excluded activity, and unsafe contro
   const rawReceipt = structuredClone(loadAuthority(srAuthorityPath)); rawReceipt.source.message = "person@example.test";
   assert.throws(() => validateB7LiveAuthorityEvidence(rehash(rawReceipt), "SR", cutover, ack), /authority_hash_or_raw/);
   for (const value of ["Alexandre", "Davy"]) { const receipt = structuredClone(loadAuthority(swAuthorityPath)); receipt.scope.push(value); assert.throws(() => validateB7LiveAuthorityEvidence(rehash(receipt), "SW", cutover, ack), /authority_hash_or_raw/); }
+});
+
+test("B7 sandbox observation is partial, hash-bound, and records the reader-boundary failure", () => {
+  const cutover=loadReceipt(),alertAck=loadAlertAckReceipt(),srAuthority=loadAuthority(srAuthorityPath),swAuthority=loadAuthority(swAuthorityPath),observation=loadAuthority(validationObservationPath);
+  assert.equal(validateB7SandboxValidationObservationEvidence(observation,{cutover,alertAck,srAuthority,swAuthority}),observation);
+  assert.equal(observation.inventory.account_access.read_access_operator_only,false);
+  assert.equal(observation.inventory.logpush.freshness_check,"failed");
+  assert.equal(observation.finding.acceptance_blocking,true);
+  assert.equal(observation.validation_summary.exhaustive_26_check_packet_completed,false);
+});
+
+test("B7 sandbox observation rejects a softened finding, widened effect, or raw identity", () => {
+  const cutover=loadReceipt(),alertAck=loadAlertAckReceipt(),srAuthority=loadAuthority(srAuthorityPath),swAuthority=loadAuthority(swAuthorityPath);
+  const validate=(observation:any)=>validateB7SandboxValidationObservationEvidence(rehash(observation),{cutover,alertAck,srAuthority,swAuthority});
+  for(const mutate of [(o:any)=>o.inventory.account_access.read_access_operator_only=true,(o:any)=>o.inventory.logpush.freshness_check="passed",(o:any)=>o.finding.acceptance_blocking=false,(o:any)=>o.validation_summary.exhaustive_26_check_packet_completed=true,(o:any)=>o.live_effects[0].accepted_logpush_job_mutated=true,(o:any)=>o.stop_triggers.public_availability=true,(o:any)=>o.negative_effect_facts.secret_rotated_or_exposed=true]){const observation=structuredClone(loadAuthority(validationObservationPath));mutate(observation);assert.throws(()=>validate(observation));}
+  const raw=structuredClone(loadAuthority(validationObservationPath));raw.inventory.account_access.message="person@example.test";assert.throws(()=>validate(raw),/validation_observation_hash_or_raw/);
 });
