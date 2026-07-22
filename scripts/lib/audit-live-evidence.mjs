@@ -10,8 +10,8 @@ const rawValuePatterns = [
   /^(?:sk|cf|eyJ)[A-Za-z0-9._-]{16,}$/,
   /pipedrive-mcp-(?:sandbox|remote)(?:\.pezzoslabs\.com)?/i
 ];
-const rawKeyPattern = /(?:account|bucket|job|prefix|object|token|credential|email|recipient|worker|version|event)[_-]?(?:id|name|key|value|secret)$/i;
-const directRawKeyPattern = /^(?:account|bucket|job|prefix|object|token|credential|email|recipient|worker|version|event)$/i;
+const rawKeyPattern = /(?:account|bucket|job|prefix|object|token|credential|email|recipient|worker|version|event|sender|subject|header|message|appshot|screenshot)[_-]?(?:id|name|key|value|secret)$/i;
+const directRawKeyPattern = /^(?:account|bucket|job|prefix|object|token|credential|email|recipient|worker|version|event|sender|subject|header|message|appshot|screenshot)$/i;
 
 export const hasRawLiveMaterial = (value) => {
   if (typeof value === "string") return rawValuePatterns.some((pattern) => pattern.test(value));
@@ -71,5 +71,35 @@ export const validateLiveCutoverEvidence = (receipt) => {
   if (!equal(receipt.proven, ["limited_synthetic_sandbox_delivery", "sampled_byte_integrity", "offline_query", "locked_object_ui_delete_disabled", "new_bucket_limited_credential_active", "old_credential_revoked", "old_obsolete_job_configuration_removed", "new_job_only_active", "last_observed_object_timestamp_recorded", "alert_test_submission_only"])) fail("proven");
   if (!equal(receipt.unproven, ["email_receipt", "acknowledgement", "exhaustive_B7_sandbox_validation_packet", "remaining_non_backup_live_checks", "read_access_alexandre_only"])) fail("unproven");
   if (!equal(receipt.future_scope_limits, ["production_durability_or_routing"])) fail("future_scope_limits");
+  return receipt;
+};
+
+export const validateAlertEmailAckEvidence = (receipt, predecessor) => {
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) fail("alert_ack_shape");
+  const expectedTopKeys = ["schema", "version", "status", "block", "b7_status", "recorded_at", "hash_algorithm", "live_claims", "environment", "source", "predecessor_receipt_hash", "email_receipt", "fixture", "operator_acknowledgement", "state_transition", "reader_boundary", "future_scope_limits", "d08", "stop_triggers", "negative_effect_facts", "receipt_hash"];
+  if (!equal(Object.keys(receipt), expectedTopKeys) || Object.keys(receipt).at(-1) !== "receipt_hash") fail("alert_ack_top_level_keys");
+  if (!verifyReceiptHash(receipt)) fail("alert_ack_self_hash");
+  if (hasRawLiveMaterial(receipt)) fail("alert_ack_raw_material");
+  validateLiveCutoverEvidence(predecessor);
+  if (receipt.schema !== "b7-alert-email-ack-receipt" || receipt.version !== 1 || receipt.status !== "recorded" || receipt.block !== "B7" || receipt.b7_status !== "in_progress" || receipt.recorded_at !== "2026-07-22T12:14:55.928Z" || receipt.hash_algorithm !== "sha256" || receipt.live_claims !== true || receipt.environment !== "sandbox") fail("alert_ack_metadata");
+  if (!equal(receipt.source, { kind: "operator_supplied_appshot", material: "operator_supplied_appshot_redacted_no_raw_headers_or_message", material_sha256: "a5f470a475804a8f4ebd70716e99a9fab9a0eaeaf56113e248471923bba5ff5e", raw_appshot_persisted: false, raw_message_or_headers_persisted: false, structured_redacted_projection_only: true, independent_full_header_verification: false })) fail("alert_ack_source");
+  if (receipt.source.material_sha256 !== createHash("sha256").update(receipt.source.material).digest("hex")) fail("alert_ack_source_hash");
+  if (receipt.predecessor_receipt_hash !== "e4c8ea22cfc6028847e162d6960175c156469c9d6a968e7617d6477140dc3a6e" || receipt.predecessor_receipt_hash !== predecessor.receipt_hash) fail("alert_ack_predecessor");
+  const expectedEmailReceipt = { receipt_minute_local: "2026-07-22T13:15:00+02:00", receipt_minute_utc: "2026-07-22T11:15:00Z", precision: "minute", provider: "Gmail", notification_type: "Cloudflare_Logpush_failure", sender_hash: "33d29cc6f0d3f24924d96095cc1fb4e4f7b39c6d84e2159e20bb941f09302d31", signed_domain: "notify.cloudflare.com", gmail_signed_by_domain_observed: true, recipient_identity_hash: "192e52a0ac7db369a7ee845346811c6d61995baa8c680c766810539cec98b615", subject_hash: "9897cb69865fbd6a8dd8eaea744116d5f52ece90e537df13e1ab050767461e2c", raw_sender_persisted: false, raw_recipient_persisted: false, raw_subject_persisted: false, temporal_binding: { receipt_interval_start: "2026-07-22T11:15:00.000Z", receipt_interval_end: "2026-07-22T11:15:59.999Z", submission_window: { start: "2026-07-22T11:13:18Z", end: "2026-07-22T11:15:17Z" }, overlaps_submission_window: true, second_order_claimed: false } };
+  if (!equal(receipt.email_receipt, expectedEmailReceipt)) fail("alert_ack_email_receipt");
+  const binding=receipt.email_receipt.temporal_binding, intervalStart=Date.parse(binding.receipt_interval_start), intervalEnd=Date.parse(binding.receipt_interval_end), start=Date.parse(binding.submission_window.start), end=Date.parse(binding.submission_window.end);
+  if(!Number.isFinite(intervalStart)||!Number.isFinite(intervalEnd)||!Number.isFinite(start)||!Number.isFinite(end)||intervalStart>intervalEnd||start>end||Math.max(intervalStart,start)>Math.min(intervalEnd,end))fail("alert_ack_minute_overlap");
+  if (Date.parse(receipt.email_receipt.receipt_minute_local) !== Date.parse(receipt.email_receipt.receipt_minute_utc)) fail("alert_ack_local_utc");
+  if (receipt.email_receipt.recipient_identity_hash !== predecessor.alert_test?.recipient_identity_hash) fail("alert_ack_recipient_link");
+  if (!equal(receipt.fixture, { fixture_job_hash: "534a4a8eafcd8489af32356d5a7a25f88c70cfe0448539a7c42964c1b897a359", fixture_destination_hash: "943825252e556f11a8c3b1e03fb6230969419cfd0cc3465abf8fc5a406c44c4b", provider_test_fixture_observed: true, proves: "test_notification_only", raw_fixture_values_persisted: false, live_job_or_destination_referenced: false, actual_live_job_failure: false, actual_live_job_failure_proven: false })) fail("alert_ack_fixture");
+  if (!equal(receipt.operator_acknowledgement, { state: "acknowledged", actor_identity_hash: "192e52a0ac7db369a7ee845346811c6d61995baa8c680c766810539cec98b615", method: "operator_appshot_share", scope: "email_receipt_acknowledgement_only", acknowledged_at: "2026-07-22T12:14:55.928Z", authorizes_further_live_effects: false })) fail("alert_ack_operator_acknowledgement");
+  if (receipt.operator_acknowledgement.actor_identity_hash !== receipt.email_receipt.recipient_identity_hash) fail("alert_ack_actor_link");
+  if (receipt.operator_acknowledgement.acknowledged_at !== receipt.recorded_at || Date.parse(receipt.operator_acknowledgement.acknowledged_at) <= intervalEnd) fail("alert_ack_timing");
+  if (!equal(receipt.state_transition, { previous_blockers: ["alert_email_receipt_and_acknowledgement", "exhaustive_B7_sandbox_validation_packet", "remaining_non_backup_live_checks"], closed_blocker: "alert_email_receipt_and_acknowledgement", current_blockers: ["exhaustive_B7_sandbox_validation_packet", "remaining_non_backup_live_checks"], remaining_unproven: ["read_access_alexandre_only", "actual_live_job_failure_notification"], proven: ["email_receipt_hash_bound_to_predecessor_alert_recipient", "minute_precision_submission_window_overlap", "operator_acknowledgement_recorded", "no_further_live_authority"] })) fail("alert_ack_state_transition");
+  if (!equal(receipt.reader_boundary, { read_access_alexandre_only_proven: false, remaining_non_backup_live_check: true })) fail("alert_ack_reader_boundary");
+  if (!equal(receipt.future_scope_limits, ["production_durability_or_routing"])) fail("alert_ack_future_scope");
+  if (!equal(receipt.d08, { status: "designated_not_activated", informed: false, accepted: false, access_provisioned: false, recovery_validated: false })) fail("alert_ack_d08");
+  if (!equal(receipt.stop_triggers, stopTriggers)) fail("alert_ack_stop_triggers");
+  if (!equal(receipt.negative_effect_facts, { pipedrive_access_or_change: false, production_effect: false, public_route: false, external_party_access: false, audit_object_deletion: false, customer_data_deletion: false, cloudflare_or_gmail_mutation: false, r2_object_deletion: false })) fail("alert_ack_negative_effect_facts");
   return receipt;
 };

@@ -1,0 +1,118 @@
+{
+  "schema": "b7-alert-email-ack-receipt",
+  "version": 1,
+  "status": "recorded",
+  "block": "B7",
+  "b7_status": "in_progress",
+  "recorded_at": "2026-07-22T12:14:55.928Z",
+  "hash_algorithm": "sha256",
+  "live_claims": true,
+  "environment": "sandbox",
+  "source": {
+    "kind": "operator_supplied_appshot",
+    "material": "operator_supplied_appshot_redacted_no_raw_headers_or_message",
+    "material_sha256": "a5f470a475804a8f4ebd70716e99a9fab9a0eaeaf56113e248471923bba5ff5e",
+    "raw_appshot_persisted": false,
+    "raw_message_or_headers_persisted": false,
+    "structured_redacted_projection_only": true,
+    "independent_full_header_verification": false
+  },
+  "predecessor_receipt_hash": "e4c8ea22cfc6028847e162d6960175c156469c9d6a968e7617d6477140dc3a6e",
+  "email_receipt": {
+    "receipt_minute_local": "2026-07-22T13:15:00+02:00",
+    "receipt_minute_utc": "2026-07-22T11:15:00Z",
+    "precision": "minute",
+    "provider": "Gmail",
+    "notification_type": "Cloudflare_Logpush_failure",
+    "sender_hash": "33d29cc6f0d3f24924d96095cc1fb4e4f7b39c6d84e2159e20bb941f09302d31",
+    "signed_domain": "notify.cloudflare.com",
+    "gmail_signed_by_domain_observed": true,
+    "recipient_identity_hash": "192e52a0ac7db369a7ee845346811c6d61995baa8c680c766810539cec98b615",
+    "subject_hash": "9897cb69865fbd6a8dd8eaea744116d5f52ece90e537df13e1ab050767461e2c",
+    "raw_sender_persisted": false,
+    "raw_recipient_persisted": false,
+    "raw_subject_persisted": false,
+    "temporal_binding": {
+      "receipt_interval_start": "2026-07-22T11:15:00.000Z",
+      "receipt_interval_end": "2026-07-22T11:15:59.999Z",
+      "submission_window": {
+        "start": "2026-07-22T11:13:18Z",
+        "end": "2026-07-22T11:15:17Z"
+      },
+      "overlaps_submission_window": true,
+      "second_order_claimed": false
+    }
+  },
+  "fixture": {
+    "fixture_job_hash": "534a4a8eafcd8489af32356d5a7a25f88c70cfe0448539a7c42964c1b897a359",
+    "fixture_destination_hash": "943825252e556f11a8c3b1e03fb6230969419cfd0cc3465abf8fc5a406c44c4b",
+    "provider_test_fixture_observed": true,
+    "proves": "test_notification_only",
+    "raw_fixture_values_persisted": false,
+    "live_job_or_destination_referenced": false,
+    "actual_live_job_failure": false,
+    "actual_live_job_failure_proven": false
+  },
+  "operator_acknowledgement": {
+    "state": "acknowledged",
+    "actor_identity_hash": "192e52a0ac7db369a7ee845346811c6d61995baa8c680c766810539cec98b615",
+    "method": "operator_appshot_share",
+    "scope": "email_receipt_acknowledgement_only",
+    "acknowledged_at": "2026-07-22T12:14:55.928Z",
+    "authorizes_further_live_effects": false
+  },
+  "state_transition": {
+    "previous_blockers": [
+      "alert_email_receipt_and_acknowledgement",
+      "exhaustive_B7_sandbox_validation_packet",
+      "remaining_non_backup_live_checks"
+    ],
+    "closed_blocker": "alert_email_receipt_and_acknowledgement",
+    "current_blockers": [
+      "exhaustive_B7_sandbox_validation_packet",
+      "remaining_non_backup_live_checks"
+    ],
+    "remaining_unproven": [
+      "read_access_alexandre_only",
+      "actual_live_job_failure_notification"
+    ],
+    "proven": [
+      "email_receipt_hash_bound_to_predecessor_alert_recipient",
+      "minute_precision_submission_window_overlap",
+      "operator_acknowledgement_recorded",
+      "no_further_live_authority"
+    ]
+  },
+  "reader_boundary": {
+    "read_access_alexandre_only_proven": false,
+    "remaining_non_backup_live_check": true
+  },
+  "future_scope_limits": [
+    "production_durability_or_routing"
+  ],
+  "d08": {
+    "status": "designated_not_activated",
+    "informed": false,
+    "accepted": false,
+    "access_provisioned": false,
+    "recovery_validated": false
+  },
+  "stop_triggers": {
+    "customer_billing": false,
+    "additional_customer_access": false,
+    "real_production_data_or_traffic": false,
+    "public_availability": false,
+    "security_incident": false
+  },
+  "negative_effect_facts": {
+    "pipedrive_access_or_change": false,
+    "production_effect": false,
+    "public_route": false,
+    "external_party_access": false,
+    "audit_object_deletion": false,
+    "customer_data_deletion": false,
+    "cloudflare_or_gmail_mutation": false,
+    "r2_object_deletion": false
+  },
+  "receipt_hash": "1af763477a186e9e159d2e6400e4cfd2962ef74414f80badd737cff2b0ddbd7e"
+}
