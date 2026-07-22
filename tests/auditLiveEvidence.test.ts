@@ -2,13 +2,14 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { hasRawLiveMaterial, validateAlertEmailAckEvidence, validateB7LiveAuthorityEvidence, validateB7SandboxValidationObservationEvidence, validateLiveCutoverEvidence, verifyReceiptHash } from "../scripts/lib/audit-live-evidence.mjs";
+import { hasRawLiveMaterial, validateAlertEmailAckEvidence, validateB7LiveAuthorityEvidence, validateB7SandboxValidationObservationEvidence, validateB7SrImpactEvidence, validateLiveCutoverEvidence, verifyReceiptHash } from "../scripts/lib/audit-live-evidence.mjs";
 
 const receiptPath = "ops/evidence/B7-live-cutover-2026-07-22.json";
 const alertAckReceiptPath = "ops/evidence/B7-alert-email-ack-2026-07-22.json";
 const srAuthorityPath = "ops/evidence/B7-sr-authority-2026-07-22.json";
 const swAuthorityPath = "ops/evidence/B7-sw-validation-authority-2026-07-22.json";
 const validationObservationPath = "ops/evidence/B7-sandbox-validation-observation-2026-07-22.json";
+const impactAuthorityPath = "ops/evidence/B7-sr-impact-authority-2026-07-22.json", impactObservationPath = "ops/evidence/B7-sr-impact-observation-2026-07-22.json";
 const loadReceipt = () => JSON.parse(readFileSync(receiptPath, "utf8"));
 const loadAlertAckReceipt = () => JSON.parse(readFileSync(alertAckReceiptPath, "utf8"));
 const loadAuthority = (path: string) => JSON.parse(readFileSync(path, "utf8"));
@@ -173,6 +174,44 @@ test("B7 authorities reject widened scopes, excluded activity, and unsafe contro
   const rawReceipt = structuredClone(loadAuthority(srAuthorityPath)); rawReceipt.source.message = "person@example.test";
   assert.throws(() => validateB7LiveAuthorityEvidence(rehash(rawReceipt), "SR", cutover, ack), /authority_hash_or_raw/);
   for (const value of ["Alexandre", "Davy"]) { const receipt = structuredClone(loadAuthority(swAuthorityPath)); receipt.scope.push(value); assert.throws(() => validateB7LiveAuthorityEvidence(rehash(receipt), "SW", cutover, ack), /authority_hash_or_raw/); }
+});
+
+test("B7 SR impact mapping remains read-only, predecessor-bound, and unsafe to target for change",()=>{
+  const authority=loadAuthority(impactAuthorityPath),observation=loadAuthority(impactObservationPath),predecessor=loadAuthority(validationObservationPath);
+  assert.equal(validateB7SrImpactEvidence(authority,observation,predecessor),observation);
+  assert.equal(observation.reader_impact.safe_to_target_for_change,false);
+  assert.equal(observation.reader_impact.direct_usage_dependencies_unknown,true);
+  assert.equal(observation.freshness.current_check,"passed");
+  assert.equal(observation.freshness.r2_metadata_correlation.object_content_opened,false);
+});
+
+test("B7 SR impact evidence rejects tampering, scope widening, softened impact, false attribution, and unsafe effects",()=>{
+  const authority=loadAuthority(impactAuthorityPath),observation=loadAuthority(impactObservationPath),predecessor=loadAuthority(validationObservationPath);
+  const invalidAuthorityMutations=[
+    (a:any)=>a.scope.push("write_principal"),
+    (a:any)=>a.exclusions=a.exclusions.filter((value:string)=>value!=="revocation_or_rotation"),
+    (a:any)=>a.live_effects_performed=true,
+    (a:any)=>a.data_handling.secret_values_read=true,
+    (a:any)=>a.predecessor_observation_receipt_hash="0".repeat(64)
+  ];
+  for(const mutate of invalidAuthorityMutations){const changed=structuredClone(authority);mutate(changed);assert.throws(()=>validateB7SrImpactEvidence(rehash(changed),observation,predecessor),/impact_/);}
+  const staleHash=structuredClone(observation);staleHash.reader_impact.safe_to_target_for_change=true;assert.throws(()=>validateB7SrImpactEvidence(authority,staleHash,predecessor),/impact_hash_or_raw/);
+  const invalidObservationMutations=[
+    (o:any)=>o.reader_impact.safe_to_target_for_change=true,
+    (o:any)=>o.reader_impact.read_access_operator_only_check="passed",
+    (o:any)=>o.bucket_inventory.pop(),
+    (o:any)=>o.principal_inventory.principals[1].direct_actual_workload_attribution="sandbox_only",
+    (o:any)=>o.freshness.current_check="failed",
+    (o:any)=>o.freshness.conclusion="delivery_outage",
+    (o:any)=>o.safety.live_effects_performed=true,
+    (o:any)=>o.safety.stop_triggers.security_incident=true,
+    (o:any)=>o.safety.object_content_read_or_retained=true,
+    (o:any)=>o.safety.secret_values_read_or_retained=true,
+    (o:any)=>o.predecessor_observation_receipt_hash="0".repeat(64)
+  ];
+  for(const mutate of invalidObservationMutations){const changed=structuredClone(observation);mutate(changed);assert.throws(()=>validateB7SrImpactEvidence(authority,rehash(changed),predecessor),/impact_/);}
+  const raw=structuredClone(observation);raw.principal_inventory.raw_email="person@example.test";assert.throws(()=>validateB7SrImpactEvidence(authority,rehash(raw),predecessor),/impact_hash_or_raw/);
+  const wrongPredecessor=structuredClone(predecessor);wrongPredecessor.receipt_hash="0".repeat(64);assert.throws(()=>validateB7SrImpactEvidence(authority,observation,wrongPredecessor),/impact_predecessor/);
 });
 
 test("B7 sandbox observation is partial, hash-bound, and records the reader-boundary failure", () => {

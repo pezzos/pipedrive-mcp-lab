@@ -1,0 +1,62 @@
+{
+  "schema": "b7-sr-impact-authority-receipt",
+  "version": 1,
+  "status": "authorized",
+  "block": "B7",
+  "b7_status": "in_progress",
+  "recorded_at": "2026-07-22T13:45:23Z",
+  "effective_before_observation_window": true,
+  "expires_at": "2026-07-23T21:59:00.000Z",
+  "decision_owner": "operator_identity",
+  "authorization_source": "explicit_operator_grant_current_session",
+  "provider": "Cloudflare",
+  "environment_scope": {
+    "sandbox": true,
+    "shared_or_non_sandbox_dependency_metadata": true,
+    "production_effects": false
+  },
+  "hash_algorithm": "sha256",
+  "source": {
+    "kind": "redacted_structured_statement",
+    "material": "sr_b7_impact_metadata_mapping_and_logpush_freshness_diagnosis_v1",
+    "material_sha256": "bba3a9e64ba6b495f1baab2b1bf5cfee31f0437feabc08d1d600379f33a34d91",
+    "raw_chat_or_transcript_persisted": false
+  },
+  "predecessor_observation_receipt_hash": "b5ea18a6d1776f867778057d192092f26377da3dd653f0ea9c6604c9519beb0e",
+  "scope": [
+    "read_only_metadata_map_three_R2_principals",
+    "read_only_metadata_shared_non_sandbox_dependencies",
+    "read_only_sandbox_Logpush_freshness_diagnosis"
+  ],
+  "data_handling": {
+    "secret_values_read": false,
+    "object_content_read": false,
+    "PII_read_or_retained": false,
+    "CRM_or_Pipedrive_read": false,
+    "raw_identifiers_retained": false,
+    "structured_hash_bound_metadata_only": true
+  },
+  "exclusions": [
+    "all_mutation",
+    "revocation_or_rotation",
+    "production_effect",
+    "public_route",
+    "billing_or_plan_change",
+    "additional_customer_or_user",
+    "designated_D08_backup",
+    "deletion"
+  ],
+  "cost_controls": {
+    "expected_incremental_charge_eur": 0,
+    "billing_or_plan_change_authorized": false
+  },
+  "stop_triggers": {
+    "customer_billing": false,
+    "additional_customer_access": false,
+    "real_production_data_or_traffic": false,
+    "public_availability": false,
+    "security_incident": false
+  },
+  "live_effects_performed": false,
+  "receipt_hash": "ddea65a00247671e81f1fe3e150e8bfc261568258acc1db8e778cbe2f34f6c1e"
+}

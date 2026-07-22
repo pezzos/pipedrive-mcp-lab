@@ -1,0 +1,221 @@
+{
+  "schema": "b7-sr-impact-observation-receipt",
+  "version": 1,
+  "status": "partial",
+  "block": "B7",
+  "b7_status": "in_progress",
+  "recorded_at": "2026-07-22T13:45:23Z",
+  "observed_between": {
+    "start": "2026-07-22T13:33:56.869Z",
+    "end": "2026-07-22T13:39:14.830Z"
+  },
+  "provider": "Cloudflare",
+  "environment_scope": {
+    "sandbox": true,
+    "shared_or_non_sandbox_dependency_metadata": true,
+    "production_effects": false
+  },
+  "hash_algorithm": "sha256",
+  "authority_receipt_hash": "ddea65a00247671e81f1fe3e150e8bfc261568258acc1db8e778cbe2f34f6c1e",
+  "predecessor_observation_receipt_hash": "b5ea18a6d1776f867778057d192092f26377da3dd653f0ea9c6604c9519beb0e",
+  "principal_inventory": {
+    "account_token_metadata": {
+      "total_count": 4,
+      "active_non_expiring_soon_count": 2,
+      "expired_count": 1,
+      "expires_soon_count": 1,
+      "resource_attribution_available": false
+    },
+    "principals": [
+      {
+        "principal_hash": "8673b50389cf08f2e4cc56903ef9ace6419870fab065cd0ebe19750030264099",
+        "principal_type": "account",
+        "permission_scope": "Object Read & Write",
+        "bucket_scope": "one_bucket_only",
+        "direct_bucket_hashes": [
+          "13decf6feca3b39441f00236ce1407a0c7f6cb1876e1d5576a3e37bd764b4a4b"
+        ],
+        "issued_on": "2026-07-22",
+        "active_until": "2026-08-21",
+        "active": true,
+        "last_used_metadata": "not_displayed",
+        "accepted_logpush_principal": true,
+        "direct_actual_workload_attribution": "accepted_logpush_only"
+      },
+      {
+        "principal_hash": "bd661569b4ef3137ddb0baa7c83dac527322b151076c750f423954b808ec0844",
+        "principal_type": "account",
+        "permission_scope": "Admin Read & Write",
+        "bucket_scope": "all_buckets",
+        "direct_bucket_hashes": [
+          "13decf6feca3b39441f00236ce1407a0c7f6cb1876e1d5576a3e37bd764b4a4b",
+          "6809d190ebe6b534ff9cce04b5b82f6ec234f6af19982a165235d43399ee0b13",
+          "6cd74831ef24716461cb72f91457475b6c00716276a2a294b8a30322028818ad"
+        ],
+        "issued_on": "2026-06-04",
+        "active_until": null,
+        "active": true,
+        "last_used_metadata": "within_one_day_without_resource_attribution",
+        "accepted_logpush_principal": false,
+        "direct_actual_workload_attribution": "unknown"
+      },
+      {
+        "principal_hash": "55ae7959b6a758f32208d2eec5b9fef22f334ed8dda6304d87cda07cc0e42ea9",
+        "principal_type": "user",
+        "permission_scope": "Admin Read & Write",
+        "bucket_scope": "all_buckets",
+        "direct_bucket_hashes": [
+          "13decf6feca3b39441f00236ce1407a0c7f6cb1876e1d5576a3e37bd764b4a4b",
+          "6809d190ebe6b534ff9cce04b5b82f6ec234f6af19982a165235d43399ee0b13",
+          "6cd74831ef24716461cb72f91457475b6c00716276a2a294b8a30322028818ad"
+        ],
+        "issued_on": "2025-07-27",
+        "active_until": null,
+        "active": true,
+        "last_used_metadata": "not_displayed",
+        "accepted_logpush_principal": false,
+        "direct_actual_workload_attribution": "unknown"
+      }
+    ],
+    "local_repository_raw_label_reference_count": 0,
+    "actual_usage_attribution_complete": false
+  },
+  "bucket_inventory": [
+    {
+      "bucket_hash": "13decf6feca3b39441f00236ce1407a0c7f6cb1876e1d5576a3e37bd764b4a4b",
+      "classification": "dedicated_private_sandbox_audit",
+      "object_count": 209,
+      "size_display_kb": 141.56,
+      "custom_domain_count": 0,
+      "public_development_url_enabled": false,
+      "lifecycle_delete_days": 30,
+      "bucket_lock_days": 30,
+      "event_notification_count": 0
+    },
+    {
+      "bucket_hash": "6809d190ebe6b534ff9cce04b5b82f6ec234f6af19982a165235d43399ee0b13",
+      "classification": "non_sandbox_production_labeled_empty",
+      "object_count": 0,
+      "size_display_bytes": 0,
+      "custom_domain_count": 0,
+      "public_development_url_enabled": false,
+      "lifecycle_delete_days": 7,
+      "bucket_lock_days": null,
+      "event_notification_count": 0
+    },
+    {
+      "bucket_hash": "6cd74831ef24716461cb72f91457475b6c00716276a2a294b8a30322028818ad",
+      "classification": "non_sandbox_production_labeled_empty",
+      "object_count": 0,
+      "size_display_bytes": 0,
+      "custom_domain_count": 0,
+      "public_development_url_enabled": false,
+      "lifecycle_delete_days": null,
+      "bucket_lock_days": null,
+      "event_notification_count": 0
+    }
+  ],
+  "reader_impact": {
+    "all_bucket_principal_count": 2,
+    "all_bucket_principals_include_non_sandbox_scope": true,
+    "non_sandbox_bucket_count": 2,
+    "non_sandbox_objects_or_bytes_observed": false,
+    "real_production_data_or_traffic_observed": false,
+    "direct_usage_dependencies_unknown": true,
+    "safe_to_target_for_change": false,
+    "no_exact_SW_or_DW_request_safe": true,
+    "read_access_operator_only_check": "failed"
+  },
+  "freshness": {
+    "prior_projection": {
+      "predecessor_observed_end": "2026-07-22T13:12:58.410Z",
+      "displayed_last_push_at": "2026-07-22T11:31:52Z",
+      "displayed_lag_seconds": 6066.41,
+      "recorded_check": "failed"
+    },
+    "first_snapshot": {
+      "observed_at": "2026-07-22T13:33:56.869Z",
+      "last_push_at": "2026-07-22T13:31:46Z",
+      "lag_seconds": 130.869,
+      "health_24h": "no_activity",
+      "status": "pushing",
+      "enabled": true
+    },
+    "second_snapshot": {
+      "observed_at": "2026-07-22T13:39:14.830Z",
+      "last_push_at": "2026-07-22T13:37:10Z",
+      "lag_seconds": 124.83,
+      "health_24h": "no_activity",
+      "status": "pushing",
+      "enabled": true
+    },
+    "snapshot_elapsed_seconds": 317.961,
+    "last_push_advance_seconds": 324,
+    "r2_metadata_correlation": {
+      "records_after_prior_displayed_push_before_predecessor_end": 20,
+      "first_event_after_prior_displayed_push": "2026-07-22T11:36:22Z",
+      "last_event_before_predecessor_end": "2026-07-22T13:11:23Z",
+      "current_latest_event": "2026-07-22T13:36:32Z",
+      "current_latest_modified": "2026-07-22T13:37:21Z",
+      "current_latest_key_hash": "b340b0b17d55ef4a494e36a58d1a8b788c301054a39af91fb362ae7a7ea436bc",
+      "object_content_opened": false
+    },
+    "current_check": "passed",
+    "conclusion": "freshness_passed_recovered_prior_failure_reclassified_stale_UI_projection_not_delivery_outage",
+    "health_24h_label_reliable_as_delivery_failure_evidence": false,
+    "actual_live_job_failure_notification": "unproven"
+  },
+  "worker_metadata": {
+    "invocation_count": 207,
+    "prior_invocation_count": 202,
+    "invocation_delta": 5,
+    "error_count": 0,
+    "scheduled_trigger_count": 1,
+    "public_urls_enabled": false,
+    "domain_count": 0,
+    "route_count": 0,
+    "worker_logs_enabled": false,
+    "worker_traces_enabled": false,
+    "deployment_unchanged_hours_approx": 16,
+    "R2_binding_count": 0,
+    "durable_object_binding_count": 3,
+    "version_metadata_binding_count": 1,
+    "causally_relevant_configuration_change_observed": false
+  },
+  "current_blockers": [
+    "read_access_operator_only_remediation_or_explicit_boundary_decision",
+    "direct_usage_dependency_attribution_for_two_all_bucket_principals",
+    "exhaustive_B7_sandbox_validation_packet",
+    "safe_internal_control_plane_for_reversible_permission_tenant_and_recovery_checks",
+    "actual_live_job_failure_notification"
+  ],
+  "smallest_next_boundary": {
+    "required": true,
+    "owner": "operator",
+    "action": "identify_or_disposition_two_hash_bound_all_bucket_principals_or_obtain_provider_supported_read_only_attribution",
+    "principal_hashes": [
+      "bd661569b4ef3137ddb0baa7c83dac527322b151076c750f423954b808ec0844",
+      "55ae7959b6a758f32208d2eec5b9fef22f334ed8dda6304d87cda07cc0e42ea9"
+    ],
+    "secrets_required": false,
+    "exact_SW_or_DW_safe_now": false,
+    "mutation_authority_granted": false
+  },
+  "safety": {
+    "secret_values_read_or_retained": false,
+    "object_content_read_or_retained": false,
+    "PII_read_or_retained": false,
+    "CRM_or_Pipedrive_read": false,
+    "raw_identifiers_retained": false,
+    "live_effects_performed": false,
+    "expected_incremental_charge_eur": 0,
+    "stop_triggers": {
+      "customer_billing": false,
+      "additional_customer_access": false,
+      "real_production_data_or_traffic": false,
+      "public_availability": false,
+      "security_incident": false
+    }
+  },
+  "receipt_hash": "89cc1a0d7b5de6ce4706a9b8ab206ad9a576caf48a22fa506861d4a9a4d37762"
+}
