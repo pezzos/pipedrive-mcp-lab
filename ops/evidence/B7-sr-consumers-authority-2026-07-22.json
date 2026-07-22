@@ -1,0 +1,83 @@
+{
+  "schema": "b7-sr-consumers-authority-receipt",
+  "version": 1,
+  "status": "authorized",
+  "block": "B7",
+  "b7_status": "in_progress",
+  "recorded_at": "2026-07-22T14:54:49Z",
+  "effective_before_observation": true,
+  "expires_at": "2026-07-23T21:59:00.000Z",
+  "decision_owner": "operator_identity",
+  "authorization_source": "explicit_operator_grant_current_session",
+  "provider": "GitHub",
+  "environment_scope": {
+    "hash_bound_consumers_only": true,
+    "production_effects": false
+  },
+  "hash_algorithm": "sha256",
+  "source": {
+    "kind": "redacted_structured_statement",
+    "material": "sr_b7_consumers_github_hash_bound_metadata_read_v1",
+    "material_sha256": "40787d2cd4da7daf3725bc7b63b97654956c7fcf76c0160052bae4c5398b9117",
+    "raw_chat_or_transcript_persisted": false
+  },
+  "predecessor_attribution_receipt_hash": "da78e6ac5a0220f16969ceed2542a933a88c75059de26d93e2da49d77cf029f0",
+  "targets": {
+    "consumer_hashes": [
+      "c04beac944655c3d3b50ad7daf42b7181747f0be5d37dc1fcbcb751fc78fa812",
+      "582a432583f62e5f3488165d7ebc8f0f89e423cdc429fb2c26cf6d8f1f733cf3"
+    ],
+    "provenance_principal_hashes": [
+      "bd661569b4ef3137ddb0baa7c83dac527322b151076c750f423954b808ec0844",
+      "55ae7959b6a758f32208d2eec5b9fef22f334ed8dda6304d87cda07cc0e42ea9"
+    ],
+    "raw_identifiers_retained": false
+  },
+  "scope": [
+    "read_only_repository_metadata",
+    "read_only_workflow_identity_and_timestamps",
+    "read_only_deployment_identity_and_timestamps",
+    "read_only_integration_identity_and_timestamps",
+    "read_only_secret_names_and_timestamps_never_values"
+  ],
+  "exclusions": [
+    "source_or_workflow_contents",
+    "logs_or_artifacts",
+    "workflow_trigger_or_rerun",
+    "deployment_execution",
+    "repository_PR_or_comment_write",
+    "secret_or_variable_values",
+    "secret_or_variable_mutation",
+    "authentication_or_session_mutation",
+    "Cloudflare_mutation",
+    "Pipedrive_OAuth_or_CRM",
+    "production_effect",
+    "public_route",
+    "billing_or_plan_change",
+    "additional_customer_or_user",
+    "designated_D08_backup",
+    "rotation_revocation_or_deletion",
+    "all_other_writes"
+  ],
+  "data_handling": {
+    "raw_identifiers_retained": false,
+    "secret_or_variable_values_read": false,
+    "source_or_workflow_contents_read": false,
+    "logs_or_artifacts_read": false,
+    "PII_or_CRM_read": false,
+    "hash_bound_metadata_only": true
+  },
+  "cost_controls": {
+    "expected_incremental_charge_eur": 0,
+    "billing_or_plan_change_authorized": false
+  },
+  "stop_triggers": {
+    "customer_billing": false,
+    "additional_customer_access": false,
+    "real_production_data_or_traffic": false,
+    "public_availability": false,
+    "security_incident": false
+  },
+  "live_effects_performed": false,
+  "receipt_hash": "c0eb25ff31bbd866dd5206abf94d0fb386b7f47e0bc6678054f2a4be93fadcd7"
+}

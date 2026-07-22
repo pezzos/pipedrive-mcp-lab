@@ -1,0 +1,126 @@
+{
+  "schema": "b7-sr-consumers-observation-receipt",
+  "version": 1,
+  "status": "partial",
+  "block": "B7",
+  "b7_status": "in_progress",
+  "recorded_at": "2026-07-22T14:54:49Z",
+  "observed_at": "2026-07-22T14:38:38.487Z",
+  "provider": "GitHub",
+  "hash_algorithm": "sha256",
+  "authority_receipt_hash": "c0eb25ff31bbd866dd5206abf94d0fb386b7f47e0bc6678054f2a4be93fadcd7",
+  "predecessor_attribution_receipt_hash": "da78e6ac5a0220f16969ceed2542a933a88c75059de26d93e2da49d77cf029f0",
+  "repository_scan": {
+    "owner_identity_sha256": "bfbbbf49f16e9a5ff93b3a0b2d7378caba56139f42fcb5f2b0c209274c3c97f7",
+    "selected_repository_count": 2,
+    "unique_consumer_repository_bindings": true,
+    "raw_identifiers_retained": false
+  },
+  "consumer_repositories": [
+    {
+      "consumer_hash": "c04beac944655c3d3b50ad7daf42b7181747f0be5d37dc1fcbcb751fc78fa812",
+      "provenance_principal_hash": "bd661569b4ef3137ddb0baa7c83dac527322b151076c750f423954b808ec0844",
+      "repository_name_sha256": "c04beac944655c3d3b50ad7daf42b7181747f0be5d37dc1fcbcb751fc78fa812",
+      "repository_full_name_sha256": "ddf5de3fddec6181159a189217b700ca585613d310efa22a3d20986163a84a1b",
+      "private": true,
+      "fork": false,
+      "archived": false,
+      "created_at": "2026-03-10T16:10:31Z",
+      "updated_at": "2026-07-10T20:41:59Z",
+      "pushed_at": "2026-07-10T20:41:54Z",
+      "default_branch_name_sha256": "0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605",
+      "actions_workflow_count": 0,
+      "github_deployment_count": 0,
+      "actions_secret_name_count": 0
+    },
+    {
+      "consumer_hash": "582a432583f62e5f3488165d7ebc8f0f89e423cdc429fb2c26cf6d8f1f733cf3",
+      "provenance_principal_hash": "55ae7959b6a758f32208d2eec5b9fef22f334ed8dda6304d87cda07cc0e42ea9",
+      "repository_name_sha256": "582a432583f62e5f3488165d7ebc8f0f89e423cdc429fb2c26cf6d8f1f733cf3",
+      "repository_full_name_sha256": "7843fe5a459cb11703d2bda1678351a538be421331fa43ef4188a0cec3565ace",
+      "private": true,
+      "fork": false,
+      "archived": false,
+      "created_at": "2025-07-26T22:08:55Z",
+      "updated_at": "2025-07-26T22:09:25Z",
+      "pushed_at": "2025-07-26T22:09:21Z",
+      "default_branch_name_sha256": "0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605",
+      "actions_workflow_count": 0,
+      "github_deployment_count": 0,
+      "actions_secret_name_count": 0
+    }
+  ],
+  "metadata_queries": {
+    "repository_metadata_only": true,
+    "workflow_identity_and_timestamps_only": true,
+    "deployment_field_selected_graphql_only": true,
+    "deployment_payload_read": false,
+    "secret_names_and_timestamps_only": true,
+    "secret_or_variable_values_read": false,
+    "source_or_workflow_contents_read": false,
+    "logs_or_artifacts_read": false
+  },
+  "integration_visibility": {
+    "installations_endpoint": "forbidden_403",
+    "stderr_sha256": "76cc9dbadbd1b5a923b918e07a083a1ca3f9e863f331fe9fb45206e1abdba701",
+    "response_payload_retained": false,
+    "does_not_prove_no_integration": true,
+    "chrome_authenticated_to_github": false,
+    "private_repository_inspection_blocked": true,
+    "login_or_session_change_performed": false
+  },
+  "conclusions": [
+    {
+      "consumer_hash": "c04beac944655c3d3b50ad7daf42b7181747f0be5d37dc1fcbcb751fc78fa812",
+      "principal_hash": "bd661569b4ef3137ddb0baa7c83dac527322b151076c750f423954b808ec0844",
+      "unique_repository_binding_proven": true,
+      "live_pages_control_plane_use_proven_by_predecessor": true,
+      "github_integration_mechanism_identified": false,
+      "zero_counts_prove_no_integration": false,
+      "safe_to_revoke_or_broadly_edit": false
+    },
+    {
+      "consumer_hash": "582a432583f62e5f3488165d7ebc8f0f89e423cdc429fb2c26cf6d8f1f733cf3",
+      "principal_hash": "55ae7959b6a758f32208d2eec5b9fef22f334ed8dda6304d87cda07cc0e42ea9",
+      "unique_historical_repository_binding_proven": true,
+      "dormant_github_metadata_proven": true,
+      "github_integration_observable": false,
+      "r2_s3_data_plane_use_observable": false,
+      "safe_to_revoke_or_broadly_edit": false
+    }
+  ],
+  "current_blockers": [
+    "github_app_integration_metadata_unavailable",
+    "r2_s3_data_plane_use_unobservable_for_historical_principal",
+    "read_access_operator_only_remediation_or_explicit_boundary_decision",
+    "exhaustive_B7_sandbox_validation_packet",
+    "safe_internal_control_plane_for_reversible_permission_tenant_and_recovery_checks",
+    "actual_live_job_failure_notification"
+  ],
+  "smallest_next_boundary": {
+    "required": true,
+    "action": "operator_manual_github_sign_in_in_chrome_then_resume_read_only_integration_inspection",
+    "current_SR_covers_post_login_read": true,
+    "new_SR_required_only_after_expiry_or_scope_change": true,
+    "codex_authentication_or_session_change_authority_granted": false,
+    "exact_SW_or_DW_safe": false
+  },
+  "safety": {
+    "temporary_projection_deleted": true,
+    "raw_identifiers_retained": false,
+    "secret_or_variable_values_read_or_retained": false,
+    "source_or_workflow_contents_read_or_retained": false,
+    "logs_or_artifacts_read_or_retained": false,
+    "PII_or_CRM_read_or_retained": false,
+    "writes_or_live_effects_performed": false,
+    "expected_incremental_charge_eur": 0,
+    "stop_triggers": {
+      "customer_billing": false,
+      "additional_customer_access": false,
+      "real_production_data_or_traffic": false,
+      "public_availability": false,
+      "security_incident": false
+    }
+  },
+  "receipt_hash": "075379bda76be67a1d59b93f87be84fe24635626cabaf389ef7339fcea424b9f"
+}

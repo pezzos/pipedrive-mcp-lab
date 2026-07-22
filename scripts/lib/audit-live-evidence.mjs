@@ -196,6 +196,60 @@ export const validateB7SrImpactAttributionEvidence=(receipt,{authority,predecess
   return receipt;
 };
 
+export const validateB7SrConsumersAuthorityEvidence=(receipt,predecessor)=>{
+  if(!receipt||typeof receipt!=="object"||Array.isArray(receipt)||!predecessor||typeof predecessor!=="object"||Array.isArray(predecessor))fail("consumers_authority_shape");
+  const keys=["schema","version","status","block","b7_status","recorded_at","effective_before_observation","expires_at","decision_owner","authorization_source","provider","environment_scope","hash_algorithm","source","predecessor_attribution_receipt_hash","targets","scope","exclusions","data_handling","cost_controls","stop_triggers","live_effects_performed","receipt_hash"];
+  if(!equal(Object.keys(receipt),keys)||Object.keys(receipt).at(-1)!=="receipt_hash")fail("consumers_authority_keys");
+  if(!verifyReceiptHash(receipt)||hasRawLiveMaterial(receipt)||!verifyReceiptHash(predecessor))fail("consumers_authority_hash_or_raw");
+  if(predecessor.schema!=="b7-sr-impact-attribution-observation-receipt"||predecessor.receipt_hash!=="da78e6ac5a0220f16969ceed2542a933a88c75059de26d93e2da49d77cf029f0"||receipt.predecessor_attribution_receipt_hash!==predecessor.receipt_hash)fail("consumers_authority_chain");
+  const environmentScope={hash_bound_consumers_only:true,production_effects:false};
+  if(receipt.schema!=="b7-sr-consumers-authority-receipt"||receipt.version!==1||receipt.status!=="authorized"||receipt.block!=="B7"||receipt.b7_status!=="in_progress"||receipt.recorded_at!=="2026-07-22T14:54:49Z"||receipt.effective_before_observation!==true||receipt.expires_at!=="2026-07-23T21:59:00.000Z"||receipt.decision_owner!=="operator_identity"||receipt.authorization_source!=="explicit_operator_grant_current_session"||receipt.provider!=="GitHub"||!equal(receipt.environment_scope,environmentScope)||receipt.hash_algorithm!=="sha256"||receipt.live_effects_performed!==false||receipt.receipt_hash!=="c0eb25ff31bbd866dd5206abf94d0fb386b7f47e0bc6678054f2a4be93fadcd7")fail("consumers_authority_metadata");
+  if(Date.parse(receipt.recorded_at)>=Date.parse(receipt.expires_at))fail("consumers_authority_timing");
+  const source={kind:"redacted_structured_statement",material:"sr_b7_consumers_github_hash_bound_metadata_read_v1",material_sha256:"40787d2cd4da7daf3725bc7b63b97654956c7fcf76c0160052bae4c5398b9117",raw_chat_or_transcript_persisted:false};
+  if(!equal(receipt.source,source)||receipt.source.material_sha256!==createHash("sha256").update(receipt.source.material).digest("hex"))fail("consumers_authority_source");
+  const consumerHashes=["c04beac944655c3d3b50ad7daf42b7181747f0be5d37dc1fcbcb751fc78fa812","582a432583f62e5f3488165d7ebc8f0f89e423cdc429fb2c26cf6d8f1f733cf3"];
+  const principalHashes=["bd661569b4ef3137ddb0baa7c83dac527322b151076c750f423954b808ec0844","55ae7959b6a758f32208d2eec5b9fef22f334ed8dda6304d87cda07cc0e42ea9"];
+  if(!equal(receipt.targets,{consumer_hashes:consumerHashes,provenance_principal_hashes:principalHashes,raw_identifiers_retained:false}))fail("consumers_authority_targets");
+  const scope=["read_only_repository_metadata","read_only_workflow_identity_and_timestamps","read_only_deployment_identity_and_timestamps","read_only_integration_identity_and_timestamps","read_only_secret_names_and_timestamps_never_values"];
+  const exclusions=["source_or_workflow_contents","logs_or_artifacts","workflow_trigger_or_rerun","deployment_execution","repository_PR_or_comment_write","secret_or_variable_values","secret_or_variable_mutation","authentication_or_session_mutation","Cloudflare_mutation","Pipedrive_OAuth_or_CRM","production_effect","public_route","billing_or_plan_change","additional_customer_or_user","designated_D08_backup","rotation_revocation_or_deletion","all_other_writes"];
+  const dataHandling={raw_identifiers_retained:false,secret_or_variable_values_read:false,source_or_workflow_contents_read:false,logs_or_artifacts_read:false,PII_or_CRM_read:false,hash_bound_metadata_only:true};
+  if(!equal(receipt.scope,scope)||!equal(receipt.exclusions,exclusions)||!equal(receipt.data_handling,dataHandling)||!equal(receipt.cost_controls,{expected_incremental_charge_eur:0,billing_or_plan_change_authorized:false})||!equal(receipt.stop_triggers,stopTriggers))fail("consumers_authority_scope");
+  return receipt;
+};
+
+export const validateB7SrConsumersObservationEvidence=(receipt,{authority,predecessor})=>{
+  if(!receipt||typeof receipt!=="object"||Array.isArray(receipt))fail("consumers_observation_shape");
+  const keys=["schema","version","status","block","b7_status","recorded_at","observed_at","provider","hash_algorithm","authority_receipt_hash","predecessor_attribution_receipt_hash","repository_scan","consumer_repositories","metadata_queries","integration_visibility","conclusions","current_blockers","smallest_next_boundary","safety","receipt_hash"];
+  if(!equal(Object.keys(receipt),keys)||Object.keys(receipt).at(-1)!=="receipt_hash")fail("consumers_observation_keys");
+  if(!verifyReceiptHash(receipt)||hasRawLiveMaterial(receipt))fail("consumers_observation_hash_or_raw");
+  validateB7SrConsumersAuthorityEvidence(authority,predecessor);
+  if(receipt.schema!=="b7-sr-consumers-observation-receipt"||receipt.version!==1||receipt.status!=="partial"||receipt.block!=="B7"||receipt.b7_status!=="in_progress"||receipt.recorded_at!=="2026-07-22T14:54:49Z"||receipt.observed_at!=="2026-07-22T14:38:38.487Z"||receipt.provider!=="GitHub"||receipt.hash_algorithm!=="sha256"||receipt.receipt_hash!=="075379bda76be67a1d59b93f87be84fe24635626cabaf389ef7339fcea424b9f")fail("consumers_observation_metadata");
+  if(receipt.authority_receipt_hash!==authority.receipt_hash||receipt.predecessor_attribution_receipt_hash!==predecessor.receipt_hash)fail("consumers_observation_chain");
+  if(Date.parse(receipt.observed_at)>Date.parse(receipt.recorded_at)||Date.parse(receipt.observed_at)>=Date.parse(authority.expires_at))fail("consumers_observation_timing");
+  if(!equal(receipt.repository_scan,{owner_identity_sha256:"bfbbbf49f16e9a5ff93b3a0b2d7378caba56139f42fcb5f2b0c209274c3c97f7",selected_repository_count:2,unique_consumer_repository_bindings:true,raw_identifiers_retained:false}))fail("consumers_observation_scan");
+  const branchHash="0d6e4079e36703ebd37c00722f5891d28b0e2811dc114b129215123adcce3605";
+  const expectedRepositories=[
+    {consumer_hash:"c04beac944655c3d3b50ad7daf42b7181747f0be5d37dc1fcbcb751fc78fa812",provenance_principal_hash:"bd661569b4ef3137ddb0baa7c83dac527322b151076c750f423954b808ec0844",repository_name_sha256:"c04beac944655c3d3b50ad7daf42b7181747f0be5d37dc1fcbcb751fc78fa812",repository_full_name_sha256:"ddf5de3fddec6181159a189217b700ca585613d310efa22a3d20986163a84a1b",private:true,fork:false,archived:false,created_at:"2026-03-10T16:10:31Z",updated_at:"2026-07-10T20:41:59Z",pushed_at:"2026-07-10T20:41:54Z",default_branch_name_sha256:branchHash,actions_workflow_count:0,github_deployment_count:0,actions_secret_name_count:0},
+    {consumer_hash:"582a432583f62e5f3488165d7ebc8f0f89e423cdc429fb2c26cf6d8f1f733cf3",provenance_principal_hash:"55ae7959b6a758f32208d2eec5b9fef22f334ed8dda6304d87cda07cc0e42ea9",repository_name_sha256:"582a432583f62e5f3488165d7ebc8f0f89e423cdc429fb2c26cf6d8f1f733cf3",repository_full_name_sha256:"7843fe5a459cb11703d2bda1678351a538be421331fa43ef4188a0cec3565ace",private:true,fork:false,archived:false,created_at:"2025-07-26T22:08:55Z",updated_at:"2025-07-26T22:09:25Z",pushed_at:"2025-07-26T22:09:21Z",default_branch_name_sha256:branchHash,actions_workflow_count:0,github_deployment_count:0,actions_secret_name_count:0}
+  ];
+  if(!equal(receipt.consumer_repositories,expectedRepositories))fail("consumers_observation_repositories");
+  const queries={repository_metadata_only:true,workflow_identity_and_timestamps_only:true,deployment_field_selected_graphql_only:true,deployment_payload_read:false,secret_names_and_timestamps_only:true,secret_or_variable_values_read:false,source_or_workflow_contents_read:false,logs_or_artifacts_read:false};
+  if(!equal(receipt.metadata_queries,queries))fail("consumers_observation_queries");
+  const visibility={installations_endpoint:"forbidden_403",stderr_sha256:"76cc9dbadbd1b5a923b918e07a083a1ca3f9e863f331fe9fb45206e1abdba701",response_payload_retained:false,does_not_prove_no_integration:true,chrome_authenticated_to_github:false,private_repository_inspection_blocked:true,login_or_session_change_performed:false};
+  if(!equal(receipt.integration_visibility,visibility))fail("consumers_observation_visibility");
+  const conclusions=[
+    {consumer_hash:expectedRepositories[0].consumer_hash,principal_hash:expectedRepositories[0].provenance_principal_hash,unique_repository_binding_proven:true,live_pages_control_plane_use_proven_by_predecessor:true,github_integration_mechanism_identified:false,zero_counts_prove_no_integration:false,safe_to_revoke_or_broadly_edit:false},
+    {consumer_hash:expectedRepositories[1].consumer_hash,principal_hash:expectedRepositories[1].provenance_principal_hash,unique_historical_repository_binding_proven:true,dormant_github_metadata_proven:true,github_integration_observable:false,r2_s3_data_plane_use_observable:false,safe_to_revoke_or_broadly_edit:false}
+  ];
+  if(!equal(receipt.conclusions,conclusions))fail("consumers_observation_conclusions");
+  const blockers=["github_app_integration_metadata_unavailable","r2_s3_data_plane_use_unobservable_for_historical_principal","read_access_operator_only_remediation_or_explicit_boundary_decision","exhaustive_B7_sandbox_validation_packet","safe_internal_control_plane_for_reversible_permission_tenant_and_recovery_checks","actual_live_job_failure_notification"];
+  const boundary={required:true,action:"operator_manual_github_sign_in_in_chrome_then_resume_read_only_integration_inspection",current_SR_covers_post_login_read:true,new_SR_required_only_after_expiry_or_scope_change:true,codex_authentication_or_session_change_authority_granted:false,exact_SW_or_DW_safe:false};
+  if(!equal(receipt.current_blockers,blockers)||!equal(receipt.smallest_next_boundary,boundary))fail("consumers_observation_blockers");
+  const safety={temporary_projection_deleted:true,raw_identifiers_retained:false,secret_or_variable_values_read_or_retained:false,source_or_workflow_contents_read_or_retained:false,logs_or_artifacts_read_or_retained:false,PII_or_CRM_read_or_retained:false,writes_or_live_effects_performed:false,expected_incremental_charge_eur:0,stop_triggers:stopTriggers};
+  if(!equal(receipt.safety,safety))fail("consumers_observation_safety");
+  return receipt;
+};
+
 export const validateB7SandboxValidationObservationEvidence=(receipt,{cutover,alertAck,srAuthority,swAuthority})=>{
   if(!receipt||typeof receipt!=="object"||Array.isArray(receipt))fail("validation_observation_shape");
   const keys=["schema","version","status","block","b7_status","recorded_at","observed_between","environment","provider","hash_algorithm","authority_receipts","predecessor_receipts","inventory","live_effects","validation_summary","not_run","finding","stop_triggers","negative_effect_facts","current_blockers","smallest_next_authority","receipt_hash"];

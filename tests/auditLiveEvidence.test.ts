@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { hasRawLiveMaterial, validateAlertEmailAckEvidence, validateB7LiveAuthorityEvidence, validateB7SandboxValidationObservationEvidence, validateB7SrImpactAttributionEvidence, validateB7SrImpactEvidence, validateLiveCutoverEvidence, verifyReceiptHash } from "../scripts/lib/audit-live-evidence.mjs";
+import { hasRawLiveMaterial, validateAlertEmailAckEvidence, validateB7LiveAuthorityEvidence, validateB7SandboxValidationObservationEvidence, validateB7SrConsumersAuthorityEvidence, validateB7SrConsumersObservationEvidence, validateB7SrImpactAttributionEvidence, validateB7SrImpactEvidence, validateLiveCutoverEvidence, verifyReceiptHash } from "../scripts/lib/audit-live-evidence.mjs";
 
 const receiptPath = "ops/evidence/B7-live-cutover-2026-07-22.json";
 const alertAckReceiptPath = "ops/evidence/B7-alert-email-ack-2026-07-22.json";
@@ -10,6 +10,7 @@ const srAuthorityPath = "ops/evidence/B7-sr-authority-2026-07-22.json";
 const swAuthorityPath = "ops/evidence/B7-sw-validation-authority-2026-07-22.json";
 const validationObservationPath = "ops/evidence/B7-sandbox-validation-observation-2026-07-22.json";
 const impactAuthorityPath = "ops/evidence/B7-sr-impact-authority-2026-07-22.json", impactObservationPath = "ops/evidence/B7-sr-impact-observation-2026-07-22.json", impactAttributionPath = "ops/evidence/B7-sr-impact-attribution-2026-07-22.json";
+const consumersAuthorityPath = "ops/evidence/B7-sr-consumers-authority-2026-07-22.json", consumersObservationPath = "ops/evidence/B7-sr-consumers-observation-2026-07-22.json";
 const loadReceipt = () => JSON.parse(readFileSync(receiptPath, "utf8"));
 const loadAlertAckReceipt = () => JSON.parse(readFileSync(alertAckReceiptPath, "utf8"));
 const loadAuthority = (path: string) => JSON.parse(readFileSync(path, "utf8"));
@@ -259,6 +260,48 @@ test("B7 SR impact attribution rejects false links, attribution, authority, unsa
   for(const rawMutation of [(r:any)=>r.principal_attribution[0].worker_name="synthetic-raw-label",(r:any)=>r.principal_attribution[0].event_id="synthetic-event-identifier"]){const changed=structuredClone(base);rawMutation(changed);assert.throws(()=>validate(changed),/impact_attribution_hash_or_raw/);}
   const wrongAuthority=structuredClone(authority);wrongAuthority.receipt_hash="0".repeat(64);assert.throws(()=>validateB7SrImpactAttributionEvidence(base,{authority:wrongAuthority,predecessor}),/impact_attribution_chain/);
   const wrongPredecessor=structuredClone(predecessor);wrongPredecessor.receipt_hash="0".repeat(64);assert.throws(()=>validateB7SrImpactAttributionEvidence(base,{authority,predecessor:wrongPredecessor}),/impact_attribution_chain/);
+});
+
+test("B7 SR consumer metadata is authority-bound, hash-only, partial, and unsafe to mutate",()=>{
+  const predecessor=loadAuthority(impactAttributionPath),authority=loadAuthority(consumersAuthorityPath),observation=loadAuthority(consumersObservationPath);
+  assert.equal(validateB7SrConsumersAuthorityEvidence(authority,predecessor),authority);
+  assert.equal(validateB7SrConsumersObservationEvidence(observation,{authority,predecessor}),observation);
+  assert.equal(observation.consumer_repositories.length,2);
+  assert.equal(observation.consumer_repositories.every((repo:any)=>repo.actions_workflow_count===0&&repo.github_deployment_count===0&&repo.actions_secret_name_count===0),true);
+  assert.equal(observation.integration_visibility.does_not_prove_no_integration,true);
+  assert.equal(observation.conclusions.every((entry:any)=>entry.safe_to_revoke_or_broadly_edit===false),true);
+  assert.equal(observation.smallest_next_boundary.exact_SW_or_DW_safe,false);
+  assert.equal(observation.b7_status,"in_progress");
+});
+
+test("B7 SR consumer evidence rejects widened reads, crossed bindings, absence overclaims, authentication effects, and SW/DW",()=>{
+  const predecessor=loadAuthority(impactAttributionPath),authority=loadAuthority(consumersAuthorityPath),base=loadAuthority(consumersObservationPath);
+  for(const mutate of [(a:any)=>a.scope.push("read_source_contents"),(a:any)=>a.targets.consumer_hashes.reverse(),(a:any)=>a.exclusions=a.exclusions.filter((value:string)=>value!=="authentication_or_session_mutation"),(a:any)=>a.data_handling.secret_or_variable_values_read=true,(a:any)=>a.live_effects_performed=true,(a:any)=>a.b7_status="completed"]){const changed=structuredClone(authority);mutate(changed);assert.throws(()=>validateB7SrConsumersAuthorityEvidence(rehash(changed),predecessor),/consumers_authority_/);}
+  const validate=(receipt:any)=>validateB7SrConsumersObservationEvidence(rehash(receipt),{authority,predecessor});
+  const invalidMutations=[
+    (r:any)=>r.authority_receipt_hash="0".repeat(64),
+    (r:any)=>r.predecessor_attribution_receipt_hash="0".repeat(64),
+    (r:any)=>r.consumer_repositories[0].consumer_hash=r.consumer_repositories[1].consumer_hash,
+    (r:any)=>r.consumer_repositories[0].private=false,
+    (r:any)=>r.consumer_repositories[1].pushed_at="2026-07-26T22:09:21Z",
+    (r:any)=>r.consumer_repositories[0].actions_workflow_count=1,
+    (r:any)=>r.integration_visibility.does_not_prove_no_integration=false,
+    (r:any)=>r.integration_visibility.login_or_session_change_performed=true,
+    (r:any)=>r.conclusions[0].zero_counts_prove_no_integration=true,
+    (r:any)=>r.conclusions[0].github_integration_mechanism_identified=true,
+    (r:any)=>r.conclusions[1].github_integration_observable=true,
+    (r:any)=>r.conclusions[1].r2_s3_data_plane_use_observable=true,
+    (r:any)=>r.conclusions[0].safe_to_revoke_or_broadly_edit=true,
+    (r:any)=>r.smallest_next_boundary.exact_SW_or_DW_safe=true,
+    (r:any)=>r.smallest_next_boundary.codex_authentication_or_session_change_authority_granted=true,
+    (r:any)=>r.metadata_queries.secret_or_variable_values_read=true,
+    (r:any)=>r.safety.writes_or_live_effects_performed=true,
+    (r:any)=>r.safety.stop_triggers.security_incident=true,
+    (r:any)=>r.b7_status="completed"
+  ];
+  for(const mutate of invalidMutations){const changed=structuredClone(base);mutate(changed);assert.throws(()=>validate(changed),/consumers_observation_/);}
+  for(const rawMutation of [(r:any)=>r.consumer_repositories[0].worker_name="synthetic-raw-label",(r:any)=>r.metadata_queries.token_value="synthetic-secret-value"]){const changed=structuredClone(base);rawMutation(changed);assert.throws(()=>validate(changed),/consumers_observation_hash_or_raw/);}
+  const wrongPredecessor=structuredClone(predecessor);wrongPredecessor.receipt_hash="0".repeat(64);assert.throws(()=>validateB7SrConsumersObservationEvidence(base,{authority,predecessor:wrongPredecessor}),/consumers_authority_hash_or_raw/);
 });
 
 test("B7 sandbox observation is partial, hash-bound, and records the reader-boundary failure", () => {
