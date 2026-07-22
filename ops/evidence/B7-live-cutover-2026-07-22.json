@@ -1,0 +1,183 @@
+{
+  "schema": "b7-live-cutover-receipt",
+  "version": 1,
+  "status": "partial",
+  "block": "B7",
+  "b7_status": "in_progress",
+  "recorded_at": "2026-07-22T11:37:26Z",
+  "hash_algorithm": "sha256",
+  "live_claims": true,
+  "environment": "sandbox",
+  "authority": {
+    "source": "explicit_user_authorization_for_SW_and_DW_current_session",
+    "source_material": "explicit_user_authorization_current_session_redacted_no_chat_hash",
+    "source_material_sha256": "d5d71142421777a58d175f0a58f76b3068455f9e82182940df4575f745eb382d",
+    "source_hash_basis": "redacted_exact_operator_authority_scope_v1",
+    "receipt_chain": {
+      "SW": "355a0cb047a7c686027a7f1383bfa98598fbb6d6debedf73c59f6cbe43880c46",
+      "pilot": "2f8ac60bb9ed174f22de36cbf8a6d91839e1ba6ba08705ae6c98c4bbf668ac7f",
+      "live_configuration": "2ce376c9be08e85876e57cdd76d227424a8a4f7681062d11a1a8c8d42cf5d51c",
+      "remediation": "b9761421970bb7d448bd99e0d58c34c2e989fad7b36beddccba2d36ad01301a2"
+    },
+    "authority_scope": {
+      "authority_packet": "SW_plus_DW",
+      "old_token_revocation": true,
+      "permanent_obsolete_logpush_job_configuration_deletion": true,
+      "r2_object_delete": false,
+      "raw_authority_transcript_or_chat_hash_recorded": false
+    }
+  },
+  "r2": {
+    "bucket_hash": "13decf6feca3b39441f00236ce1407a0c7f6cb1876e1d5576a3e37bd764b4a4b",
+    "dedicated": true,
+    "private": true,
+    "region": "WEUR",
+    "storage_class": "Standard",
+    "retention_days": 30,
+    "bucket_lock_days": 30,
+    "object_delete_disabled": true
+  },
+  "credential_cutover": {
+    "new_credential_name_hash": "8673b50389cf08f2e4cc56903ef9ace6419870fab065cd0ebe19750030264099",
+    "old_credential_name_hash": "d3e4cfd348f69526cd5a9d1ce8708014fc821b41376ce4a3ee8aafd646100321",
+    "policy_hash": "c7d281ac74497a5dfc9254e49a270174087f440ffb370a97018f6eeba2532291",
+    "scope": "Object Read & Write",
+    "one_bucket_only": true,
+    "new_active_until": "2026-08-21",
+    "old_revoked": true,
+    "old_absent_after_refresh": true
+  },
+  "logpush": {
+    "dataset": "workers_trace_events",
+    "new_job_id_hash": "e91cb0519bc26fc0c42868eeb70986cec96c99b60736fb70aa5ca88dfb21a810",
+    "old_job_id_hash": "43cc99a40e46bef2d0600036ecce6156b606a18bd91789af295ea8eae94eb0b7",
+    "destination_bucket_hash": "13decf6feca3b39441f00236ce1407a0c7f6cb1876e1d5576a3e37bd764b4a4b",
+    "prefix_hash": "a6cf4c813ee8629d9d49068b64444b6af1b1cf6bceb02abc87b70f526117c04e",
+    "isolated_prefix": true,
+    "filter": "ScriptName_pipeline_only",
+    "new_enabled": true,
+    "new_only_job_remaining": true,
+    "old_job_configuration_deleted": true,
+    "old_job_present": false,
+    "last_push_at": "2026-07-22T11:31:52Z"
+  },
+  "delivery": {
+    "scheduled_object_count": 5,
+    "cadence_seconds": 300,
+    "object_key_hashes": [
+      "f713571366ef6cbd21da74be541a984a868c5ed72a2a29d178a3c7a4264c2c63",
+      "72869768901bb80b5e230bcf3c8e8f594f45e0d84c8b607148b2e1d6f7935371",
+      "29939f12ae55de9594f67b691581bcb0e356a60e97bec67a0055bd79a26243a9",
+      "5448f24fce339ea15a88c0602a1e4b93b1515b3a7bb33885aee60298905aed73",
+      "97522f4d28d507185d9e4c6e85ca15867c063f0a8f5de54a9fe32e8cba394cfc"
+    ],
+    "downloaded_object_key_hash": "29939f12ae55de9594f67b691581bcb0e356a60e97bec67a0055bd79a26243a9",
+    "downloaded_raw_byte_sha256": "c91d04c555097c1a5d3b219812ca77c250f226acde5fc46f1f889ba5d4385507",
+    "last_observed_object_key_hash": "97522f4d28d507185d9e4c6e85ca15867c063f0a8f5de54a9fe32e8cba394cfc",
+    "last_observed_object_modified_at": "2026-07-22T11:32:03Z",
+    "content_scope": "synthetic_heartbeat_only",
+    "object_detail": {
+      "delete_disabled": true,
+      "content_type": "application/json",
+      "storage_class": "Standard",
+      "bytes": 624
+    }
+  },
+  "offline_query": {
+    "valid": 1,
+    "invalid": 0,
+    "matched": 1,
+    "operation": "audit.export.heartbeat",
+    "event_timestamp": "2026-07-22T11:20:04.385Z",
+    "outcome": "success",
+    "worker_hash": "dfa355b7199c2aec8a81fa6f0700e0ca842b48b91cd0898a45975cbb4518214a",
+    "version_id_hash": "bccbba95cddaf784662ce35bd37ad34d1ea97da2df90763713ca18aac16fb499",
+    "version_tag_hash": "f6feec51ffdc27578efc7945b69775e7d62528cc8fa91bb439e44323e78eaa0d",
+    "event_id_hash": "3ecd6df2d8012de9643625d46cd69f5e321e63dd29f2d44b200feafba8a04c5f"
+  },
+  "alert_test": {
+    "notification_type": "Cloudflare_Logpush_failure",
+    "submitted_once": true,
+    "name_hash": "b00122d9976a0d85cdc925e09c4ebcf05005b71399ff7f013eabfeb8bfd4441e",
+    "recipient_identity_hash": "192e52a0ac7db369a7ee845346811c6d61995baa8c680c766810539cec98b615",
+    "observed_between": {
+      "start": "2026-07-22T11:13:18Z",
+      "end": "2026-07-22T11:15:17Z"
+    },
+    "email_receipt_pending": true,
+    "acknowledgement_pending": true,
+    "sent_or_delivered_claimed": false
+  },
+  "verification": {
+    "sequential_full_command": "WRANGLER_SEND_METRICS=false npm run build:worker --silent && node --import tsx --test --test-concurrency=1 tests/*.test.ts",
+    "sequential_result": "passed",
+    "sequential_passed": 229,
+    "sequential_total": 229,
+    "parallel_command": "WRANGLER_SEND_METRICS=false npm run check",
+    "parallel_build": "passed",
+    "parallel_passed": 223,
+    "parallel_total": 225,
+    "parallel_result": "invalid_concurrent_run",
+    "parallel_failure_reason": "two_shared_dist_packaging_collisions_chatgpt_lifecycle_and_worker_provenance",
+    "accepted_full_gate": "sequential_only"
+  },
+  "d08": {
+    "status": "designated_not_activated",
+    "informed": false,
+    "accepted": false,
+    "access_provisioned": false,
+    "recovery_validated": false
+  },
+  "stop_triggers": {
+    "customer_billing": false,
+    "additional_customer_access": false,
+    "real_production_data_or_traffic": false,
+    "public_availability": false,
+    "security_incident": false
+  },
+  "negative_effect_facts": {
+    "pipedrive_access_or_change": false,
+    "production_effect": false,
+    "public_route": false,
+    "external_party_access": false,
+    "audit_object_deletion": false,
+    "customer_data_deletion": false
+  },
+  "reader_boundary": {
+    "alert_recipient_alexandre_only_observed": true,
+    "davy_or_third_party_access_observed": false,
+    "active_logpush_credential_is_technical_principal": true,
+    "active_logpush_credential_scope": "Object Read & Write",
+    "active_logpush_credential_one_bucket_only": true,
+    "exhaustive_reader_or_token_inventory_available": false,
+    "read_access_alexandre_only_proven": false
+  },
+  "current_blockers": [
+    "alert_email_receipt_and_acknowledgement",
+    "exhaustive_B7_sandbox_validation_packet",
+    "remaining_non_backup_live_checks"
+  ],
+  "proven": [
+    "limited_synthetic_sandbox_delivery",
+    "sampled_byte_integrity",
+    "offline_query",
+    "locked_object_ui_delete_disabled",
+    "new_bucket_limited_credential_active",
+    "old_credential_revoked",
+    "old_obsolete_job_configuration_removed",
+    "new_job_only_active",
+    "last_observed_object_timestamp_recorded",
+    "alert_test_submission_only"
+  ],
+  "unproven": [
+    "email_receipt",
+    "acknowledgement",
+    "exhaustive_B7_sandbox_validation_packet",
+    "remaining_non_backup_live_checks",
+    "read_access_alexandre_only"
+  ],
+  "future_scope_limits": [
+    "production_durability_or_routing"
+  ],
+  "receipt_hash": "e4c8ea22cfc6028847e162d6960175c156469c9d6a968e7617d6477140dc3a6e"
+}

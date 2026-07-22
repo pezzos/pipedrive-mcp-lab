@@ -407,6 +407,12 @@ keeps capability changes scoped to the verified connection; `/admin/pipedrive`
 uses one-shot, generation-bound confirmations. Reload an expired confirmation
 instead of replaying it. Local disconnect removes Worker-held OAuth material
 only; it changes neither Access, the ChatGPT app, nor the provider grant.
-# B7 audit preparation
+# B7 audit preparation (historical, superseded in part)
 
-Audit source records are locally prepared only. Before activation, complete the B7 live-validation template; do not represent console output as durable R2 evidence.
+Before the 2026-07-22 cutover receipt, audit source records were locally prepared only. That historical statement remains true for the earlier state, but is superseded for the limited sandbox facts now recorded below; do not represent console output as durable R2 evidence.
+
+## B7 2026-07-22 sandbox cutover boundary
+
+The hash-verified `ops/evidence/B7-live-cutover-2026-07-22.json` records a limited synthetic sandbox Logpush/R2 delivery, sampled byte integrity, one offline query, credential revocation, and authority-linked obsolete-job configuration removal. The authority scope is the redacted current-session `SW + DW` operator packet for old-token revocation and permanent obsolete-job deletion, explicitly excluding R2 object deletion; its source digest is not a chat hash. It does not authorize any further live action and does not prove production durability or routing, which is future scope outside B7. The final observed-object timestamp is separate from the credential-revocation fact; it must not be described as post-revocation delivery.
+
+Treat the alert test as submission only: email receipt and acknowledgement are pending, and no sent/delivered result may be asserted. Davy Guittard of Keilintech remains designated-not-activated, not informed or accepted, without access or recovery validation. The alert recipient was observed Alexandre-only, while the active one-bucket Object Read & Write Logpush credential is a technical principal; absent a durable exhaustive reader/token inventory, strict Alexandre-only reading is unproven and belongs in the remaining non-backup live checks. Keep all five sandbox stop triggers in force; stop immediately on customer billing, additional-customer access, real production data or traffic, public availability, or a security incident. B7 remains `in_progress` pending alert receipt/acknowledgement, the exhaustive B7 sandbox validation packet, and remaining non-backup live checks. Production durability/routing is not a B7 blocker.
