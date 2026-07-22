@@ -1,0 +1,23 @@
+{
+  "schema": "b7-live-authority-receipt",
+  "version": 1,
+  "authority": "SW",
+  "status": "authorized",
+  "issued_at": "2026-07-22T12:52:15.000Z",
+  "recorded_at": "2026-07-22T12:52:15.000Z",
+  "expires_at": "2026-07-23T21:59:00.000Z",
+  "decision_owner": "operator_identity",
+  "authorization_source": "explicit_operator_grant_current_session",
+  "provider": "Cloudflare",
+  "environment": "sandbox",
+  "hash_algorithm": "sha256",
+  "source": {"kind":"redacted_structured_statement","material":"redacted_SW_B7_validation_operator_authority_statement_v1","material_sha256":"41bd8f85bb80acde3b0516ba8dbd13baf1ef1b9b0f32a78d99cd44ce835e489a","raw_chat_or_transcript_persisted":false},
+  "targets": {"cutover_receipt_hash":"e4c8ea22cfc6028847e162d6960175c156469c9d6a968e7617d6477140dc3a6e","alert_ack_receipt_hash":"1af763477a186e9e159d2e6400e4cfd2962ef74414f80badd737cff2b0ddbd7e","bucket_hash":"13decf6feca3b39441f00236ce1407a0c7f6cb1876e1d5576a3e37bd764b4a4b","worker_hash":"dfa355b7199c2aec8a81fa6f0700e0ca842b48b91cd0898a45975cbb4518214a","operator_identity_hash":"192e52a0ac7db369a7ee845346811c6d61995baa8c680c766810539cec98b615"},
+  "scope":["receipt_bound_isolated_sandbox_only","anonymous_MCP_denial_only_if_no_public_route_created","internal_non_Pipedrive_safe_read","one_synthetic_permission_toggle_then_immediate_restore_without_provider_call","suspend_resume_same_disconnected_synthetic_self_pilot_tenant","configure_run_candidate_bound_dashboard_queries","trigger_ack_synthetic_export_freshness_provider_error_alerts_to_operator_alert_recipient_only","operator_identity_only_non_destructive_recovery_config_restore_drill","generate_synthetic_events_for_exhaustive_26_check_packet","optionally_create_one_isolated_disposable_failing_Logpush_job_for_synthetic_traffic_only_not_accepted_job"],
+  "rollback":["restore_permission_tenant_dashboard_alerts_before_expiry","disposable_job_disable_or_quarantine_pending_later_hash_specific_DW_no_deletion","retain_R2_objects","no_secret_credential_token_mutation"],
+  "exclusions":["Pipedrive_OAuth_CRM","production","public_route","new_user_customer","designated_D08_backup","billing_plan","secret_rotation","token_revocation","object_job_bucket_worker_tenant_deletion","public_route_or_unspecified_deployment_not_authorized"],
+  "cost_controls":{"expected_incremental_charge_eur":0,"observability_cap_eur_ex_tax":10,"combined_cap_eur_ex_tax":25},
+  "stop_triggers":{"customer_billing":false,"additional_customer_access":false,"real_production_data_or_traffic":false,"public_availability":false,"security_incident":false},
+  "live_effects_performed":false,
+  "receipt_hash":"41dd71739661844ddedb03a5c9ec64953faf6e0c81de5b518f050485b76fef17"
+}

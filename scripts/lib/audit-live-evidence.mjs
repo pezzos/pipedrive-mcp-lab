@@ -6,6 +6,7 @@ const fail = (reason) => { throw new Error(`audit_live_cutover_receipt_invalid:$
 
 const rawValuePatterns = [
   /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/,
+  /\b(?:Alexandre|Davy)\b/i,
   /(?:^|[\s"'=])(?:api[_-]?key|access[_-]?key|private[_-]?key|secret|credential|token)\s*[:=]\s*\S+/i,
   /^(?:sk|cf|eyJ)[A-Za-z0-9._-]{16,}$/,
   /pipedrive-mcp-(?:sandbox|remote)(?:\.pezzoslabs\.com)?/i
@@ -101,5 +102,25 @@ export const validateAlertEmailAckEvidence = (receipt, predecessor) => {
   if (!equal(receipt.d08, { status: "designated_not_activated", informed: false, accepted: false, access_provisioned: false, recovery_validated: false })) fail("alert_ack_d08");
   if (!equal(receipt.stop_triggers, stopTriggers)) fail("alert_ack_stop_triggers");
   if (!equal(receipt.negative_effect_facts, { pipedrive_access_or_change: false, production_effect: false, public_route: false, external_party_access: false, audit_object_deletion: false, customer_data_deletion: false, cloudflare_or_gmail_mutation: false, r2_object_deletion: false })) fail("alert_ack_negative_effect_facts");
+  return receipt;
+};
+
+const authorityTargets={cutover_receipt_hash:"e4c8ea22cfc6028847e162d6960175c156469c9d6a968e7617d6477140dc3a6e",alert_ack_receipt_hash:"1af763477a186e9e159d2e6400e4cfd2962ef74414f80badd737cff2b0ddbd7e",bucket_hash:"13decf6feca3b39441f00236ce1407a0c7f6cb1876e1d5576a3e37bd764b4a4b",worker_hash:"dfa355b7199c2aec8a81fa6f0700e0ca842b48b91cd0898a45975cbb4518214a",operator_identity_hash:"192e52a0ac7db369a7ee845346811c6d61995baa8c680c766810539cec98b615"};
+const authorityScopes={SR:["read_only_enumerate_receipt_bound_Cloudflare_members_roles_policies","metadata_only_API_tokens_R2_access_keys_service_credentials_without_secret_values","Worker_bindings_config_deployment_metadata","Logpush_jobs_credentials_metadata","alert_routes","R2_lifecycle_lock_object_metadata","redacted_synthetic_export_query_by_request_ID","usage_billing_cost_metadata"],SW:["receipt_bound_isolated_sandbox_only","anonymous_MCP_denial_only_if_no_public_route_created","internal_non_Pipedrive_safe_read","one_synthetic_permission_toggle_then_immediate_restore_without_provider_call","suspend_resume_same_disconnected_synthetic_self_pilot_tenant","configure_run_candidate_bound_dashboard_queries","trigger_ack_synthetic_export_freshness_provider_error_alerts_to_operator_alert_recipient_only","operator_identity_only_non_destructive_recovery_config_restore_drill","generate_synthetic_events_for_exhaustive_26_check_packet","optionally_create_one_isolated_disposable_failing_Logpush_job_for_synthetic_traffic_only_not_accepted_job"]};
+const authorityRollbacks={SR:["no_mutation_authorized"],SW:["restore_permission_tenant_dashboard_alerts_before_expiry","disposable_job_disable_or_quarantine_pending_later_hash_specific_DW_no_deletion","retain_R2_objects","no_secret_credential_token_mutation"]};
+const authorityExclusions={SR:["all_external_mutation","email_send_label_archive_delete","credential_creation_rotation_revocation","secret_PII_raw_identifier_persistence","CRM_Pipedrive_customer_data_read","production_public_customer_designated_D08_backup","deletion"],SW:["Pipedrive_OAuth_CRM","production","public_route","new_user_customer","designated_D08_backup","billing_plan","secret_rotation","token_revocation","object_job_bucket_worker_tenant_deletion","public_route_or_unspecified_deployment_not_authorized"]};
+const authoritySources={SR:{material:"redacted_SR_B7_operator_authority_statement_v1",material_sha256:"2bb9e6b3b13c40add16e103bf5b89e7a324dba5a708f068431c9c9062d179f26"},SW:{material:"redacted_SW_B7_validation_operator_authority_statement_v1",material_sha256:"41bd8f85bb80acde3b0516ba8dbd13baf1ef1b9b0f32a78d99cd44ce835e489a"}};
+
+export const validateB7LiveAuthorityEvidence=(receipt,authority,cutover,alertAck)=>{
+  if(!receipt||typeof receipt!=="object"||Array.isArray(receipt)||!["SR","SW"].includes(authority))fail("authority_shape");
+  const keys=["schema","version","authority","status","issued_at","recorded_at","expires_at","decision_owner","authorization_source","provider","environment","hash_algorithm","source","targets","scope","rollback","exclusions","cost_controls","stop_triggers","live_effects_performed","receipt_hash"];
+  if(!equal(Object.keys(receipt),keys)||Object.keys(receipt).at(-1)!=="receipt_hash")fail("authority_keys");
+  if(!verifyReceiptHash(receipt)||hasRawLiveMaterial(receipt))fail("authority_hash_or_raw");
+  validateLiveCutoverEvidence(cutover);validateAlertEmailAckEvidence(alertAck,cutover);
+  if(receipt.schema!=="b7-live-authority-receipt"||receipt.version!==1||receipt.authority!==authority||receipt.status!=="authorized"||receipt.issued_at!=="2026-07-22T12:52:15.000Z"||receipt.recorded_at!==receipt.issued_at||receipt.expires_at!=="2026-07-23T21:59:00.000Z"||Date.parse(receipt.issued_at)>=Date.parse(receipt.expires_at)||receipt.decision_owner!=="operator_identity"||receipt.authorization_source!=="explicit_operator_grant_current_session"||receipt.provider!=="Cloudflare"||receipt.environment!=="sandbox"||receipt.hash_algorithm!=="sha256"||receipt.live_effects_performed!==false)fail("authority_metadata");
+  const source={kind:"redacted_structured_statement",...authoritySources[authority],raw_chat_or_transcript_persisted:false};
+  if(!equal(receipt.source,source)||receipt.source.material_sha256!==createHash("sha256").update(receipt.source.material).digest("hex"))fail("authority_source");
+  if(!equal(receipt.targets,authorityTargets)||receipt.targets.cutover_receipt_hash!==cutover.receipt_hash||receipt.targets.alert_ack_receipt_hash!==alertAck.receipt_hash||!equal(receipt.scope,authorityScopes[authority])||!equal(receipt.rollback,authorityRollbacks[authority])||!equal(receipt.exclusions,authorityExclusions[authority]))fail("authority_scope");
+  if(!equal(receipt.cost_controls,{expected_incremental_charge_eur:0,observability_cap_eur_ex_tax:10,combined_cap_eur_ex_tax:25})||!equal(receipt.stop_triggers,stopTriggers))fail("authority_controls");
   return receipt;
 };

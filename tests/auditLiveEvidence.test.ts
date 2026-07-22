@@ -2,12 +2,15 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { hasRawLiveMaterial, validateAlertEmailAckEvidence, validateLiveCutoverEvidence, verifyReceiptHash } from "../scripts/lib/audit-live-evidence.mjs";
+import { hasRawLiveMaterial, validateAlertEmailAckEvidence, validateB7LiveAuthorityEvidence, validateLiveCutoverEvidence, verifyReceiptHash } from "../scripts/lib/audit-live-evidence.mjs";
 
 const receiptPath = "ops/evidence/B7-live-cutover-2026-07-22.json";
 const alertAckReceiptPath = "ops/evidence/B7-alert-email-ack-2026-07-22.json";
+const srAuthorityPath = "ops/evidence/B7-sr-authority-2026-07-22.json";
+const swAuthorityPath = "ops/evidence/B7-sw-validation-authority-2026-07-22.json";
 const loadReceipt = () => JSON.parse(readFileSync(receiptPath, "utf8"));
 const loadAlertAckReceipt = () => JSON.parse(readFileSync(alertAckReceiptPath, "utf8"));
+const loadAuthority = (path: string) => JSON.parse(readFileSync(path, "utf8"));
 const rehash = (receipt: Record<string, unknown>) => {
   const { receipt_hash: _receiptHash, ...body } = receipt;
   receipt.receipt_hash = createHash("sha256").update(JSON.stringify(body)).digest("hex");
@@ -154,4 +157,19 @@ test("B7 alert acknowledgement rejects invalid acknowledgement, D08, stop trigge
   const readerReceipt = structuredClone(loadAlertAckReceipt());
   readerReceipt.reader_boundary.read_access_alexandre_only_proven = true;
   assert.throws(() => validateAlertEmailAckEvidence(rehash(readerReceipt), predecessor), /alert_ack_reader_boundary/);
+});
+
+test("B7 SR and SW authorities are exact, distinct, and receipt-bound", () => {
+  const cutover = loadReceipt(), ack = loadAlertAckReceipt(), sr = loadAuthority(srAuthorityPath), sw = loadAuthority(swAuthorityPath);
+  assert.equal(validateB7LiveAuthorityEvidence(sr, "SR", cutover, ack), sr);
+  assert.equal(validateB7LiveAuthorityEvidence(sw, "SW", cutover, ack), sw);
+  assert.notEqual(sr.receipt_hash, sw.receipt_hash);
+});
+
+test("B7 authorities reject widened scopes, excluded activity, and unsafe controls", () => {
+  const cutover = loadReceipt(), ack = loadAlertAckReceipt();
+  for (const mutate of [(receipt: any) => receipt.scope.push("Pipedrive_read"), (receipt: any) => receipt.exclusions = receipt.exclusions.filter((value: string) => value !== "public_route"), (receipt: any) => receipt.exclusions = receipt.exclusions.filter((value: string) => value !== "designated_D08_backup"), (receipt: any) => receipt.exclusions = receipt.exclusions.filter((value: string) => value !== "object_job_bucket_worker_tenant_deletion"), (receipt: any) => receipt.cost_controls.expected_incremental_charge_eur = 1, (receipt: any) => receipt.stop_triggers.security_incident = true, (receipt: any) => receipt.live_effects_performed = true, (receipt: any) => receipt.expires_at = receipt.issued_at, (receipt: any) => receipt.targets.worker_hash = "0".repeat(64)]) { const receipt = structuredClone(loadAuthority(swAuthorityPath)); mutate(receipt); assert.throws(() => validateB7LiveAuthorityEvidence(rehash(receipt), "SW", cutover, ack)); }
+  const rawReceipt = structuredClone(loadAuthority(srAuthorityPath)); rawReceipt.source.message = "person@example.test";
+  assert.throws(() => validateB7LiveAuthorityEvidence(rehash(rawReceipt), "SR", cutover, ack), /authority_hash_or_raw/);
+  for (const value of ["Alexandre", "Davy"]) { const receipt = structuredClone(loadAuthority(swAuthorityPath)); receipt.scope.push(value); assert.throws(() => validateB7LiveAuthorityEvidence(rehash(receipt), "SW", cutover, ack), /authority_hash_or_raw/); }
 });

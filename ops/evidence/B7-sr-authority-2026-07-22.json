@@ -1,0 +1,23 @@
+{
+  "schema": "b7-live-authority-receipt",
+  "version": 1,
+  "authority": "SR",
+  "status": "authorized",
+  "issued_at": "2026-07-22T12:52:15.000Z",
+  "recorded_at": "2026-07-22T12:52:15.000Z",
+  "expires_at": "2026-07-23T21:59:00.000Z",
+  "decision_owner": "operator_identity",
+  "authorization_source": "explicit_operator_grant_current_session",
+  "provider": "Cloudflare",
+  "environment": "sandbox",
+  "hash_algorithm": "sha256",
+  "source": {"kind":"redacted_structured_statement","material":"redacted_SR_B7_operator_authority_statement_v1","material_sha256":"2bb9e6b3b13c40add16e103bf5b89e7a324dba5a708f068431c9c9062d179f26","raw_chat_or_transcript_persisted":false},
+  "targets": {"cutover_receipt_hash":"e4c8ea22cfc6028847e162d6960175c156469c9d6a968e7617d6477140dc3a6e","alert_ack_receipt_hash":"1af763477a186e9e159d2e6400e4cfd2962ef74414f80badd737cff2b0ddbd7e","bucket_hash":"13decf6feca3b39441f00236ce1407a0c7f6cb1876e1d5576a3e37bd764b4a4b","worker_hash":"dfa355b7199c2aec8a81fa6f0700e0ca842b48b91cd0898a45975cbb4518214a","operator_identity_hash":"192e52a0ac7db369a7ee845346811c6d61995baa8c680c766810539cec98b615"},
+  "scope":["read_only_enumerate_receipt_bound_Cloudflare_members_roles_policies","metadata_only_API_tokens_R2_access_keys_service_credentials_without_secret_values","Worker_bindings_config_deployment_metadata","Logpush_jobs_credentials_metadata","alert_routes","R2_lifecycle_lock_object_metadata","redacted_synthetic_export_query_by_request_ID","usage_billing_cost_metadata"],
+  "rollback":["no_mutation_authorized"],
+  "exclusions":["all_external_mutation","email_send_label_archive_delete","credential_creation_rotation_revocation","secret_PII_raw_identifier_persistence","CRM_Pipedrive_customer_data_read","production_public_customer_designated_D08_backup","deletion"],
+  "cost_controls":{"expected_incremental_charge_eur":0,"observability_cap_eur_ex_tax":10,"combined_cap_eur_ex_tax":25},
+  "stop_triggers":{"customer_billing":false,"additional_customer_access":false,"real_production_data_or_traffic":false,"public_availability":false,"security_incident":false},
+  "live_effects_performed":false,
+  "receipt_hash":"3309db33522808b711962c8ba84f97cba60d5e9faf8cedee59ce060645756ddb"
+}
